@@ -54,60 +54,74 @@ def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Serie
     return pd.Series(value, index=dates, name=name)
 
 
-def _derive_regional_risk(
-    composite_score: float,
-    category_scores: dict[str, float],
-) -> dict[str, float]:
-    """Derive regional risk scores from category scores.
-
-    This is an approximation. Different regions are weighted differently
-    based on their primary supply chain role:
-        - East Asia / SE Asia: heavily weighted by ports + shipping
-        - Middle East: heavily weighted by energy + geopolitical
-        - North America / Europe: balanced across all categories
-        - etc.
-
-    Parameters
-    ----------
-    composite_score : float
-        Overall composite index.
-    category_scores : dict[str, float]
-        Current category scores.
-
-    Returns
-    -------
-    dict[str, float]
-        Risk score per region (0–100).
+def _derive_map_markers(
+    current_scores: dict[str, float],
+    weather_provider: WeatherProvider,
+) -> list[dict]:
+    """Derive specific map markers (cities/hubs) with detailed tooltips.
+    
+    Instead of generic regions, we now plot specific major shipping hubs.
+    The score for each hub is a mix of its specific LOCAL weather score
+    and the GLOBAL category scores (shipping, energy, etc.).
     """
-    # Regional weighting adjustments — which categories matter most per region
-    _REGIONAL_BIAS: dict[str, dict[str, float]] = {
-        "North America":      {"weather": 0.2, "ports": 0.15, "energy": 0.15, "tariffs": 0.2, "shipping": 0.15, "geopolitical": 0.05, "demand": 0.1},
-        "Central America":    {"weather": 0.2, "ports": 0.1, "energy": 0.1, "tariffs": 0.2, "shipping": 0.1, "geopolitical": 0.2, "demand": 0.1},
-        "South America":      {"weather": 0.15, "ports": 0.2, "energy": 0.2, "tariffs": 0.15, "shipping": 0.15, "geopolitical": 0.1, "demand": 0.05},
-        "Europe":             {"weather": 0.1, "ports": 0.15, "energy": 0.2, "tariffs": 0.2, "shipping": 0.15, "geopolitical": 0.15, "demand": 0.05},
-        "Eastern Europe":     {"weather": 0.1, "ports": 0.05, "energy": 0.25, "tariffs": 0.15, "shipping": 0.1, "geopolitical": 0.3, "demand": 0.05},
-        "East Asia":          {"weather": 0.1, "ports": 0.3, "energy": 0.1, "tariffs": 0.15, "shipping": 0.2, "geopolitical": 0.1, "demand": 0.05},
-        "Southeast Asia":     {"weather": 0.15, "ports": 0.25, "energy": 0.1, "tariffs": 0.1, "shipping": 0.2, "geopolitical": 0.1, "demand": 0.1},
-        "South Asia":         {"weather": 0.2, "ports": 0.15, "energy": 0.15, "tariffs": 0.15, "shipping": 0.15, "geopolitical": 0.15, "demand": 0.05},
-        "Middle East":        {"weather": 0.05, "ports": 0.15, "energy": 0.3, "tariffs": 0.1, "shipping": 0.1, "geopolitical": 0.25, "demand": 0.05},
-        "North Africa":       {"weather": 0.1, "ports": 0.1, "energy": 0.25, "tariffs": 0.1, "shipping": 0.15, "geopolitical": 0.2, "demand": 0.1},
-        "Sub-Saharan Africa": {"weather": 0.2, "ports": 0.15, "energy": 0.2, "tariffs": 0.1, "shipping": 0.1, "geopolitical": 0.2, "demand": 0.05},
-        "Oceania":            {"weather": 0.15, "ports": 0.15, "energy": 0.15, "tariffs": 0.15, "shipping": 0.2, "geopolitical": 0.05, "demand": 0.15},
+    markers = []
+    
+    # Get specific hub weather data
+    hub_data = weather_provider.fetch_current_hub_data()
+    
+    # Global factors that affect everyone (weighted sum)
+    # We exclude 'weather' because we use local weather.
+    # We exclude 'ports' because we don't have local port data yet, so we treat it as global tax.
+    global_factors = {
+        "energy": 0.25,
+        "tariffs": 0.25,
+        "shipping": 0.25, 
+        "geopolitical": 0.25,
     }
-
-    regional_risk: dict[str, float] = {}
-    for region in REGIONS:
-        bias = _REGIONAL_BIAS.get(region)
-        if bias:
-            score = sum(
-                bias[cat] * category_scores.get(cat, 50.0)
-                for cat in bias
-            )
-            regional_risk[region] = round(float(np.clip(score, 0, 100)), 1)
-        else:
-            regional_risk[region] = round(composite_score, 1)
-
-    return regional_risk
+    
+    # Calculate a "Global Baseline" score from non-weather categories
+    global_score_sum = sum(
+        current_scores.get(cat, 50) * weight 
+        for cat, weight in global_factors.items()
+    )
+    
+    for hub in hub_data:
+        # Composite: 40% local weather, 60% global baseline
+        # This ensures local weather events pull the score down visible,
+        # but global risks still matter.
+        local_weather_score = hub["score"]
+        composite = (local_weather_score * 0.4) + (global_score_sum * 0.6)
+        
+        # Build the "Why" description string
+        reasons = []
+        
+        # 1. Weather Reason (if significant deduction)
+        if local_weather_score < 90:
+            reasons.append(f"Weather: {hub['weather_summary']}")
+            
+        # 2. Global Reasons (if low scores)
+        if current_scores.get("geopolitical", 100) < 60:
+            reasons.append("Geopolitics: High Risk")
+        if current_scores.get("energy", 100) < 60:
+            reasons.append("Energy: High Cost")
+        if current_scores.get("shipping", 100) < 60:
+            reasons.append("Shipping: Rate Spike")
+            
+        # Fallback if everything is fine
+        if not reasons:
+            reasons.append("Status: Nominal")
+            
+        reason_html = "<br>• " + "<br>• ".join(reasons)
+        
+        markers.append({
+            "name": hub["name"],
+            "lat": hub["lat"],
+            "lon": hub["lon"],
+            "score": round(composite, 1),
+            "description": reason_html
+        })
+        
+    return markers
 
 
 def aggregate_data() -> dict:
@@ -119,7 +133,7 @@ def aggregate_data() -> dict:
         ``"dates"``            – pd.DatetimeIndex
         ``"category_history"`` – dict[str, pd.Series]
         ``"current_scores"``   – dict[str, float]
-        ``"regional_risk"``    – dict[str, float]
+        ``"map_markers"``      – list[dict] (REPLACES regional_risk)
         ``"alerts"``           – list[dict]
         ``"disruptions"``      – list[dict]
         ``"provider_errors"``  – dict[str, str] (category → error message)
@@ -127,9 +141,13 @@ def aggregate_data() -> dict:
     current_scores: dict[str, float] = {}
     category_history: dict[str, pd.Series] = {}
     provider_errors: dict[str, str] = {}
+    
+    # Instantiate providers map for easy access
+    providers_map = {}
 
     for provider in _PROVIDERS:
         cat = provider.category
+        providers_map[cat] = provider
         try:
             current_scores[cat] = provider.fetch_current()
             logger.info("Loaded %s: %.1f", cat, current_scores[cat])
@@ -140,15 +158,12 @@ def aggregate_data() -> dict:
 
         try:
             history = provider.fetch_history(HISTORY_DAYS)
-            # Ensure the history has exactly HISTORY_DAYS entries
-            # by reindexing to a daily range and forward-filling
             target_dates = pd.date_range(
                 end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
                 periods=HISTORY_DAYS,
                 freq="D",
             )
             history = history.reindex(target_dates, method="ffill")
-            # Fill any remaining NaN with the current score
             history = history.fillna(current_scores[cat])
             category_history[cat] = history
         except Exception as exc:
@@ -160,6 +175,11 @@ def aggregate_data() -> dict:
     # Compute composite for regional derivation
     from scoring.engine import compute_composite_index
     composite = compute_composite_index(current_scores)
+    
+    # Generate Map Markers (City/Hub based)
+    # We grab the WeatherProvider instance specifically to access hub data
+    weather_provider = providers_map["weather"]
+    map_markers = _derive_map_markers(current_scores, weather_provider)
 
     # Alerts from NewsAPI
     alerts: list[dict] = []
@@ -216,7 +236,7 @@ def aggregate_data() -> dict:
         "dates": dates,
         "category_history": category_history,
         "current_scores": current_scores,
-        "regional_risk": _derive_regional_risk(composite, current_scores),
+        "map_markers": map_markers,
         "alerts": alerts,
         "disruptions": disruptions,
         "provider_errors": provider_errors,

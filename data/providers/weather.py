@@ -44,13 +44,19 @@ logger = logging.getLogger(__name__)
 # Major global shipping hubs: (name, lat, lon)
 _SHIPPING_HUBS: list[tuple[str, float, float]] = [
     ("Houston",     29.76,  -95.37),
+    ("New York",    40.71,  -74.00),
     ("Los Angeles", 33.75, -118.27),
     ("Rotterdam",   51.92,    4.48),
+    ("Hamburg",     53.55,    9.99),
     ("Shanghai",    31.23,  121.47),
     ("Singapore",    1.35,  103.82),
     ("Mumbai",      19.08,   72.88),
     ("Busan",       35.10,  129.03),
     ("Dubai",       25.28,   55.30),
+    ("Santos",     -23.96,  -46.33),
+    ("Durban",     -29.86,   31.02),
+    ("Sydney",     -33.86,  151.20),
+    ("Colon",        9.36,  -79.90),
 ]
 
 _CURRENT_URL = "https://api.open-meteo.com/v1/forecast"
@@ -171,6 +177,69 @@ class WeatherProvider(BaseProvider):
     """Weather Disruptions — no API key needed (Open-Meteo is free)."""
 
     category = "weather"
+
+    def fetch_current_hub_data(self) -> list[dict]:
+        """Fetch current weather for all hubs with full details."""
+        cache_key = "weather_hubs_detailed"
+        cached = get_cached(cache_key, ttl=1800)
+        if cached is not None:
+            return cached
+
+        results = []
+
+        for name, lat, lon in _SHIPPING_HUBS:
+            try:
+                resp = requests.get(
+                    _CURRENT_URL,
+                    params={
+                        "latitude": lat,
+                        "longitude": lon,
+                        "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
+                        "timezone": "auto",
+                    },
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                current = resp.json().get("current", {})
+                score = _score_hub_current(current)
+                
+                # Construct reason string
+                reasons = []
+                wmo = current.get("weather_code", 0)
+                wind = current.get("wind_speed_10m", 0)
+                precip = current.get("precipitation", 0)
+                temp = current.get("temperature_2m", 0)
+                
+                if _wmo_deduction(wmo) > 0:
+                    reasons.append(f"Condition: Code {wmo}")
+                if _wind_deduction(wind) > 0:
+                    reasons.append(f"Wind: {wind:.0f} km/h")
+                if _precip_deduction(precip) > 0:
+                    reasons.append(f"Precip: {precip} mm")
+                if _temp_deduction(temp) > 0:
+                    reasons.append(f"Temp: {temp:.1f}°C")
+                
+                reason_text = ", ".join(reasons) if reasons else "Clear conditions"
+
+                results.append({
+                    "name": name,
+                    "lat": lat,
+                    "lon": lon,
+                    "score": score,
+                    "weather_summary": reason_text
+                })
+            except Exception as exc:
+                logger.warning("Failed to fetch hub weather for %s: %s", name, exc)
+                results.append({
+                    "name": name,
+                    "lat": lat,
+                    "lon": lon,
+                    "score": 75.0,
+                    "weather_summary": "Data unavailable"
+                })
+
+        set_cached(cache_key, results)
+        return results
 
     def fetch_current(self) -> float:
         """Fetch current weather at all hubs and return the average score."""

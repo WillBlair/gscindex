@@ -192,23 +192,18 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
     )
 
 
-def build_world_map(
-    regional_risk: dict[str, float],
-    current_scores: dict[str, float],
-) -> go.Figure:
-    """Build a scatter-geo map showing regional risk levels.
+def build_world_map(map_markers: list[dict]) -> go.Figure:
+    """Build a scatter-geo map showing specific shipping hubs.
 
     Parameters
     ----------
-    regional_risk : dict[str, float]
-        Risk score (0–100) per region — higher is healthier.
-    current_scores : dict[str, float]
-        Current category scores (used for hover detail).
+    map_markers : list[dict]
+        List of dicts with keys: name, lat, lon, score, description.
 
     Returns
     -------
     go.Figure
-        Plotly scatter-geo figure with colored dots per region.
+        Plotly scatter-geo figure.
     """
     lats = []
     lons = []
@@ -216,27 +211,30 @@ def build_world_map(
     scores = []
     colors = []
     sizes = []
+    descriptions = []
 
-    for region, score in regional_risk.items():
-        coords = _REGION_COORDS.get(region)
-        if not coords:
-            continue
-
+    for marker in map_markers:
+        score = marker["score"]
         tier = get_health_tier(score)
-        lats.append(coords["lat"])
-        lons.append(coords["lon"])
-        names.append(region)
+        
+        lats.append(marker["lat"])
+        lons.append(marker["lon"])
+        names.append(marker["name"])
         scores.append(score)
         colors.append(tier["color"])
+        descriptions.append(marker["description"])
+        
         # Larger dot for lower scores (more risk = more attention needed)
-        # Base size increased for visibility
-        sizes.append(max(15, 55 - score * 0.4))
+        sizes.append(max(15, 45 - score * 0.3))
 
     fig = go.Figure(
         go.Scattergeo(
             lat=lats,
             lon=lons,
-            text=[f"<b>{n}</b><br>Health: {s:.0f}" for n, s in zip(names, scores)],
+            text=[
+                f"<b>{n}</b><br>Health: {s:.0f}{d}" 
+                for n, s, d in zip(names, scores, descriptions)
+            ],
             hoverinfo="text",
             marker={
                 "size": sizes,
@@ -249,7 +247,7 @@ def build_world_map(
 
     fig.update_layout(
         title={
-            "text": "Regional Supply Chain Risk",
+            "text": "Major Shipping Hubs & Risk Status",
             "font": {"size": 14, "color": COLORS["text"], "family": "Inter"},
             "x": 0,
             "xanchor": "left",

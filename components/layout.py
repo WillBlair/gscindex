@@ -54,7 +54,7 @@ def build_layout(data: dict) -> html.Div:
     """
     current_scores = data["current_scores"]
     category_history = data["category_history"]
-    regional_risk = data["regional_risk"]
+    map_markers = data["map_markers"]
     alerts = data["alerts"]
     disruptions = data["disruptions"]
 
@@ -72,7 +72,7 @@ def build_layout(data: dict) -> html.Div:
     category_cards = build_category_cards(current_scores, category_history)
     trend_fig = build_history_chart(category_history)
     health_panel = build_category_panel(current_scores)
-    map_fig = build_world_map(regional_risk, current_scores)
+    map_fig = build_world_map(map_markers)
     alerts_panel = build_alerts_feed(alerts)
     disruptions_panel = build_disruptions_table(disruptions)
 
