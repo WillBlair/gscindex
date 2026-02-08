@@ -1,23 +1,14 @@
 {
-  "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
+      "source": "/(.*)",
+      "destination": "/api/index.py"
     }
   ],
   "functions": {
     "api/index.py": {
-      "excludeFiles": "{tests/**,__tests__/**,**/*.test.py,**/test_*.py,fixtures/**,__fixtures__/**,testdata/**,sample-data/**,venv/**,.venv/**}"
+      "maxDuration": 30,
+      "includeFiles": "**"
     }
-  },
-  "env": {
-    "PYTHONUNBUFFERED": "1"
   }
 }
