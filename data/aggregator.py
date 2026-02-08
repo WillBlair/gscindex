@@ -27,6 +27,7 @@ from data.providers.energy import EnergyProvider
 from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news
 from data.providers.ports import PortsProvider
 from data.providers.shipping import ShippingProvider
+
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from scoring import get_health_tier
@@ -42,6 +43,7 @@ _PROVIDERS = [
     ShippingProvider(),
     GeopoliticalProvider(),
     DemandProvider(),
+
 ]
 
 
@@ -496,6 +498,55 @@ def aggregate_data() -> dict:
         freq="D",
     )
 
+    # --- Market Data Fetching (Quick & Dirty for Dashboard) ---
+    market_data = {}
+    try:
+        # We import here to avoid circular dependencies if any, though top-level is fine usually.
+        # But specifically we want to access the private tickers from the modules or just re-define.
+        # Let's grab them from the provider instances we already have? 
+        # No, providers don't expose raw data cleanly yet.
+        # Let's just fetch them directly here using yfinance. 
+        # It's cleaner to keep "Raw Data" separate from "Scoring Logic".
+        
+        import yfinance as yf
+        from data.cache import get_cached, set_cached
+        
+        tickers = {
+            "Crude Oil": "CL=F",
+            "Natural Gas": "NG=F",
+            "Copper": "HG=F",
+            "ZIM Shipping": "ZIM",
+            "Shipping ETF": "BOAT"
+        }
+        
+        cache_key = "raw_market_data"
+        cached_market = get_cached(cache_key, ttl=3600)
+        
+        if cached_market:
+            market_data = cached_market
+        else:
+            for name, sym in tickers.items():
+                try:
+                    t = yf.Ticker(sym)
+                    # fast info
+                    hist = t.history(period="5d")
+                    if not hist.empty:
+                        item = {
+                            "price": float(hist["Close"].iloc[-1]),
+                            "prev": float(hist["Close"].iloc[-2]) if len(hist) > 1 else float(hist["Close"].iloc[-1]),
+                            "symbol": sym
+                        }
+                        market_data[name] = item
+                except Exception as e:
+                    logger.warning("Failed to fetch raw market data for %s: %s", name, e)
+            
+            if market_data:
+                set_cached(cache_key, market_data)
+                
+    except Exception as e:
+        logger.warning("Market data fetch failed: %s", e)
+
+
     return {
         "dates": dates,
         "category_history": category_history,
@@ -504,4 +555,5 @@ def aggregate_data() -> dict:
         "alerts": alerts,
         "disruptions": disruptions,
         "provider_errors": provider_errors,
+        "market_data": market_data,  # <--- New field
     }

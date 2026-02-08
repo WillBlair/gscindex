@@ -34,6 +34,8 @@ from components.gauge import build_gauge_figure
 from config import APP_SUBTITLE, APP_TITLE, COLORS
 from scoring import compute_composite_index
 
+from components.market_costs import build_market_costs_panel
+
 # Auto-refresh interval: 5 minutes (in milliseconds)
 _REFRESH_MS = 5 * 60 * 1000
 
@@ -57,6 +59,7 @@ def build_layout(data: dict) -> html.Div:
     map_markers = data["map_markers"]
     alerts = data["alerts"]
     disruptions = data["disruptions"]
+    market_data = data.get("market_data", {})
 
     # Compute composite index and day-over-day delta
     composite = compute_composite_index(current_scores)
@@ -75,6 +78,7 @@ def build_layout(data: dict) -> html.Div:
     map_fig = build_world_map(map_markers)
     alerts_panel = build_alerts_feed(alerts)
     disruptions_panel = build_disruptions_table(disruptions)
+    market_panel = build_market_costs_panel(market_data)
 
     return html.Div(
         className="dashboard",
@@ -138,6 +142,9 @@ def build_layout(data: dict) -> html.Div:
                     ),
                 ],
             ),
+
+            # ── Market Costs Ticker ─────────────────────────────────
+            market_panel,
 
             # ── Category Cards ──────────────────────────────────────
             html.Section(

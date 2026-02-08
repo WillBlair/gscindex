@@ -145,8 +145,10 @@ body {
     flex-direction: column;
     gap: 8px;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    overflow: hidden;          /* prevents sparkline from escaping */
-    min-width: 0;              /* prevents grid blowout */
+    overflow: hidden;
+    /* prevents sparkline from escaping */
+    min-width: 0;
+    /* prevents grid blowout */
 }
 
 .metric-card:hover {
@@ -679,4 +681,272 @@ body {
 
 ._dash-debug-menu {
     z-index: 9999;
+}
+
+/* ==========================================================================
+   Live Market Data Redesign (Scrolling Ticker)
+   ========================================================================== */
+
+.market-section-ticker {
+    background: #0f1117;
+    border: 1px solid #2a2d3a;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    /* Hide the scrolling content */
+    position: relative;
+    white-space: nowrap;
+}
+
+/* The Scrolling Track */
+.market-ticker-track {
+    display: flex;
+    align-items: center;
+    gap: 48px;
+    /* Gap between items */
+    width: max-content;
+    /* Allow track to be as wide as needed */
+    animation: ticker-scroll 60s linear infinite;
+    /* Very slow rotation */
+}
+
+.market-ticker-track:hover {
+    animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+    0% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(-50%);
+    }
+
+    /* Move half the width (the duplicate set) */
+}
+
+/* Header Item (Inside ticker) */
+.market-ticker-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 24px;
+}
+
+.ticker-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #8a8f9e;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: "JetBrains Mono", monospace;
+}
+
+.ticker-live-dot {
+    font-size: 0.7rem;
+    color: #00d97e;
+    font-weight: 700;
+    text-transform: uppercase;
+    animation: pulse 2s infinite;
+    letter-spacing: 0.05em;
+}
+
+/* Individual Ticker Items */
+.market-ticker-item {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.market-symbol {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #e1e4ea;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.market-value-price {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.market-change-group {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.market-arrow {
+    font-size: 0.7rem;
+}
+
+/* ==========================================================================
+   Category Card Redesign (Technical HUD)
+   ========================================================================== */
+
+.tech-card {
+    background: #11131a;
+    border: 1px solid #2a2d3a;
+    border-radius: 2px;
+    /* Sharp corners */
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+    min-height: 160px;
+}
+
+.tech-card:hover {
+    border-color: #6366f1;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.1);
+}
+
+/* Bezel decoration at top */
+.tech-card-bezel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, #2a2d3a 0%, #3d4055 50%, #2a2d3a 100%);
+    opacity: 0.5;
+}
+
+/* Header */
+.tech-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    /* Align top so height difference grows down */
+    margin-bottom: 12px;
+    /* Increased spacing */
+    min-height: 2.4em;
+    /* Force height for 2 lines */
+}
+
+.tech-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #8a8f9e;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    max-width: 75%;
+    /* Ensure space for weight badge */
+    line-height: 1.2;
+}
+
+.tech-weight {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.65rem;
+    color: #4b5563;
+    border: 1px solid #2a2d3a;
+    padding: 1px 4px;
+    border-radius: 2px;
+}
+
+/* Main Score Row */
+.tech-main-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.tech-score {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.05em;
+}
+
+/* Daily Delta Box */
+.tech-delta-box {
+    text-align: right;
+}
+
+.tech-meta-label {
+    display: block;
+    font-size: 0.55rem;
+    color: #4b5563;
+    text-transform: uppercase;
+    margin-bottom: 1px;
+    font-family: "JetBrains Mono", monospace;
+}
+
+.tech-delta-value {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+/* Secondary Stats Grid (Min/Max) */
+.tech-stats-grid {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 4px 8px;
+    border-radius: 2px;
+    margin-top: 4px;
+}
+
+.tech-grid-sep {
+    width: 1px;
+    height: 12px;
+    background: #2a2d3a;
+}
+
+.tech-meta-value {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    font-weight: 500;
+}
+
+/* Sparkline "Screen" */
+.tech-sparkline-container {
+    flex-grow: 1;
+    border-top: 1px solid #2a2d3a;
+    border-bottom: 1px solid #2a2d3a;
+    background: rgba(0, 0, 0, 0.2);
+    position: relative;
+    margin-top: auto;
+    overflow: hidden;
+    /* Clip any potential fill bleed */
+    /* Push to bottom */
+}
+
+/* Corner Decorations */
+.tech-corner-tr {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid #6366f1;
+    border-right: 2px solid #6366f1;
+    opacity: 0.5;
+}
+
+.tech-corner-bl {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-bottom: 2px solid #6366f1;
+    border-left: 2px solid #6366f1;
+    opacity: 0.5;
 }

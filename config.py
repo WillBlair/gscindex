@@ -16,23 +16,24 @@ live here so you never have to hunt through component code to change behavior.
 # ---------------------------------------------------------------------------
 
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "weather":      0.15,
-    "ports":        0.20,
-    "energy":       0.15,
-    "tariffs":      0.15,
-    "shipping":     0.15,
-    "geopolitical": 0.10,
-    "demand":       0.10,
+    "weather":             0.10,
+    "ports":               0.20,  # Increased importance
+    "energy":              0.15,  # Increased
+    "tariffs":             0.15,  # Increased
+    "shipping":            0.15,  # Increased
+    "geopolitical":        0.15,
+    "demand":              0.10,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
-    "weather":      "Weather Disruptions",
-    "ports":        "Port Congestion",
-    "energy":       "Energy & Fuel",
-    "tariffs":      "Trade & Tariffs",
-    "shipping":     "Shipping Rates",
-    "geopolitical": "Geopolitical Risk",
-    "demand":       "Demand & Inventory",
+    "weather":             "Weather Disruptions",
+    "ports":               "Port Congestion",
+    "energy":              "Energy Costs",
+    "tariffs":             "Trade & Tariffs",
+    "shipping":            "Shipping Rates",
+    "geopolitical":        "Geopolitical Risk",
+    "demand":              "Demand & Inventory",
+    "chokepoint":          "Critical Chokepoint",
 }
 
 # ---------------------------------------------------------------------------
@@ -86,13 +87,14 @@ REGIONS: list[str] = [
 # ---------------------------------------------------------------------------
 
 CATEGORY_COLORS: dict[str, str] = {
-    "weather":      "#3b82f6",   # blue
-    "ports":        "#8b5cf6",   # purple
-    "energy":       "#f59e0b",   # amber
-    "tariffs":      "#ef4444",   # red
-    "shipping":     "#06b6d4",   # cyan
-    "geopolitical": "#f97316",   # orange
-    "demand":       "#10b981",   # emerald
+    "weather":             "#3b82f6",   # blue
+    "ports":               "#8b5cf6",   # purple
+    "energy":              "#f59e0b",   # amber
+    "tariffs":             "#ef4444",   # red
+    "shipping":            "#06b6d4",   # cyan
+    "geopolitical":        "#f97316",   # orange
+    "demand":              "#10b981",   # emerald
+    "chokepoint":          "#d946ef",   # magenta
 }
 
 # ---------------------------------------------------------------------------

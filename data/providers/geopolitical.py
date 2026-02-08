@@ -57,7 +57,8 @@ _CATEGORY_KEYWORDS: dict[str, set[str]] = {
     "tariffs":      {"tariff", "trade war", "duty", "import ban", "export ban", "sanctions", "trade deal", "cbam", "trade policy", "customs"},
     "shipping":     {"freight rate", "container rate", "shipping cost", "blank sailing", "feu", "teu", "carrier", "maersk", "hapag", "cosco"},
     "demand":       {"inventory", "shortage", "surplus", "consumer demand", "retail sales", "stockpile", "backlog", "pmi"},
-    "geopolitical": {"war", "conflict", "missile", "blockade", "military", "coup", "protest", "unrest", "territory"},
+    "geopolitical": {"war", "conflict", "missile", "blockade", "military", "coup", "protest", "unrest", "territory", "houthi", "red sea"},
+    "chokepoint":   {"suez canal", "panama canal", "malacca strait", "strait of hormuz", "bab el-mandeb", "bosporus", "dardanelles", "cape of good hope"},
 }
 
 
@@ -130,17 +131,18 @@ def fetch_supply_chain_news() -> tuple[float, list[dict]]:
 
     # Query focuses on PHYSICAL supply chain (logistics, shipping, trade)
     # and excludes software/cyber supply chain noise.
+    # Added explicit CHOKEPOINTS to the query.
     resp = requests.get(
         _NEWSAPI_URL,
         params={
             "q": (
                 '("supply chain" OR "freight" OR "shipping") '
-                'AND (port OR logistics OR cargo OR trade OR tariff OR fuel OR container)'
+                'AND (port OR logistics OR cargo OR trade OR tariff OR canal OR strait OR "red sea" OR container)'
             ),
             "from": from_date,
             "sortBy": "publishedAt",
             "language": "en",
-            "pageSize": 40,
+            "pageSize": 50,  # Increased fetch size
             "apiKey": api_key,
         },
         timeout=15,
