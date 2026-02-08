@@ -149,11 +149,11 @@ def fetch_supply_chain_news() -> tuple[float, list[dict]]:
     articles = resp.json().get("articles", [])
 
     # --- Analyze each article with VADER ---
-    score = 85.0  # baseline — some negative news is normal
+    score = 75.0  # baseline — start at "Moderate" to reflect inherent risk
     alerts: list[dict] = []
     negative_weight_total = 0.0
 
-    for article in articles[:30]:
+    for article in articles[:40]:  # Analyze more articles
         title = article.get("title") or ""
         description = article.get("description") or ""
         published = article.get("publishedAt", datetime.now().isoformat())
@@ -164,9 +164,9 @@ def fetch_supply_chain_news() -> tuple[float, list[dict]]:
         compound = sentiment["compound"]
 
         # Only articles with negative sentiment affect the score
-        if compound < 0:
-            # Scale: compound of -1.0 → deduction of 5 pts, -0.5 → 2.5 pts
-            deduction = abs(compound) * 5.0
+        if compound < -0.05:  # Lower threshold to catch more "slightly negative" news
+            # Scale: compound of -1.0 → deduction of 8 pts, -0.5 → 4 pts
+            deduction = abs(compound) * 8.0
             negative_weight_total += deduction
 
         # Classify into supply chain category

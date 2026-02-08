@@ -64,13 +64,16 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 
 REGIONS: list[str] = [
     "North America",
+    "Central America",
     "South America",
     "Europe",
+    "Eastern Europe",
     "East Asia",
     "Southeast Asia",
     "South Asia",
     "Middle East",
     "Sub-Saharan Africa",
+    "North Africa",
     "Oceania",
 ]
 

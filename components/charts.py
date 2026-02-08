@@ -31,13 +31,16 @@ import pandas as pd
 
 _REGION_COORDS: dict[str, dict[str, float]] = {
     "North America":      {"lat": 40.0,  "lon": -100.0},
+    "Central America":    {"lat": 15.0,  "lon": -90.0},
     "South America":      {"lat": -15.0, "lon": -60.0},
-    "Europe":             {"lat": 50.0,  "lon": 10.0},
-    "East Asia":          {"lat": 35.0,  "lon": 120.0},
+    "Europe":             {"lat": 48.0,  "lon": 10.0},
+    "Eastern Europe":     {"lat": 50.0,  "lon": 30.0},
+    "East Asia":          {"lat": 35.0,  "lon": 110.0},
     "Southeast Asia":     {"lat": 5.0,   "lon": 110.0},
     "South Asia":         {"lat": 22.0,  "lon": 78.0},
-    "Middle East":        {"lat": 28.0,  "lon": 48.0},
-    "Sub-Saharan Africa": {"lat": 0.0,   "lon": 25.0},
+    "Middle East":        {"lat": 28.0,  "lon": 45.0},
+    "North Africa":       {"lat": 25.0,  "lon": 15.0},
+    "Sub-Saharan Africa": {"lat": -10.0, "lon": 25.0},
     "Oceania":            {"lat": -25.0, "lon": 135.0},
 }
 
@@ -226,7 +229,8 @@ def build_world_map(
         scores.append(score)
         colors.append(tier["color"])
         # Larger dot for lower scores (more risk = more attention needed)
-        sizes.append(max(12, 30 - score * 0.2))
+        # Base size increased for visibility
+        sizes.append(max(15, 55 - score * 0.4))
 
     fig = go.Figure(
         go.Scattergeo(
@@ -237,8 +241,8 @@ def build_world_map(
             marker={
                 "size": sizes,
                 "color": colors,
-                "line": {"width": 1, "color": "rgba(255,255,255,0.3)"},
-                "opacity": 0.85,
+                "line": {"width": 2, "color": "white"},
+                "opacity": 0.9,
             },
         )
     )

@@ -82,12 +82,15 @@ def _derive_regional_risk(
     # Regional weighting adjustments — which categories matter most per region
     _REGIONAL_BIAS: dict[str, dict[str, float]] = {
         "North America":      {"weather": 0.2, "ports": 0.15, "energy": 0.15, "tariffs": 0.2, "shipping": 0.15, "geopolitical": 0.05, "demand": 0.1},
+        "Central America":    {"weather": 0.2, "ports": 0.1, "energy": 0.1, "tariffs": 0.2, "shipping": 0.1, "geopolitical": 0.2, "demand": 0.1},
         "South America":      {"weather": 0.15, "ports": 0.2, "energy": 0.2, "tariffs": 0.15, "shipping": 0.15, "geopolitical": 0.1, "demand": 0.05},
         "Europe":             {"weather": 0.1, "ports": 0.15, "energy": 0.2, "tariffs": 0.2, "shipping": 0.15, "geopolitical": 0.15, "demand": 0.05},
+        "Eastern Europe":     {"weather": 0.1, "ports": 0.05, "energy": 0.25, "tariffs": 0.15, "shipping": 0.1, "geopolitical": 0.3, "demand": 0.05},
         "East Asia":          {"weather": 0.1, "ports": 0.3, "energy": 0.1, "tariffs": 0.15, "shipping": 0.2, "geopolitical": 0.1, "demand": 0.05},
         "Southeast Asia":     {"weather": 0.15, "ports": 0.25, "energy": 0.1, "tariffs": 0.1, "shipping": 0.2, "geopolitical": 0.1, "demand": 0.1},
         "South Asia":         {"weather": 0.2, "ports": 0.15, "energy": 0.15, "tariffs": 0.15, "shipping": 0.15, "geopolitical": 0.15, "demand": 0.05},
         "Middle East":        {"weather": 0.05, "ports": 0.15, "energy": 0.3, "tariffs": 0.1, "shipping": 0.1, "geopolitical": 0.25, "demand": 0.05},
+        "North Africa":       {"weather": 0.1, "ports": 0.1, "energy": 0.25, "tariffs": 0.1, "shipping": 0.15, "geopolitical": 0.2, "demand": 0.1},
         "Sub-Saharan Africa": {"weather": 0.2, "ports": 0.15, "energy": 0.2, "tariffs": 0.1, "shipping": 0.1, "geopolitical": 0.2, "demand": 0.05},
         "Oceania":            {"weather": 0.15, "ports": 0.15, "energy": 0.15, "tariffs": 0.15, "shipping": 0.2, "geopolitical": 0.05, "demand": 0.15},
     }
