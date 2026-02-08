@@ -93,6 +93,10 @@ def create_app() -> dash.Dash:
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
+# Create the app globally so Gunicorn can find it
+app = create_app()
+server = app.server  # Expose the Flask server for Gunicorn
+
 if __name__ == "__main__":
-    app = create_app()
+    # This block only runs when you run "python app.py" locally
     app.run(debug=True, host="127.0.0.1", port=8050)
