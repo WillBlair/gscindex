@@ -18,7 +18,7 @@ import logging
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output
+from dash import Input, Output, html
 from dotenv import load_dotenv
 
 from components.layout import build_layout
@@ -54,13 +54,21 @@ def create_app() -> dash.Dash:
     # ── Layout as a function: re-executes on every page load ────────────
     # This means every browser refresh fetches fresh data (subject to cache TTL).
     def serve_layout():
-        data = aggregate_data()
-        if data.get("provider_errors"):
-            for cat, err in data["provider_errors"].items():
-                logging.getLogger(__name__).warning(
-                    "Category '%s' using fallback: %s", cat, err
-                )
-        return build_layout(data)
+        try:
+            data = aggregate_data()
+            if data.get("provider_errors"):
+                for cat, err in data["provider_errors"].items():
+                    logging.getLogger(__name__).warning(
+                        "Category '%s' using fallback: %s", cat, err
+                    )
+            return build_layout(data)
+        except Exception as e:
+            import traceback
+            logging.error("Error loading layout: %s", e)
+            return html.Div([
+                html.H1("Error loading layout"),
+                html.Pre(traceback.format_exc(), style={"color": "red", "whiteSpace": "pre-wrap"})
+            ], style={"padding": "20px", "backgroundColor": "#1a1d26", "color": "white"})
 
     app.layout = serve_layout
 
