@@ -68,38 +68,38 @@ def _wind_deduction(speed_kmh: float) -> float:
 
     0 km/h  →  0 pts
     10      →  0 pts  (calm)
-    20      →  2 pts  (light breeze, minor delays)
-    35      →  6 pts  (moderate, affects crane ops)
-    50      →  12 pts (strong, crane shutdown likely)
-    65      →  18 pts (storm, port closed)
-    80+     →  25 pts (hurricane)
+    20      →  10 pts (light breeze, minor delays)
+    35      →  25 pts (moderate, affects crane ops)
+    50      →  50 pts (strong, crane shutdown likely)
+    65      →  75 pts (storm, port closed)
+    80+     →  100 pts (hurricane)
     """
     if speed_kmh <= 10:
         return 0.0
-    return min(25.0, (speed_kmh - 10) * 25 / 70)
+    return min(100.0, (speed_kmh - 10) * 100 / 70)
 
 
 def _precip_deduction(mm: float) -> float:
     """Continuous precipitation penalty. Even light rain slows port ops.
 
     0 mm  →  0 pts
-    2 mm  →  2 pts  (light drizzle, minor impact)
-    10 mm →  8 pts  (steady rain, significant delays)
-    25 mm →  16 pts (heavy rain, operations paused)
-    50+ mm → 20 pts (severe flooding risk)
+    2 mm  →  10 pts (light drizzle, minor impact)
+    10 mm →  30 pts (steady rain, significant delays)
+    25 mm →  60 pts (heavy rain, operations paused)
+    50+ mm → 90 pts (severe flooding risk)
     """
     if mm <= 0:
         return 0.0
-    return min(20.0, mm * 20 / 50)
+    return min(90.0, mm * 90 / 50)
 
 
 def _temp_deduction(temp_c: float) -> float:
     """Temperature penalty — extremes in either direction are disruptive.
 
     10–30°C →  0 pts  (comfortable operating range)
-    0°C/35°C → 3 pts  (worker productivity drops, icing/heat risk)
-    -10°C/45°C → 8 pts (severe: equipment stress, safety shutdowns)
-    Below -20 or above 50 → 10 pts
+    0°C/35°C → 10 pts (worker productivity drops, icing/heat risk)
+    -10°C/45°C → 30 pts (severe: equipment stress, safety shutdowns)
+    Below -20 or above 50 → 50 pts
     """
     if 10 <= temp_c <= 30:
         return 0.0
@@ -107,7 +107,7 @@ def _temp_deduction(temp_c: float) -> float:
         deviation = 10 - temp_c
     else:
         deviation = temp_c - 30
-    return min(10.0, deviation * 10 / 20)
+    return min(50.0, deviation * 50 / 20)
 
 
 def _wmo_deduction(code: int) -> float:
@@ -116,21 +116,21 @@ def _wmo_deduction(code: int) -> float:
     Codes: https://open-meteo.com/en/docs#weathervariables
     """
     if code in (95, 96, 99):
-        return 15.0   # thunderstorm with hail
+        return 60.0   # thunderstorm with hail
     if code in (65, 67, 75, 77, 86):
-        return 10.0   # heavy rain/snow/freezing rain
+        return 45.0   # heavy rain/snow/freezing rain
     if code in (63, 73, 82, 85):
-        return 7.0    # moderate rain/snow/showers
+        return 30.0   # moderate rain/snow/showers
     if code in (61, 71, 80, 81):
-        return 4.0    # slight rain/snow/showers
+        return 15.0   # slight rain/snow/showers
     if code in (51, 53, 55, 56, 57, 66):
-        return 3.0    # drizzle / light freezing
+        return 10.0   # drizzle / light freezing
     if code in (45, 48):
-        return 6.0    # fog / rime fog (visibility issue)
+        return 25.0   # fog / rime fog (visibility issue)
     if code == 3:
-        return 1.0    # overcast (minor visibility reduction)
+        return 5.0    # overcast (minor visibility reduction)
     if code == 2:
-        return 0.5    # partly cloudy
+        return 2.0    # partly cloudy
     return 0.0        # clear
 
 

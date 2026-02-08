@@ -86,17 +86,17 @@ def _derive_map_markers(
     )
     
     for hub in hub_data:
-        # Composite: 40% local weather, 60% global baseline
-        # This ensures local weather events pull the score down visible,
-        # but global risks still matter.
+        # Composite: 80% local weather, 20% global baseline
+        # We heavily bias towards local weather to ensure the map dots
+        # turn yellow/red when local conditions are bad.
         local_weather_score = hub["score"]
-        composite = (local_weather_score * 0.4) + (global_score_sum * 0.6)
+        composite = (local_weather_score * 0.8) + (global_score_sum * 0.2)
         
         # Build the "Why" description string
         reasons = []
         
         # 1. Weather Reason (if significant deduction)
-        if local_weather_score < 90:
+        if local_weather_score < 80:
             reasons.append(f"Weather: {hub['weather_summary']}")
             
         # 2. Global Reasons (if low scores)
