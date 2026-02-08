@@ -1,0 +1,682 @@
+/* ==========================================================================
+   Global Supply Chain Index — Global Supply Chain Health Index
+   Master stylesheet. Dash auto-loads this from the assets/ directory.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Reset & Base
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1117;
+    color: #e1e4ea;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   Dashboard Shell
+   -------------------------------------------------------------------------- */
+
+.dashboard {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 24px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* --------------------------------------------------------------------------
+   Header
+   -------------------------------------------------------------------------- */
+
+.dash-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #2a2d3a;
+}
+
+.app-title {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #e1e4ea;
+}
+
+.app-subtitle {
+    margin: 4px 0 0;
+    font-size: 0.95rem;
+    color: #8a8f9e;
+    font-weight: 400;
+}
+
+.header-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.last-updated {
+    font-size: 0.8rem;
+    color: #8a8f9e;
+}
+
+.refresh-note {
+    font-size: 0.75rem;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    padding: 3px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.live-dot {
+    font-size: 0.8rem;
+    color: #00d97e;
+    font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Hero Row (Gauge + 90-Day Trend)
+   -------------------------------------------------------------------------- */
+
+.hero-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 20px;
+    align-items: stretch;
+}
+
+/* --------------------------------------------------------------------------
+   Chart Panels (shared card style for gauge, trend, map, health bars)
+   -------------------------------------------------------------------------- */
+
+.chart-panel {
+    background: #1a1d26;
+    border: 1px solid #2a2d3a;
+    border-radius: 12px;
+    padding: 16px;
+    overflow: hidden;
+}
+
+.chart-panel .js-plotly-plot,
+.chart-panel .plotly,
+.chart-panel .plot-container {
+    width: 100% !important;
+}
+
+/* --------------------------------------------------------------------------
+   Category Cards Row
+   -------------------------------------------------------------------------- */
+
+.cards-row {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 16px;
+}
+
+/* --------------------------------------------------------------------------
+   Individual Metric Card
+   -------------------------------------------------------------------------- */
+
+.metric-card {
+    background: #1a1d26;
+    border: 1px solid #2a2d3a;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    overflow: hidden;          /* prevents sparkline from escaping */
+    min-width: 0;              /* prevents grid blowout */
+}
+
+.metric-card:hover {
+    border-color: #3d4055;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Card header: label + weight badge */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #8a8f9e;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+    min-width: 0;
+}
+
+.card-weight {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.12);
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Score + delta row */
+.card-score-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.card-score {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.card-delta {
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Sparkline Graph (inside metric cards) — THIS IS THE KEY FIX
+   --------------------------------------------------------------------------
+   The dcc.Graph creates a Plotly container that can overflow its parent if
+   unconstrained. We force it to respect the card boundaries.
+   -------------------------------------------------------------------------- */
+
+.card-sparkline {
+    width: 100% !important;
+    height: 48px !important;
+    max-height: 48px !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    margin-top: auto;
+}
+
+/* Plotly injects deeply nested containers; lock every single one. */
+.card-sparkline .js-plotly-plot,
+.card-sparkline .plotly,
+.card-sparkline .plot-container,
+.card-sparkline .plot-container.plotly,
+.card-sparkline .svg-container,
+.card-sparkline .main-svg,
+.card-sparkline .draglayer {
+    width: 100% !important;
+    height: 48px !important;
+    max-height: 48px !important;
+}
+
+/* Kill any Plotly-generated outlines, toolbars, or backgrounds that bleed */
+.card-sparkline .modebar-container,
+.card-sparkline .plotly .modebar-container {
+    display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Middle Row (Health Bars + World Map)
+   -------------------------------------------------------------------------- */
+
+.charts-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 20px;
+    align-items: stretch;
+}
+
+.chart-narrow {
+    /* inherits from .chart-panel */
+}
+
+.chart-wide {
+    /* inherits from .chart-panel */
+}
+
+/* --------------------------------------------------------------------------
+   Bottom Row (Alerts + Disruptions)
+   -------------------------------------------------------------------------- */
+
+.bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.bottom-panel {
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   Panel (shared wrapper used by alerts + disruptions)
+   -------------------------------------------------------------------------- */
+
+.panel {
+    background: #1a1d26;
+    border: 1px solid #2a2d3a;
+    border-radius: 12px;
+    padding: 20px;
+    height: 100%;
+}
+
+.panel-title {
+    margin: 0 0 16px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e1e4ea;
+}
+
+/* --------------------------------------------------------------------------
+   Alerts Feed
+   -------------------------------------------------------------------------- */
+
+.alerts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.alert-item {
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    transition: background 0.15s ease;
+}
+
+.alert-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.alert-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.severity-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.alert-time {
+    font-size: 0.75rem;
+    color: #8a8f9e;
+}
+
+.alert-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #e1e4ea;
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.alert-body {
+    font-size: 0.8rem;
+    color: #8a8f9e;
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Disruptions Table
+   -------------------------------------------------------------------------- */
+
+.disruptions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.disruptions-table thead {
+    border-bottom: 2px solid #2a2d3a;
+}
+
+.disruptions-table th {
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #8a8f9e;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.disruptions-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #1e2130;
+    color: #e1e4ea;
+    vertical-align: top;
+}
+
+.disruptions-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.td-event {
+    font-weight: 500;
+    max-width: 200px;
+}
+
+.td-affected {
+    font-size: 0.75rem;
+    color: #8a8f9e;
+    max-width: 160px;
+}
+
+.td-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------------------
+   Category Health Bars (inside chart panel)
+   -------------------------------------------------------------------------- */
+
+.health-bar-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.health-bar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.health-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+}
+
+.health-bar-track {
+    width: 100%;
+    height: 8px;
+    background: #1e2130;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.health-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease;
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+
+.dash-footer {
+    text-align: center;
+    padding: 20px 0 0;
+    border-top: 1px solid #2a2d3a;
+}
+
+.footer-text {
+    font-size: 0.75rem;
+    color: #8a8f9e;
+    margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbar (dark theme)
+   -------------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #2a2d3a;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #3d4055;
+}
+
+/* --------------------------------------------------------------------------
+   Plotly global overrides (prevent toolbar bloat, enforce dark bg)
+   -------------------------------------------------------------------------- */
+
+.js-plotly-plot .plotly .modebar {
+    display: none !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE — Mobile-first breakpoints
+   ========================================================================== */
+
+/* Tablets & small laptops (≤1024px) */
+@media (max-width: 1024px) {
+    .dashboard {
+        padding: 16px 16px 32px;
+        gap: 16px;
+    }
+
+    .hero-row {
+        grid-template-columns: 1fr 1.5fr;
+        gap: 16px;
+    }
+
+    .cards-row {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+    }
+
+    .charts-row {
+        grid-template-columns: 1fr 1.5fr;
+        gap: 16px;
+    }
+
+    .bottom-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+}
+
+/* Phones — landscape & large phones (≤768px) */
+@media (max-width: 768px) {
+    .dashboard {
+        padding: 12px 12px 24px;
+        gap: 14px;
+    }
+
+    .dash-header {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .app-title {
+        font-size: 1.5rem;
+    }
+
+    .header-meta {
+        gap: 10px;
+    }
+
+    .hero-row {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .cards-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .metric-card {
+        padding: 12px;
+    }
+
+    .card-label {
+        font-size: 0.7rem;
+    }
+
+    .card-score {
+        font-size: 1.4rem;
+    }
+
+    .charts-row {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .bottom-row {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .chart-panel {
+        padding: 12px;
+    }
+
+    .panel {
+        padding: 14px;
+    }
+
+    .disruptions-table th,
+    .disruptions-table td {
+        padding: 6px 8px;
+        font-size: 0.72rem;
+    }
+
+    .disruptions-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+/* Phones — portrait (≤480px) */
+@media (max-width: 480px) {
+    .dashboard {
+        padding: 8px 8px 20px;
+        gap: 12px;
+    }
+
+    .app-title {
+        font-size: 1.25rem;
+    }
+
+    .app-subtitle {
+        font-size: 0.8rem;
+    }
+
+    .cards-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .metric-card {
+        padding: 10px;
+        gap: 6px;
+    }
+
+    .card-label {
+        font-size: 0.65rem;
+    }
+
+    .card-weight {
+        font-size: 0.6rem;
+        padding: 1px 6px;
+    }
+
+    .card-score {
+        font-size: 1.2rem;
+    }
+
+    .card-delta {
+        font-size: 0.7rem;
+    }
+
+    .card-sparkline {
+        height: 40px !important;
+        max-height: 40px !important;
+    }
+
+    .card-sparkline .js-plotly-plot,
+    .card-sparkline .plotly,
+    .card-sparkline .plot-container,
+    .card-sparkline .plot-container.plotly,
+    .card-sparkline .svg-container,
+    .card-sparkline .main-svg {
+        height: 40px !important;
+        max-height: 40px !important;
+    }
+
+    .panel {
+        padding: 12px;
+    }
+
+    .panel-title {
+        font-size: 0.9rem;
+    }
+
+    .alert-item {
+        padding: 10px 12px;
+    }
+
+    .alert-title {
+        font-size: 0.82rem;
+    }
+
+    .alert-body {
+        font-size: 0.75rem;
+    }
+
+    .alerts-list {
+        max-height: 350px;
+    }
+}
+
+/* ==========================================================================
+   Dash debug toolbar — push below our content
+   ========================================================================== */
+
+._dash-debug-menu {
+    z-index: 9999;
+}

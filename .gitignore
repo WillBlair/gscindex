@@ -1,0 +1,14 @@
+# Environment & secrets
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Data cache (regenerated from APIs)
+data/.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
