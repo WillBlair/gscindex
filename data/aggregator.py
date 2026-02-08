@@ -24,7 +24,7 @@ import pandas as pd
 from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS, REGIONS
 from data.providers.demand import DemandProvider
 from data.providers.energy import EnergyProvider
-from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news
+from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
 from data.providers.ports import PortsProvider
 from data.providers.shipping import ShippingProvider
 
@@ -190,8 +190,6 @@ _MAJOR_PORTS: list[tuple[str, float, float, list[str], list[str]]] = [
 ]
 
 
-
-
 # ---------------------------------------------------------------------------
 # News penalty tables + helpers
 # ---------------------------------------------------------------------------
@@ -211,27 +209,6 @@ def _sentiment_label(compound: float) -> str:
     return "Slightly negative"
 
 
-# Terms that indicate an article is clearly NOT about supply chains.
-# If any of these appear in the title or body, the article is skipped
-# before it ever matches to a port.  Keeps garbage out of scores.
-_IRRELEVANT_TERMS: set[str] = {
-    "fantasy", "baseball", "football", "basketball", "hockey", "nfl",
-    "nba", "nhl", "mlb", "premier league", "world cup", "olympics",
-    "vacation", "hotel", "resort", "airbnb", "tourism", "travel deal",
-    "gaming", "playstation", "xbox", "nintendo", "handheld",
-    "upsc", "exam prep", "exam result", "board exam", "college admission",
-    "recipe", "cookbook", "celebrity", "red carpet", "box office",
-    "movie review", "album review", "concert", "streaming service",
-    "cryptocurrency", "bitcoin", "ethereum", "nft", "meme coin",
-    "horoscope", "zodiac", "astrology", "lottery", "powerball",
-}
-
-
-def _is_irrelevant_article(text: str) -> bool:
-    """Return True if the article text contains clearly off-topic terms."""
-    return any(term in text for term in _IRRELEVANT_TERMS)
-
-
 def _match_news_to_ports(
     alerts: list[dict],
 ) -> dict[str, list[tuple[dict, str]]]:
@@ -249,6 +226,8 @@ def _match_news_to_ports(
     port_news: dict[str, list[tuple[dict, str]]] = {}
 
     for alert in alerts:
+        # For Port Risk Scoring, ONLY consider negative news.
+        # Neutral/Positive news is fine for the feed, but shouldn't penalize port scores.
         if alert.get("sentiment", 0) >= -0.05:
             continue
 

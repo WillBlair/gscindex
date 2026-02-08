@@ -109,13 +109,27 @@ def build_alerts_feed(alerts: list[dict]) -> html.Div:
                                 ),
                             ],
                         ),
-                        html.Span(
-                            _format_time_ago(alert["timestamp"]),
-                            className="alert-time",
+                        html.Div(
+                            className="alert-meta",
+                            style={"display": "flex", "gap": "6px", "alignItems": "center", "fontSize": "11px", "color": COLORS["text_muted"]},
+                            children=[
+                                html.Span(alert.get("source", "News"), className="alert-source", style={"fontWeight": "600", "color": COLORS["text"]}),
+                                html.Span("•"),
+                                html.Span(
+                                    _format_time_ago(alert["timestamp"]),
+                                    className="alert-time",
+                                ),
+                            ]
                         ),
                     ],
                 ),
-                html.Div(alert["title"], className="alert-title"),
+                html.A(
+                    alert["title"],
+                    href=alert.get("url", "#"),
+                    target="_blank",
+                    className="alert-title",
+                    style={"display": "block", "textDecoration": "none", "color": "inherit", "fontWeight": "600", "marginBottom": "4px", "hover": {"textDecoration": "underline"}}
+                ),
                 html.P(alert["body"], className="alert-body"),
             ],
         )

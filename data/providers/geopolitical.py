@@ -24,25 +24,21 @@ supply chain news — a score of 100 would mean "no news at all" which
 isn't realistic or useful.
 """
 
-from __future__ import annotations
-
+from datetime import datetime, timedelta
 import logging
 import os
-from datetime import datetime, timedelta
-
+import requests
 import numpy as np
 import pandas as pd
-import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from data.cache import get_cached, set_cached
 from data.providers.base import BaseProvider
+from data.ai_analyst import analyze_news_batch
 
 logger = logging.getLogger(__name__)
 
 _NEWSAPI_URL = "https://newsapi.org/v2/everything"
-
-# VADER analyzer — instantiated once, reused across calls
 _VADER = SentimentIntensityAnalyzer()
 
 # ---------------------------------------------------------------------------
@@ -62,6 +58,45 @@ _CATEGORY_KEYWORDS: dict[str, set[str]] = {
 }
 
 
+# Terms that indicate an article is clearly NOT about supply chains.
+# If any of these appear in the title or body, the article is skipped
+# before it ever matches to a port.  Keeps garbage out of scores.
+_IRRELEVANT_TERMS: set[str] = {
+    "fantasy", "baseball", "football", "basketball", "hockey", "nfl",
+    "nba", "nhl", "mlb", "premier league", "world cup", "olympics",
+    "vacation", "resort", "airbnb", "tourism", "travel deal",
+    "gaming", "playstation", "xbox", "nintendo", "handheld",
+    "upsc", "exam prep", "exam result", "board exam", "college admission",
+    "recipe", "cookbook", "celebrity", "red carpet", "box office",
+    "movie review", "album review", "concert", "streaming service",
+    "cryptocurrency", "bitcoin", "ethereum", "nft", "meme coin",
+    "horoscope", "zodiac", "astrology", "lottery", "powerball",
+    "free shipping", "promo code", "discount code", "gift card",
+    
+    # Toys & Consumer Junk
+    "disney", "lego", "mattel", "hasbro", "funko",
+    
+    # Health Supplements & niche products
+    "supplement", "nutrition", "vitamin", "protein powder", "creatine", 
+    "pre-workout", "nootropic", "skin care", "skincare", "makeup",
+    
+    # 3D Printing / Hobbyist
+    "printer", "3d print", "filament", "elegoo", "bambu", "creality",
+    
+    # Corporate Noise
+    "securities fraud", "fraud investigation", "shareholder alert",
+    
+    # Clothing / Retail
+    "pants", "shirt", "jeans", "mens", "womens", "apparel", "clothing", 
+    "shoe", "sneaker", "boot", "sandal", "heel",
+}
+
+
+def _is_irrelevant_article(text: str) -> bool:
+    """Return True if the article text contains clearly off-topic terms."""
+    return any(term in text for term in _IRRELEVANT_TERMS)
+
+
 def _get_api_key() -> str:
     key = os.environ.get("NEWSAPI_KEY", "").strip()
     if not key:
@@ -73,55 +108,24 @@ def _get_api_key() -> str:
     return key
 
 
-def _classify_category(text: str) -> str:
-    """Assign an article to a supply chain category based on keyword matching.
-
-    Parameters
-    ----------
-    text : str
-        Lowercased title + description of the article.
-
-    Returns
-    -------
-    str
-        Category key (e.g. "energy", "ports"). Falls back to "geopolitical".
-    """
+def _classify_category_keyword(text: str) -> str:
+    """Assign an article to a supply chain category based on keyword matching (Fallback)."""
     for category, keywords in _CATEGORY_KEYWORDS.items():
         if any(kw in text for kw in keywords):
             return category
     return "geopolitical"
 
 
-def _vader_to_severity(compound: float) -> str:
-    """Map VADER compound score to a severity label.
-
-    Parameters
-    ----------
-    compound : float
-        VADER compound score (-1 to +1). Negative = negative sentiment.
-
-    Returns
-    -------
-    str
-        "high", "medium", or "low".
-    """
-    if compound <= -0.5:
-        return "high"
-    if compound <= -0.15:
-        return "medium"
+def _score_to_severity(score: float) -> str:
+    """Map severity score to label."""
+    if score <= -4: return "high"
+    if score <= -1.5: return "medium"
     return "low"
 
 
 def fetch_supply_chain_news() -> tuple[float, list[dict]]:
-    """Fetch supply chain news, analyze with VADER, and return scored alerts.
-
-    Returns
-    -------
-    tuple[float, list[dict]]
-        (geopolitical_score, alerts) where score is 0–100 and alerts
-        are categorized dicts for the dashboard feed.
-    """
-    cache_key = "newsapi_vader"
+    """Fetch news and analyze using AI (Gemini) with VADER fallback."""
+    cache_key = "newsapi_ai_v1"
     cached = get_cached(cache_key, ttl=1800)  # 30-min cache
     if cached is not None:
         return cached["score"], cached["alerts"]
@@ -129,79 +133,126 @@ def fetch_supply_chain_news() -> tuple[float, list[dict]]:
     api_key = _get_api_key()
     from_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
 
-    # Query focuses on PHYSICAL supply chain (logistics, shipping, trade)
-    # and excludes software/cyber supply chain noise.
-    # Added explicit CHOKEPOINTS to the query.
-    resp = requests.get(
-        _NEWSAPI_URL,
-        params={
-            "q": (
-                '("supply chain" OR "freight" OR "shipping") '
-                'AND (port OR logistics OR cargo OR trade OR tariff OR canal OR strait OR "red sea" OR container)'
-            ),
-            "from": from_date,
-            "sortBy": "publishedAt",
-            "language": "en",
-            "pageSize": 50,  # Increased fetch size
-            "apiKey": api_key,
-        },
-        timeout=15,
-    )
-    resp.raise_for_status()
-    articles = resp.json().get("articles", [])
+    # 1. Fetch from NewsAPI
+    try:
+        resp = requests.get(
+            _NEWSAPI_URL,
+            params={
+                "q": (
+                    '("supply chain" OR "freight" OR "shipping") '
+                    'AND (port OR logistics OR cargo OR trade OR tariff OR canal OR strait OR "red sea" OR container) '
+                    'AND NOT ("free shipping" OR "promo code")'
+                ),
+                "from": from_date,
+                "sortBy": "publishedAt",
+                "language": "en",
+                "pageSize": 60,  # Fetch plenty to filter down
+                "apiKey": api_key,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        articles = resp.json().get("articles", [])
+    except Exception as e:
+        logger.error(f"NewsAPI fetch failed: {e}")
+        return 75.0, []
 
-    # --- Analyze each article with VADER ---
-    score = 75.0  # baseline — start at "Moderate" to reflect inherent risk
-    alerts: list[dict] = []
-    negative_weight_total = 0.0
-
-    for article in articles[:40]:  # Analyze more articles
+    # 2. Pre-filter and Prepare for AI
+    candidates = []
+    
+    for i, article in enumerate(articles):
         title = article.get("title") or ""
         description = article.get("description") or ""
-        published = article.get("publishedAt", datetime.now().isoformat())
-        full_text = f"{title}. {description}"
+        full_text = f"{title}. {description}".lower()
 
-        # VADER sentiment analysis
-        sentiment = _VADER.polarity_scores(full_text)
-        compound = sentiment["compound"]
-
-        # Only articles with negative sentiment affect the score
-        if compound < -0.05:  # Lower threshold to catch more "slightly negative" news
-            # Scale: compound of -1.0 → deduction of 8 pts, -0.5 → 4 pts
-            deduction = abs(compound) * 8.0
-            negative_weight_total += deduction
-
-        # Classify into supply chain category
-        text_lower = f"{title} {description}".lower()
-        category = _classify_category(text_lower)
-        severity = _vader_to_severity(compound)
-
-        alerts.append({
-            "timestamp": published,
-            "severity": severity,
+        # Keyword Spam Filter (Save AI tokens)
+        if _is_irrelevant_article(full_text):
+            continue
+            
+        candidates.append({
+            "id": i,
             "title": title,
-            "body": description or "No description available.",
-            "category": category,
-            "sentiment": round(compound, 3),
+            "description": description,
+            "url": article.get("url", "#"),
+            "source": article.get("source", {}).get("name", "Unknown Source"),
+            "published": article.get("publishedAt", datetime.now().isoformat())
         })
 
-    # Apply total negative weight to score
-    score = max(0.0, min(100.0, score - negative_weight_total))
+    # Limit to top 15 for AI analysis to avoid rate limits/latency
+    ai_candidates = candidates[:15]
+    
+    # 3. Analyze with Gemini
+    ai_results = analyze_news_batch(ai_candidates)
+    
+    alerts = []
+    severity_sum = 0.0
+    
+    # Process AI results
+    if ai_results:
+        logger.info(f"AI successfully analyzed {len(ai_results)} articles")
+        for cid, analysis in ai_results.items():
+            if not analysis.get("is_relevant", False):
+                continue
+                
+            severity = analysis.get("severity_score", 0.0)
+            severity_sum += severity
+            
+            # Find original article data
+            original = next((c for c in ai_candidates if c["id"] == cid), None)
+            if not original:
+                continue
+                
+            alerts.append({
+                "timestamp": original["published"],
+                "severity": _score_to_severity(severity),
+                "title": original["title"],
+                "body": analysis.get("summary", original["description"]), # Use AI summary if available
+                "category": analysis.get("category", "geopolitical"),
+                "sentiment": severity, # Storing severity score as sentiment for compatibility
+                "url": original["url"],
+                "source": original["source"],
+            })
+            
+    else:
+        # Fallback to VADER if AI fails or returns nothing
+        logger.warning("AI analysis failed or returned empty. Using VADER fallback.")
+        for article in candidates[:15]:
+            title = article["title"]
+            desc = article["description"]
+            text = f"{title} {desc}"
+            
+            v_score = _VADER.polarity_scores(text)["compound"]
+            if v_score < -0.05:
+                deduction = abs(v_score) * 8.0
+                severity_sum -= deduction
+                
+            alerts.append({
+                "timestamp": article["published"],
+                "severity": "high" if v_score < -0.5 else "medium" if v_score < -0.15 else "low",
+                "title": title,
+                "body": desc,
+                "category": _classify_category_keyword(text.lower()),
+                "sentiment": v_score * 10, # rough mapping
+                "url": article["url"],
+                "source": article["source"],
+            })
 
-    # Sort by severity (high first), then recency
-    severity_order = {"high": 0, "medium": 1, "low": 2}
-    alerts.sort(key=lambda a: (severity_order.get(a["severity"], 2), a["timestamp"]), reverse=False)
+    # 4. Calculate Final Score
+    # Start at 100 (Perfect). Add severity scores (usually negative).
+    # If we have +severity (good news), score can go up, but cap at 100.
+    final_score = 100.0 + severity_sum
+    final_score = max(0.0, min(100.0, final_score))
 
-    # Top 10 for the feed
-    alerts = alerts[:10]
+    # Sort alerts by severity (lowest score = highest risk)
+    alerts.sort(key=lambda a: (a["sentiment"], a["timestamp"]), reverse=False) # Ascending sentiment (negative first)
 
-    result_score = round(score, 1)
-    set_cached(cache_key, {"score": result_score, "alerts": alerts})
-    logger.info(
-        "News analysis: %d articles, %.1f negative weight, score=%.1f",
-        len(articles), negative_weight_total, result_score,
-    )
-    return result_score, alerts
+    result = {
+        "score": round(final_score, 1),
+        "alerts": alerts
+    }
+    
+    set_cached(cache_key, result)
+    return result["score"], result["alerts"]
 
 
 class GeopoliticalProvider(BaseProvider):
