@@ -173,10 +173,130 @@ def _score_hub_daily(
     return round(max(0.0, min(100.0, score)), 1)
 
 
+# WMO weather code → human-readable condition description
+# Reference: https://open-meteo.com/en/docs#weathervariables
+_WMO_DESCRIPTIONS: dict[int, str] = {
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+    45: "Fog", 48: "Rime fog",
+    51: "Light drizzle", 53: "Moderate drizzle", 55: "Heavy drizzle",
+    56: "Freezing drizzle", 57: "Heavy freezing drizzle",
+    61: "Light rain", 63: "Moderate rain", 65: "Heavy rain",
+    66: "Light freezing rain", 67: "Heavy freezing rain",
+    71: "Light snowfall", 73: "Moderate snowfall", 75: "Heavy snowfall",
+    77: "Snow grains",
+    80: "Light showers", 81: "Moderate showers", 82: "Violent showers",
+    85: "Light snow showers", 86: "Heavy snow showers",
+    95: "Thunderstorm", 96: "Thunderstorm w/ hail", 99: "Severe thunderstorm",
+}
+
+
 class WeatherProvider(BaseProvider):
     """Weather Disruptions — no API key needed (Open-Meteo is free)."""
 
     category = "weather"
+
+    def fetch_batch_port_weather(
+        self,
+        ports: list[tuple[str, float, float]],
+    ) -> dict[str, dict]:
+        """Fetch current weather for an arbitrary list of ports in ONE call.
+
+        Open-Meteo accepts comma-separated lat/lon values and returns an
+        array of results — one per location.  This lets us get real,
+        location-specific weather for all 37 map ports with a single HTTP
+        request instead of 37.
+
+        Parameters
+        ----------
+        ports : list[tuple[str, float, float]]
+            ``(name, latitude, longitude)`` for every port to plot.
+
+        Returns
+        -------
+        dict[str, dict]
+            Mapping of port name → ``{"score", "summary", "temp", "wind",
+            "precip", "wmo_code"}``.  Cached for 30 minutes.
+        """
+        cache_key = "weather_batch_ports"
+        cached = get_cached(cache_key, ttl=1800)
+        if cached is not None:
+            return cached
+
+        lats = ",".join(str(lat) for _, lat, _ in ports)
+        lons = ",".join(str(lon) for _, _, lon in ports)
+
+        try:
+            resp = requests.get(
+                _CURRENT_URL,
+                params={
+                    "latitude": lats,
+                    "longitude": lons,
+                    "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
+                    "timezone": "auto",
+                },
+                timeout=20,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.error("Batch weather fetch failed: %s", exc)
+            # Return neutral fallback for every port
+            fallback: dict[str, dict] = {}
+            for name, _lat, _lon in ports:
+                fallback[name] = {
+                    "score": 75.0,
+                    "summary": "Weather data unavailable",
+                    "temp": None,
+                    "wind": None,
+                    "precip": None,
+                    "wmo_code": None,
+                }
+            return fallback
+
+        # Open-Meteo returns a list when given multiple locations
+        results_list = data if isinstance(data, list) else [data]
+
+        result: dict[str, dict] = {}
+        for i, (name, _lat, _lon) in enumerate(ports):
+            if i >= len(results_list):
+                result[name] = {
+                    "score": 75.0, "summary": "No data", "temp": None,
+                    "wind": None, "precip": None, "wmo_code": None,
+                }
+                continue
+
+            current = results_list[i].get("current", {})
+            score = _score_hub_current(current)
+
+            wmo = current.get("weather_code", 0) or 0
+            wind = current.get("wind_speed_10m", 0) or 0
+            precip = current.get("precipitation", 0) or 0
+            temp = current.get("temperature_2m", 20) or 20
+
+            # Build human-readable summary from real conditions
+            wmo_desc = _WMO_DESCRIPTIONS.get(wmo, f"Code {wmo}")
+            parts: list[str] = [f"{temp:.0f}°C", wmo_desc]
+            if wind > 10:
+                parts.append(f"Wind {wind:.0f} km/h")
+            if precip > 0:
+                parts.append(f"Precip {precip:.1f} mm")
+
+            result[name] = {
+                "score": score,
+                "summary": ", ".join(parts),
+                "temp": round(temp, 1),
+                "wind": round(wind, 1),
+                "precip": round(precip, 1),
+                "wmo_code": wmo,
+            }
+
+            logger.info(
+                "Batch weather %s: %.1f (%s)",
+                name, score, result[name]["summary"],
+            )
+
+        set_cached(cache_key, result)
+        return result
 
     def fetch_current_hub_data(self) -> list[dict]:
         """Fetch current weather for all hubs with full details."""

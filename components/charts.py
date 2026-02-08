@@ -25,24 +25,6 @@ from scoring import get_health_tier
 
 import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Region coordinates for the world map scatter points
-# ---------------------------------------------------------------------------
-
-_REGION_COORDS: dict[str, dict[str, float]] = {
-    "North America":      {"lat": 40.0,  "lon": -100.0},
-    "Central America":    {"lat": 15.0,  "lon": -90.0},
-    "South America":      {"lat": -15.0, "lon": -60.0},
-    "Europe":             {"lat": 48.0,  "lon": 10.0},
-    "Eastern Europe":     {"lat": 50.0,  "lon": 30.0},
-    "East Asia":          {"lat": 35.0,  "lon": 110.0},
-    "Southeast Asia":     {"lat": 5.0,   "lon": 110.0},
-    "South Asia":         {"lat": 22.0,  "lon": 78.0},
-    "Middle East":        {"lat": 28.0,  "lon": 45.0},
-    "North Africa":       {"lat": 25.0,  "lon": 15.0},
-    "Sub-Saharan Africa": {"lat": -10.0, "lon": 25.0},
-    "Oceania":            {"lat": -25.0, "lon": 135.0},
-}
 
 
 def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
@@ -193,61 +175,64 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
 
 
 def build_world_map(map_markers: list[dict]) -> go.Figure:
-    """Build a scatter-geo map showing specific shipping hubs.
+    """Build a scatter-geo map showing every major shipping port.
+
+    Each dot is color-coded by its composite health score:
+
+        green  (80–100)  Healthy — no disruptions
+        yellow (60–79)   Moderate Risk — mild signals / negative news
+        orange (40–59)   Elevated Risk — significant disruption detected
+        red    (0–39)    Critical — severe news, API, or global stress
+
+    Hovering shows a rich tooltip with news headlines, VADER sentiment
+    scores, and any stressed global factors that explain the color.
 
     Parameters
     ----------
     map_markers : list[dict]
-        List of dicts with keys: name, lat, lon, score, description.
-
-    Returns
-    -------
-    go.Figure
-        Plotly scatter-geo figure.
+        Dicts with keys ``name``, ``lat``, ``lon``, ``score``, ``description``.
+        ``description`` is pre-built HTML from the aggregator.
     """
-    lats = []
-    lons = []
-    names = []
-    scores = []
-    colors = []
-    sizes = []
-    descriptions = []
+    lats: list[float] = []
+    lons: list[float] = []
+    colors: list[str] = []
+    sizes: list[float] = []
+    hover_texts: list[str] = []
 
     for marker in map_markers:
         score = marker["score"]
         tier = get_health_tier(score)
-        
+
         lats.append(marker["lat"])
         lons.append(marker["lon"])
-        names.append(marker["name"])
-        scores.append(score)
         colors.append(tier["color"])
-        descriptions.append(marker["description"])
-        
-        # Larger dot for lower scores (more risk = more attention needed)
-        sizes.append(max(15, 45 - score * 0.3))
+
+        # Risk-based sizing: troubled ports get larger dots (8–18 px).
+        sizes.append(max(8, 18 - score * 0.10))
+
+        hover_texts.append(
+            f"<b>{marker['name']}</b><br>{marker['description']}"
+        )
 
     fig = go.Figure(
         go.Scattergeo(
             lat=lats,
             lon=lons,
-            text=[
-                f"<b>{n}</b><br>Health: {s:.0f}{d}" 
-                for n, s, d in zip(names, scores, descriptions)
-            ],
+            text=hover_texts,
             hoverinfo="text",
+            mode="markers",
             marker={
                 "size": sizes,
                 "color": colors,
-                "line": {"width": 2, "color": "white"},
-                "opacity": 0.9,
+                "line": {"width": 1.5, "color": "rgba(255,255,255,0.6)"},
+                "opacity": 0.92,
             },
         )
     )
 
     fig.update_layout(
         title={
-            "text": "Major Shipping Hubs & Risk Status",
+            "text": "Major Shipping Ports & Risk Status",
             "font": {"size": 14, "color": COLORS["text"], "family": "Inter"},
             "x": 0,
             "xanchor": "left",
@@ -255,7 +240,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"t": 40, "b": 10, "l": 0, "r": 0},
-        height=300,
+        height=380,
         geo={
             "bgcolor": "rgba(0,0,0,0)",
             "showframe": False,
