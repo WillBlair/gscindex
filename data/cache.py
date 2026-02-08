@@ -18,10 +18,16 @@ Usage
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 
-_CACHE_DIR = Path(__file__).parent / ".cache"
+# Use /tmp in serverless environments (Vercel), otherwise local .cache
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    _CACHE_DIR = Path(tempfile.gettempdir()) / "supply_chain_cache"
+else:
+    _CACHE_DIR = Path(__file__).parent / ".cache"
 
 # Default TTL: 1 hour. Override per call if needed.
 DEFAULT_TTL_SECONDS = 3600
