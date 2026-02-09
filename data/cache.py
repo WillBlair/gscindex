@@ -18,10 +18,18 @@ Usage
 from __future__ import annotations
 
 import json
+import logging
 import os
+import pickle
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # Use /tmp in serverless environments (Vercel), otherwise local .cache
 if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
@@ -84,29 +92,81 @@ def clear_cache() -> None:
 
 # ── Pickle Support for Complex Objects (DataFrames, etc.) ──────────────────
 
-def get_cached_pickle(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> any:
-    """Return cached pickle data if it exists and hasn't expired."""
-    import pickle
-    path = _CACHE_DIR / f"{key}.pkl"
-    if not path.exists():
+def get_cached_pickle(key: str, ttl: int = 3600) -> Any | None:
+    """Retrieve a pickled object from cache if it exists and is fresh."""
+    filename = _get_cache_path(key, ext=".pkl")
+    if not filename.exists():
         return None
-
-    age_seconds = time.time() - path.stat().st_mtime
-    if age_seconds > ttl:
-        return None
-
+        
     try:
-        with open(path, "rb") as f:
+        mod_time = filename.stat().st_mtime
+        if (time.time() - mod_time) > ttl:
+            return None
+            
+        with open(filename, "rb") as f:
             return pickle.load(f)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Cache miss (pickle error) for {key}: {e}")
         return None
 
 
-def set_cached_pickle(key: str, data: any) -> None:
-    """Write arbitrary Python object to cache via pickle."""
-    import pickle
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _CACHE_DIR / f"{key}.pkl"
-    with open(path, "wb") as f:
-        pickle.dump(data, f)
+def set_cached_pickle(key: str, data: Any) -> None:
+    """Save an object to cache using pickle."""
+    filename = _get_cache_path(key, ext=".pkl")
+    try:
+        with open(filename, "wb") as f:
+            pickle.dump(data, f)
+    except Exception as e:
+        logger.warning(f"Failed to write cache (pickle) {key}: {e}")
 
+
+def set_cached_dashboard(data: dict) -> None:
+    """Save the full dashboard state as JSON (safe serialization).
+    
+    Converts complex types (Pandas Series/Index) to standard lists/strings
+    to avoid pickle dependency issues on production servers.
+    """
+    
+    safe_data = data.copy()
+    
+    # 1. Convert Index to list of strings
+    if "dates" in safe_data and isinstance(safe_data["dates"], pd.Index):
+        safe_data["dates"] = safe_data["dates"].strftime("%Y-%m-%d").tolist()
+        
+    # 2. Convert DataFrames/Series to primitive dictionaires/lists
+    if "category_history" in safe_data:
+        # Convert {cat: Series} -> {cat: list[float]}
+        safe_history = {}
+        for cat, series in safe_data["category_history"].items():
+            if isinstance(series, pd.Series):
+                safe_history[cat] = series.replace({np.nan: None}).tolist()
+            else:
+                safe_history[cat] = series
+        safe_data["category_history"] = safe_history
+
+    set_cached("dashboard_snapshot_safe", safe_data)
+
+
+def reconstruct_dashboard_state(data: dict) -> dict:
+    """Helper to reconstruct Pandas types from JSON-safe dashboard state."""
+    try:
+        if "dates" in data and data["dates"]:
+             data["dates"] = pd.to_datetime(data["dates"])
+            
+        if "category_history" in data and "dates" in data:
+            restored_history = {}
+            for cat, values in data["category_history"].items():
+                # Reconstruct Series using the datetime index
+                restored_history[cat] = pd.Series(values, index=data["dates"], name=cat)
+            data["category_history"] = restored_history
+        return data
+    except Exception as e:
+        logger.error(f"Failed to reconstruct dashboard state: {e}")
+        return data  # Return partial/best-effort data if reconstruction fails
+
+def get_cached_dashboard() -> dict | None:
+    """Retrieve the dashboard state from JSON and reconstruct Pandas objects."""
+    data = get_cached("dashboard_snapshot_safe", ttl=86400)
+    if not data:
+        return None
+    return reconstruct_dashboard_state(data)

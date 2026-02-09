@@ -398,38 +398,41 @@ def aggregate_data() -> dict:
         # If it takes longer, we'll proceed with whatever we have.
 
         # A. Process Providers
-        for future in concurrent.futures.as_completed(future_to_provider, timeout=20):
-            try:
-                # Unpack 5 values now
-                cat, score, hist_series, meta, err = future.result()
-                current_scores[cat] = score
-                
-                # Enrich metadata with calculated score and tier
-                if meta:
-                    meta["score"] = round(score, 1)
-                    meta["tier"] = get_health_tier(score)
-                else:
-                    meta = {"score": round(score, 1), "tier": get_health_tier(score)}
-
-                category_metadata[cat] = meta
-                
-                if err:
-                    provider_errors[cat] = err
-                
-                # Align history series
-                if hist_series is not None and not hist_series.empty:
-                    # Reindex handles filling missing dates with NaNs, then we ffill/bfill
-                    aligned = hist_series.reindex(dates, method="ffill")
-                    # Fill any remaining NaNs (e.g. at start) with current score
-                    aligned = aligned.fillna(score)
-                    category_history[cat] = aligned
-                else:
-                    # Fallback if history fetch failed
-                    category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)
+        try:
+            for future in concurrent.futures.as_completed(future_to_provider, timeout=45):
+                try:
+                    # Unpack 5 values now
+                    cat, score, hist_series, meta, err = future.result()
+                    current_scores[cat] = score
                     
-            except Exception as e:
-                # This catches timeouts or crashes in the wrapper
-                logger.error("A provider task failed unexpectedly: %s", e)
+                    # Enrich metadata with calculated score and tier
+                    if meta:
+                        meta["score"] = round(score, 1)
+                        meta["tier"] = get_health_tier(score)
+                    else:
+                        meta = {"score": round(score, 1), "tier": get_health_tier(score)}
+
+                    category_metadata[cat] = meta
+                    
+                    if err:
+                        provider_errors[cat] = err
+                    
+                    # Align history series
+                    if hist_series is not None and not hist_series.empty:
+                        # Reindex handles filling missing dates with NaNs, then we ffill/bfill
+                        aligned = hist_series.reindex(dates, method="ffill")
+                        # Fill any remaining NaNs (e.g. at start) with current score
+                        aligned = aligned.fillna(score)
+                        category_history[cat] = aligned
+                    else:
+                        # Fallback if history fetch failed
+                        category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)
+                        
+                except Exception as e:
+                    # This catches timeouts or crashes in the wrapper
+                    logger.error("A provider task failed unexpectedly: %s", e)
+        except concurrent.futures.TimeoutError:
+            logger.warning("Data fetch timed out. Some providers may be missing.")
 
         # B. Process News
         alerts = []
@@ -531,10 +534,11 @@ def aggregate_data() -> dict:
     }
 
     # Persist the full dashboard state to disk for instant startup
-    from data.cache import set_cached_pickle
+    # Persist the full dashboard state to disk for instant startup
+    from data.cache import set_cached_dashboard
     try:
-        set_cached_pickle("dashboard_snapshot", result)
-        logger.info("Dashboard state persisted to disk (pickle).")
+        set_cached_dashboard(result)
+        logger.info("Dashboard state persisted to disk (JSON/Safe).")
     except Exception as e:
         logger.warning("Failed to persist dashboard state: %s", e)
 
