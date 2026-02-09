@@ -49,32 +49,33 @@ _LAST_UPDATE = None
 _LOCK = threading.Lock()
 
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
-# Attempt to load the last known good state from disk so the app boots instantly.
-try:
-    from data.cache import get_cached_pickle
-    import pickle
-    
-    startup_data = None
-    
-    # 1. Try local cache (fresh from recent run)
-    startup_data = get_cached_pickle("dashboard_snapshot", ttl=86400)
-    
-    if startup_data:
-        logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state from cache.")
-    else:
-        # 2. Try committed fallback snapshot (for fresh deployments)
-        fallback_path = os.path.join(os.path.dirname(__file__), "data", "fallback_snapshot.pkl")
-        if os.path.exists(fallback_path):
-             with open(fallback_path, "rb") as f:
-                 startup_data = pickle.load(f)
-                 logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback snapshot.")
-
-    if startup_data:
-        _DATA_CACHE = startup_data
-        _LAST_UPDATE = datetime.now()
+# DISABLED TEMPORARILY: Suspected cause of production crash (Error 520).
+if False:
+    try:
+        from data.cache import get_cached_pickle
+        import pickle
         
-except Exception as e:
-    logging.getLogger(__name__).warning(f"Failed to load persisted state: {e}")
+        startup_data = None
+        
+        # 1. Try local cache (fresh from recent run)
+        startup_data = get_cached_pickle("dashboard_snapshot", ttl=86400)
+        
+        if startup_data:
+            logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state from cache.")
+        else:
+            # 2. Try committed fallback snapshot (for fresh deployments)
+            fallback_path = os.path.join(os.path.dirname(__file__), "data", "fallback_snapshot.pkl")
+            if os.path.exists(fallback_path):
+                with open(fallback_path, "rb") as f:
+                    startup_data = pickle.load(f)
+                    logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback snapshot.")
+
+        if startup_data:
+            _DATA_CACHE = startup_data
+            _LAST_UPDATE = datetime.now()
+            
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to load persisted state: {e}")
 
 
 def update_data_loop():
