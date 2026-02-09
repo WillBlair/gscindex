@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from dash import html
+from dash import html, dcc
 
 from config import CATEGORY_LABELS, COLORS
 
@@ -105,8 +105,8 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
                     ),
                     html.Div(
                         id="briefing-content",
-                        style={"fontSize": "13px", "lineHeight": "1.5", "color": "#1f2937"},
-                        children=[html.P(line) for line in briefing_text.split("\n") if line.strip()]
+                        style={"fontSize": "13px", "lineHeight": "1.6", "color": COLORS["text"]},
+                        children=[html.P(line, style={"marginBottom": "8px"}) for line in briefing_text.split("\n") if line.strip()]
                     ),
                     # Hidden button placeholder to prevent callback errors
                     html.Button(id="generate-briefing-btn", style={"display": "none"}),
@@ -138,29 +138,34 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
                             "letterSpacing": "0.5px"
                         }
                     ),
-                    html.Div(
-                        id="briefing-content",
-                        children=[
-                            html.P(
-                                "Click to generate an AI-powered summary of today's supply chain news.",
-                                style={"color": COLORS["text_muted"], "marginBottom": "12px", "fontSize": "13px"}
-                            ),
-                            html.Button(
-                                "Generate Briefing",
-                                id="generate-briefing-btn",
-                                style={
-                                    "backgroundColor": COLORS["accent"],
-                                    "color": "white",
-                                    "border": "none",
-                                    "borderRadius": "6px",
-                                    "padding": "10px 20px",
-                                    "fontSize": "13px",
-                                    "fontWeight": "600",
-                                    "cursor": "pointer",
-                                },
-                            ),
-                        ]
-                    ),
+                    dcc.Loading(
+                        id="briefing-loading",
+                        type="dot",
+                        color=COLORS["accent"],
+                        children=html.Div(
+                            id="briefing-content",
+                            children=[
+                                html.P(
+                                    "Click to generate an AI-powered summary of today's supply chain news.",
+                                    style={"color": COLORS["text_muted"], "marginBottom": "12px", "fontSize": "13px"}
+                                ),
+                                html.Button(
+                                    "Generate Briefing",
+                                    id="generate-briefing-btn",
+                                    style={
+                                        "backgroundColor": COLORS["accent"],
+                                        "color": "white",
+                                        "border": "none",
+                                        "borderRadius": "6px",
+                                        "padding": "10px 20px",
+                                        "fontSize": "13px",
+                                        "fontWeight": "600",
+                                        "cursor": "pointer",
+                                    },
+                                ),
+                            ]
+                        )
+                    )
                 ]
             )
         )

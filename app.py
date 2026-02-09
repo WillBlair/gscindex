@@ -208,7 +208,7 @@ def create_app() -> dash.Dash:
         if result["success"] and result["briefing"]:
             # Return formatted briefing content
             return [
-                html.P(line, style={"color": "#1f2937"}) 
+                html.P(line, style={"marginBottom": "8px"}) 
                 for line in result["briefing"].split("\n") 
                 if line.strip()
             ]
