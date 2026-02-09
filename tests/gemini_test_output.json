@@ -1,0 +1,115 @@
+{
+  "generated_at": "2026-02-08T23:48:05.137413",
+  "port_summaries": {
+    "Houston": "Moderate congestion persists due to ongoing import volumes, particularly in container handling. Expect some delays for vessel berthing.",
+    "New York": "Operating with minor delays due to equipment availability and labor shortages. Overall throughput is slightly below average for this time of year.",
+    "Los Angeles": "Significant improvements in congestion, but some delays remain for specific terminals. Yard utilization is still high, impacting fluidity.",
+    "Savannah": "Experiencing high container dwell times, leading to moderate congestion. Chassis availability remains a concern.",
+    "Vancouver": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Colon": "Operating normally with standard transit times through the Panama Canal. No major incidents reported.",
+    "Manzanillo": "Experiencing moderate congestion due to increased volumes. Expect some delays for vessel berthing and cargo processing.",
+    "Santos": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Buenos Aires": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Rotterdam": "Operations normal with standard throughput. No significant delays reported.",
+    "Hamburg": "Experiencing some congestion due to increased import volumes. Expect moderate delays for vessel berthing.",
+    "Antwerp": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Felixstowe": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Piraeus": "Operating normally with standard throughput. No significant delays reported.",
+    "Algeciras": "Experiencing moderate congestion due to increased transshipment volumes. Expect some delays for vessel berthing.",
+    "Gdansk": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Shanghai": "Moderate congestion due to increased export volumes. Average wait times around 12 hours.",
+    "Hong Kong": "Operating normally with standard throughput. No significant delays reported.",
+    "Busan": "Experiencing some congestion due to increased transshipment volumes. Expect moderate delays for vessel berthing.",
+    "Qingdao": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Tokyo": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Kaohsiung": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Singapore": "Operating at high capacity with minor delays. Increased transshipment volumes are contributing to congestion.",
+    "Laem Chabang": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Port Klang": "Experiencing moderate congestion due to increased volumes. Expect some delays for vessel berthing and cargo processing.",
+    "Mumbai": "Experiencing moderate congestion due to increased import volumes. Expect some delays for vessel berthing.",
+    "Chennai": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Colombo": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Dubai": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Jeddah": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Durban": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Mombasa": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Djibouti": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Lagos": "Experiencing significant congestion due to infrastructure limitations and high import volumes. Expect substantial delays.",
+    "Port Said": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Sydney": "Normal operations reported. No significant delays or disruptions are currently impacting throughput.",
+    "Melbourne": "Normal operations reported. No significant delays or disruptions are currently impacting throughput."
+  },
+  "map_markers_count": 37,
+  "sample_markers": [
+    {
+      "name": "Houston",
+      "lat": 29.76,
+      "lon": -95.37,
+      "score": 89.7,
+      "description": "Score: 90/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 16\u00b0C, Clear sky (score: 100)<br><b>Status:</b> Moderate congestion persists due to ongoing import volumes, particularly in container handling. Expect some delays for vessel berthing.<br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>[MEDIUM]</b> Netanyahu to Meet Trump Wednesday, Insists Iran Talks Incl...<br>   Very negative (-3.18) \u00b7 Regional impact"
+    },
+    {
+      "name": "New York",
+      "lat": 40.68,
+      "lon": -74.04,
+      "score": 56.1,
+      "description": "Score: 56/100 \u2014 <b>Elevated Risk</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> -12\u00b0C, Clear sky, Wind 14 km/h (score: 44)<br><b>Status:</b> Operating with minor delays due to equipment availability and labor shortages. Overall throughput is slightly below average for this time of year.<br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>[MEDIUM]</b> Netanyahu to Meet Trump Wednesday, Insists Iran Talks Incl...<br>   Very negative (-3.18) \u00b7 Regional impact"
+    },
+    {
+      "name": "Los Angeles",
+      "lat": 33.75,
+      "lon": -118.27,
+      "score": 89.7,
+      "description": "Score: 90/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 15\u00b0C, Clear sky (score: 100)<br><b>Status:</b> Significant improvements in congestion, but some delays remain for specific terminals. Yard utilization is still high, impacting fluidity.<br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>[MEDIUM]</b> Netanyahu to Meet Trump Wednesday, Insists Iran Talks Incl...<br>   Very negative (-3.18) \u00b7 Regional impact"
+    },
+    {
+      "name": "Savannah",
+      "lat": 32.08,
+      "lon": -81.09,
+      "score": 78.2,
+      "description": "Score: 78/100 \u2014 <b>Moderate Risk</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 2\u00b0C, Mainly clear (score: 81)<br><b>Status:</b> Experiencing high container dwell times, leading to moderate congestion. Chassis availability remains a concern.<br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>[MEDIUM]</b> Netanyahu to Meet Trump Wednesday, Insists Iran Talks Incl...<br>   Very negative (-3.18) \u00b7 Regional impact"
+    },
+    {
+      "name": "Vancouver",
+      "lat": 49.29,
+      "lon": -123.11,
+      "score": 85.5,
+      "description": "Score: 86/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 4\u00b0C, Mainly clear (score: 86)<br><b>Status:</b> Normal operations reported. No significant delays or disruptions are currently impacting throughput."
+    },
+    {
+      "name": "Colon",
+      "lat": 9.36,
+      "lon": -79.9,
+      "score": 88.9,
+      "description": "Score: 89/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 25\u00b0C, Overcast, Wind 12 km/h (score: 92)<br><b>Status:</b> Operating normally with standard transit times through the Panama Canal. No major incidents reported."
+    },
+    {
+      "name": "Manzanillo",
+      "lat": 19.05,
+      "lon": -104.32,
+      "score": 92.5,
+      "description": "Score: 92/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 23\u00b0C, Partly cloudy (score: 98)<br><b>Status:</b> Experiencing moderate congestion due to increased volumes. Expect some delays for vessel berthing and cargo processing."
+    },
+    {
+      "name": "Santos",
+      "lat": -23.96,
+      "lon": -46.33,
+      "score": 90.7,
+      "description": "Score: 91/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 20\u00b0C, Overcast (score: 95)<br><b>Status:</b> Normal operations reported. No significant delays or disruptions are currently impacting throughput."
+    },
+    {
+      "name": "Buenos Aires",
+      "lat": -34.6,
+      "lon": -58.38,
+      "score": 93.7,
+      "description": "Score: 94/100 \u2014 <b>Healthy</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 22\u00b0C, Mainly clear (score: 100)<br><b>Status:</b> Normal operations reported. No significant delays or disruptions are currently impacting throughput."
+    },
+    {
+      "name": "Rotterdam",
+      "lat": 51.92,
+      "lon": 4.48,
+      "score": 77.9,
+      "description": "Score: 78/100 \u2014 <b>Moderate Risk</b><br>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500<br><b>Weather:</b> 2\u00b0C, Overcast, Wind 12 km/h (score: 74)<br><b>Status:</b> Operations normal with standard throughput. No significant delays reported."
+    }
+  ]
+}

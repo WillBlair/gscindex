@@ -34,11 +34,15 @@ class BaseProvider(ABC):
     category: str = ""
 
     @abstractmethod
-    def fetch_current(self) -> float:
-        """Return the current category score (0–100, 100 = healthiest).
+    def fetch_current(self) -> tuple[float, dict]:
+        """Return the current category score and metadata.
 
-        Implementations should handle API errors gracefully and return
-        the last known good value when a fetch fails.
+        Returns
+        -------
+        tuple[float, dict]
+            (score, metadata_dict)
+            Score is 0–100 (100 = healthiest).
+            Metadata contains keys like "source", "raw_value", "description".
         """
 
     @abstractmethod

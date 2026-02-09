@@ -400,7 +400,20 @@ class WeatherProvider(BaseProvider):
 
         avg_score = round(float(np.mean(hub_scores)), 1)
         set_cached(cache_key, {"score": avg_score})
-        return avg_score
+        
+        # Count bad weather events for the description
+        bad_weather_count = sum(1 for s in hub_scores if s < 80)
+        
+        return avg_score, {
+            "source": "Open-Meteo API",
+            "raw_value": f"{len(_SHIPPING_HUBS)} Major Hubs",
+            "raw_label": "Global Port Weather",
+            "description": (
+                f"Real-time weather analysis of {len(_SHIPPING_HUBS)} major shipping hubs. "
+                f"Currently tracking {bad_weather_count} locations with suboptimal operating conditions."
+            ),
+            "updated": "Live"
+        }
 
     def fetch_history(self, days: int) -> pd.Series:
         """Fetch historical weather from Open-Meteo, averaged across all hubs."""

@@ -63,28 +63,37 @@ Return a JSON object with this exact schema:
             "summary": "1-sentence summary of the supply chain impact",
             "reasoning": "Why relevant or irrelevant"
         }
-    ]
+    ],
+    "briefing": "• Bullet 1\\n• Bullet 2\\n• Bullet 3"
 }
+
+The "briefing" field should be a 3-bullet executive summary of the most important supply chain developments.
+Focus on: Disruptions, Risks, and Major Market Moves. Be punchy and concise.
 """
 
-def analyze_news_batch(articles: list[dict]) -> dict[int, dict]:
+
+def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
     """
     Analyze a batch of articles using Gemini Flash.
+    
+    Returns both analysis AND briefing in a single API call to reduce usage.
     
     Args:
         articles: List of dicts checks {"id": int, "title": str, "description": str}
         
     Returns:
-        Dict mapping article_id -> analysis_dict
+        Tuple of (analysis_map, briefing_text)
+        - analysis_map: Dict mapping article_id -> analysis_dict
+        - briefing_text: 3-bullet executive summary
     """
     if not api_key:
-        return {}
+        return {}, ""
         
     if not articles:
-        return {}
+        return {}, ""
 
     # detailed usage logging
-    logger.info(f"Sending {len(articles)} articles to Gemini for analysis...")
+    logger.info(f"Sending {len(articles)} articles to Gemini for analysis + briefing...")
 
     model = genai.GenerativeModel(
         model_name="gemini-flash-latest",
@@ -107,12 +116,15 @@ def analyze_news_batch(articles: list[dict]) -> dict[int, dict]:
         analysis_map = {}
         for item in result.get("analysis", []):
             analysis_map[item["id"]] = item
-            
-        return analysis_map
+        
+        # Extract briefing from same response
+        briefing = result.get("briefing", "")
+        
+        return analysis_map, briefing
         
     except Exception as e:
         logger.error(f"Gemini API Analysis failed: {e}")
-        return {}
+        return {}, ""
 
 def generate_briefing(articles: list[dict]) -> str:
     """

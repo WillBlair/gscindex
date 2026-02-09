@@ -15,10 +15,14 @@ unnecessary API calls during rapid reloads.
 from __future__ import annotations
 
 import logging
+import os
+import threading
+import time
+from datetime import datetime
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, html
+from dash import Input, Output, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
@@ -36,6 +40,53 @@ logging.basicConfig(
 )
 
 
+# ── Background Data Fetching ─────────────────────────────────────────
+# Fetch data in a background thread so page loads are instant.
+# --------------------------------------------------------------------
+
+_DATA_CACHE = None
+_LAST_UPDATE = None
+_LOCK = threading.Lock()
+
+# ── Load Persisted State (Fast Startup) ──────────────────────────────
+# Attempt to load the last known good state from disk so the app boots instantly.
+try:
+    from data.cache import get_cached_pickle
+    # Allow data up to 24 hours old for startup (better than a loading screen)
+    startup_data = get_cached_pickle("dashboard_snapshot", ttl=86400)
+    if startup_data:
+        _DATA_CACHE = startup_data
+        _LAST_UPDATE = datetime.now()
+        logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state from disk.")
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Failed to load persisted state: {e}")
+
+
+def update_data_loop():
+    """Background loop that refreshes data every 5 minutes."""
+    global _DATA_CACHE, _LAST_UPDATE
+    
+    logger = logging.getLogger("DataUpdater")
+    logger.info("Starting background data updater...")
+    
+    while True:
+        try:
+            logger.info("Fetching fresh data from all providers...")
+            new_data = aggregate_data()
+            
+            with _LOCK:
+                _DATA_CACHE = new_data
+                _LAST_UPDATE = datetime.now()
+            
+            logger.info("Data update complete. Sleeping for 5 minutes.")
+            
+            # Use sleep for the interval. 
+            time.sleep(300) 
+            
+        except Exception as e:
+            logger.error(f"Data update failed: {e}")
+            time.sleep(60) # Retry sooner on failure
+
 def create_app() -> dash.Dash:
     """Factory function that creates and configures the Dash application."""
     app = dash.Dash(
@@ -51,30 +102,55 @@ def create_app() -> dash.Dash:
         suppress_callback_exceptions=True,
     )
 
-    # ── Layout as a function: re-executes on every page load ────────────
-    # This means every browser refresh fetches fresh data (subject to cache TTL).
+    # ── Layout as a function: Reads from memory instantly ────────────────
     def serve_layout():
-        try:
-            data = aggregate_data()
-            if data.get("provider_errors"):
-                for cat, err in data["provider_errors"].items():
-                    logging.getLogger(__name__).warning(
-                        "Category '%s' using fallback: %s", cat, err
+        with _LOCK:
+            data = _DATA_CACHE
+            last_upd = _LAST_UPDATE
+            
+        if data is None:
+            # Show a "Booting" screen if data isn't ready yet
+            return html.Div(
+                style={
+                    "display": "flex", 
+                    "justifyContent": "center", 
+                    "alignItems": "center", 
+                    "height": "100vh",
+                    "backgroundColor": "#1a1d26",
+                    "color": "white",
+                    "fontFamily": "Inter, sans-serif"
+                },
+                children=[
+                    html.Div(
+                        style={"textAlign": "center"},
+                        children=[
+                            html.H1("System Initializing...", style={"marginBottom": "20px"}),
+                            html.P("Fetching global supply chain data. Please wait.", style={"opacity": "0.7"}),
+                            dcc.Interval(id="boot-check", interval=2000, n_intervals=0), # Check every 2s
+                            html.Div(id="boot-trigger") # callback dummy
+                        ]
                     )
-            return build_layout(data)
-        except Exception as e:
-            import traceback
-            logging.error("Error loading layout: %s", e)
-            return html.Div([
-                html.H1("Error loading layout"),
-                html.Pre(traceback.format_exc(), style={"color": "red", "whiteSpace": "pre-wrap"})
-            ], style={"padding": "20px", "backgroundColor": "#1a1d26", "color": "white"})
+                ]
+            )
+
+        # Retrieve errors to log
+        if data.get("provider_errors"):
+            for cat, err in data["provider_errors"].items():
+                logging.getLogger(__name__).warning(
+                    "Category '%s' using fallback: %s", cat, err
+                )
+                
+        # Build the actual dashboard
+        layout = build_layout(data)
+        
+        # Add a timestamp footer or indicator if desired? 
+        # For now just return the layout.
+        return layout
 
     app.layout = serve_layout
-
-    # ── Auto-refresh: reload the page every 5 minutes ───────────────────
-    # The dcc.Interval fires every 5 min, the clientside callback reloads
-    # the page so serve_layout() runs again with fresh data.
+    
+    # Client-side auto-refresh (reload page) every 5 minutes 
+    # to pick up the new data from the backend
     app.clientside_callback(
         """
         function(n) {
@@ -87,6 +163,160 @@ def create_app() -> dash.Dash:
         Output("refresh-trigger", "children"),
         Input("refresh-interval", "n_intervals"),
     )
+    
+    # Callback to auto-reload the "Booting" page once data is ready
+    @app.callback(
+        Output("boot-trigger", "children"),
+        Input("boot-check", "n_intervals")
+    )
+    def check_boot_status(n):
+        if _DATA_CACHE is not None:
+            return dcc.Location(pathname="/", id="reload-on-boot", refresh=True)
+        return dash.no_update
+
+    # ── Generate Briefing On-Demand (Option 5: User-Triggered) ───────────
+    @app.callback(
+        Output("briefing-content", "children"),
+        Input("generate-briefing-btn", "n_clicks"),
+        prevent_initial_call=True
+    )
+    def generate_briefing_callback(n_clicks):
+        """Generate AI briefing only when user clicks the button."""
+        if not n_clicks:
+            return dash.no_update
+        
+        from api.briefing import get_on_demand_briefing
+        from config import COLORS
+        
+        result = get_on_demand_briefing()
+        
+        if result["success"] and result["briefing"]:
+            # Return formatted briefing content
+            return [
+                html.P(line, style={"color": "#1f2937"}) 
+                for line in result["briefing"].split("\n") 
+                if line.strip()
+            ]
+        else:
+            # Return error message
+            return html.P(
+                result.get("error", "Failed to generate briefing. Please try again later."),
+                style={"color": COLORS["red"], "fontSize": "13px"}
+            )
+
+    # ── Modal Interaction Callback ──────────────────────────────────────
+    from dash import ALL, ctx
+    from config import CATEGORY_LABELS, CATEGORY_WEIGHTS
+
+    @app.callback(
+        Output("details-modal", "is_open"),
+        Output("modal-header", "children"),
+        Output("modal-body", "children"),
+        Input("modal-close", "n_clicks"),
+        [Input(f"card-{cat}", "n_clicks") for cat in CATEGORY_WEIGHTS],
+        Input("category-metadata-store", "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_modal(close_clicks, *args):
+        # args = (card_click_1, ..., card_click_N, metadata)
+        # We need *args because the number of cards (and thus Inputs) is dynamic
+        # based on config.CATEGORY_WEIGHTS.
+        metadata = args[-1]
+        
+        import traceback
+        
+        try:
+            triggered = ctx.triggered_id
+            
+            # If closed via button
+            if triggered == "modal-close":
+                return False, dash.no_update, dash.no_update
+                
+            # If clicked a card
+            # triggered will be "card-energy", "card-ports", etc.
+            if triggered and triggered.startswith("card-"):
+                # Safety check for metadata
+                if metadata is None:
+                    logging.error("Metadata is None in callback!")
+                    metadata = {}
+
+                cat = triggered.replace("card-", "")
+                meta = metadata.get(cat, {})
+                
+                label = CATEGORY_LABELS.get(cat, cat.title())
+                
+                # Build Metadata Content
+                tier = meta.get("tier", {})
+                score = meta.get("score", "N/A")
+                tier_color = tier.get("color", "#ffffff")
+                tier_label = tier.get("label", "Unknown")
+
+                # Progress bar style visual for score
+                progress_style = {
+                    "width": f"{score}%" if isinstance(score, (int, float)) else "0%",
+                    "height": "8px",
+                    "backgroundColor": tier_color,
+                    "borderRadius": "4px",
+                    "marginTop": "5px"
+                }
+
+                content = html.Div([
+                    # Top Section: Score & Tier
+                    html.Div([
+                        html.Div([
+                            html.H6("Index Score", style={"color": "#9ca3af", "marginBottom": "0"}),
+                            html.H1(f"{score}", style={"fontWeight": "900", "fontSize": "48px", "color": tier_color, "margin": "0"}),
+                            html.Div(style=progress_style),
+                        ], style={"flex": "1"}),
+                        
+                        html.Div([
+                            html.H6("Health Tier", style={"color": "#9ca3af", "marginBottom": "5px"}),
+                            dbc.Badge(tier_label, color="light", style={
+                                "backgroundColor": tier_color, 
+                                "color": "#000" if tier_label in ["Healthy", "Stable"] else "#fff",
+                                "fontSize": "18px", 
+                                "padding": "8px 12px"
+                            }),
+                        ], style={"flex": "1", "textAlign": "right"})
+                    ], style={"display": "flex", "alignItems": "center", "marginBottom": "25px", "paddingBottom": "20px", "borderBottom": "1px solid #2a2d3a"}),
+
+                    # Middle Section: Raw Data & Source
+                    html.H5("Underlying Data", style={"color": "#fff", "fontWeight": "bold", "marginBottom": "15px"}),
+                    html.Div([
+                        html.Div([
+                            html.Span("Raw Value", style={"color": "#9ca3af", "fontSize": "14px"}),
+                            html.H3(meta.get("raw_value", "N/A"), style={"fontWeight": "bold", "marginTop": "5px"}),
+                        ], style={"flex": "1"}),
+                        html.Div([
+                            html.Span("Data Source", style={"color": "#9ca3af", "fontSize": "14px"}),
+                            html.P(meta.get("source", "Unknown"), style={"fontWeight": "500", "marginTop": "5px", "color": "#6366f1"}),
+                        ], style={"flex": "1"})
+                    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px", "backgroundColor": "#1a1d26", "padding": "15px", "borderRadius": "8px"}),
+                    
+                    # Bottom Section: Reasoning
+                    html.H5("Analysis", style={"color": "#fff", "fontWeight": "bold", "marginBottom": "10px"}),
+                    html.P(meta.get("description", "No detailed description available."), style={"fontSize": "15px", "lineHeight": "1.6", "color": "#d1d5db", "marginBottom": "25px"}),
+
+                    # Extra Bottom Section: Math / Calculation Logic
+                    html.H5("Scoring Logic", style={"color": "#fff", "fontWeight": "bold", "marginBottom": "10px"}),
+                    html.Div(
+                        html.Code(meta.get("calculation", "Calculation logic not available."), style={"color": "#a5b4fc", "fontFamily": "monospace"}),
+                        style={"backgroundColor": "#1e1b4b", "padding": "15px", "borderRadius": "8px", "border": "1px solid #4338ca"}
+                    ),
+                    
+                    html.Hr(style={"borderColor": "#2a2d3a", "marginTop": "20px"}),
+                    html.Small(f"Raw Label: {meta.get('raw_label', '')} | Last Updated: {meta.get('updated', 'Unknown')}", style={"color": "#6b7280"})
+                ])
+                
+                # Use html.H5 instead of dbc.ModalTitle for safety
+                return True, html.H5(f"{label} Details"), content
+                
+            return False, dash.no_update, dash.no_update
+            
+        except Exception as e:
+            logging.error(f"Callback Error: {e}")
+            logging.error(traceback.format_exc())
+            return False, dash.no_update, dash.no_update
 
     return app
 
@@ -96,6 +326,13 @@ def create_app() -> dash.Dash:
 # Create the app globally so Gunicorn can find it
 app = create_app()
 server = app.server  # Expose the Flask server for Gunicorn
+
+# Start background thread ONLY if not already running (reloader protection)
+# In production (gunicorn), this runs once per worker.
+if not os.environ.get("WERKZEUG_RUN_MAIN") or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    # Simple check to prevent double threads in debug mode
+    bg_thread = threading.Thread(target=update_data_loop, daemon=True)
+    bg_thread.start()
 
 if __name__ == "__main__":
     # This block only runs when you run "python app.py" locally

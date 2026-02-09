@@ -92,6 +92,7 @@ def _sparkline(series: pd.Series, color: str) -> go.Figure:
 def build_category_cards(
     current_scores: dict[str, float],
     category_history: dict[str, pd.Series],
+    metadata: dict[str, dict] | None = None,
 ) -> list:
     """Build a list of 'Tech HUD' card components for all categories.
 
@@ -101,6 +102,8 @@ def build_category_cards(
         Latest score per category.
     category_history : dict[str, pd.Series]
         Full history per category.
+    metadata : dict[str, dict], optional
+        Metadata/Context per category (source, raw values).
 
     Returns
     -------
@@ -109,16 +112,26 @@ def build_category_cards(
     """
     from dash import dcc  # deferred to avoid circular imports during load
 
+    if metadata is None:
+        metadata = {}
+
     cards = []
     for cat in CATEGORY_WEIGHTS:
-        score = current_scores[cat]
+        score = current_scores.get(cat, 0.0)
         tier = get_health_tier(score)
-        history = category_history[cat]
+        history = category_history.get(cat, pd.Series(dtype=float))
+        meta = metadata.get(cat, {})
         
+        # Extract raw label (e.g. "Matson (Port Ops)")
+        # Truncate if super long to avoid blowing up layout
+        raw_label = meta.get("raw_label", "")
+        if len(raw_label) > 25:
+            raw_label = raw_label[:23] + ".."
+
         # 30-day stats
         recent = history.tail(30)
-        min_val = recent.min()
-        max_val = recent.max()
+        min_val = recent.min() if not recent.empty else 0.0
+        max_val = recent.max() if not recent.empty else 0.0
 
         # Daily change
         if len(history) >= 2:
@@ -135,6 +148,9 @@ def build_category_cards(
         # Technical HUD Card
         card = html.Div(
             className="tech-card",
+            id=f"card-{cat}",
+            n_clicks=0,
+            style={"cursor": "pointer"}, # Indicate clickability
             children=[
                 # Top decorative bar (like a bezel)
                 html.Div(className="tech-card-bezel"),
@@ -143,7 +159,13 @@ def build_category_cards(
                 html.Div(
                     className="tech-card-header",
                     children=[
-                        html.Span(CATEGORY_LABELS[cat], className="tech-label"),
+                        html.Div([
+                            html.Span(CATEGORY_LABELS[cat], className="tech-label"),
+                            # Sub-label for context (e.g. "Matson")
+                            html.Div(raw_label, className="tech-sublabel", style={
+                                "fontSize": "11px", "color": "#6b7280", "marginTop": "2px"
+                            }) if raw_label else None
+                        ]),
                         html.Span(f"W:{weight_pct:02d}%", className="tech-weight"),
                     ],
                 ),

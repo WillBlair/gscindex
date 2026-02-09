@@ -34,7 +34,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from data.cache import get_cached, set_cached
 from data.providers.base import BaseProvider
-from data.ai_analyst import analyze_news_batch, generate_briefing
+from data.ai_analyst import analyze_news_batch
 
 # ...
 
@@ -138,7 +138,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
         (score, alerts, briefing_text)
     """
     cache_key = "newsapi_briefing_v4"
-    cached = get_cached(cache_key, ttl=1800)  # 30-min cache
+    cached = get_cached(cache_key, ttl=14400)  # 4-hour cache (reduced API usage)
     if cached is not None:
         return cached["score"], cached["alerts"], cached.get("briefing", "")
 
@@ -167,7 +167,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
         articles = resp.json().get("articles", [])
     except Exception as e:
         logger.error(f"NewsAPI fetch failed: {e}")
-        return 75.0, []
+        return 75.0, [], ""
 
     # 2. Pre-filter and Prepare for AI
     candidates = []
@@ -193,11 +193,12 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
     # Limit to top 15 for AI analysis to avoid rate limits/latency
     ai_candidates = candidates[:15]
     
-    # 3. Analyze with Gemini
-    ai_results = analyze_news_batch(ai_candidates)
+    # 3. Analyze with Gemini (single call returns both analysis AND briefing)
+    ai_results, ai_briefing = analyze_news_batch(ai_candidates)
     
     alerts = []
     severity_sum = 0.0
+    briefing_text = ai_briefing  # Use briefing from consolidated API call
     
     # Process AI results
     if ai_results:
@@ -228,6 +229,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
     else:
         # Fallback to VADER if AI fails or returns nothing
         logger.warning("AI analysis failed or returned empty. Using VADER fallback.")
+        briefing_text = ""  # No briefing available in fallback mode
         for article in candidates[:15]:
             title = article["title"]
             desc = article["description"]
@@ -258,11 +260,6 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
     # Sort alerts by severity (lowest score = highest risk)
     alerts.sort(key=lambda a: (a["sentiment"], a["timestamp"]), reverse=False) # Ascending sentiment (negative first)
 
-    # Generate Briefing from top 10 relevant alerts
-    briefing_text = ""
-    if alerts:
-        briefing_text = generate_briefing(alerts[:10])
-
     result = {
         "score": round(final_score, 1),
         "alerts": alerts,
@@ -278,32 +275,95 @@ class GeopoliticalProvider(BaseProvider):
 
     category = "geopolitical"
 
-    def fetch_current(self) -> float:
-        score, _, _ = fetch_supply_chain_news()
-        return score
+    def fetch_current(self) -> tuple[float, dict]:
+        score, alerts, _ = fetch_supply_chain_news()
+        
+        # Calculate recent negative news count
+        high_sev = sum(1 for a in alerts if a['severity'] == 'high')
+        med_sev = sum(1 for a in alerts if a['severity'] == 'medium')
+        
+        return score, {
+            "source": "NewsAPI + VADER Sentiment",
+            "raw_value": f"{len(alerts)} articles",
+            "raw_label": "Analyzed News Volume",
+            "description": (
+                f"Analyzed recent supply chain news. Found {high_sev} high-severity "
+                f"and {med_sev} medium-severity risk events affecting the score."
+            ),
+            "calculation": (
+                "Score = 85 - (Total VADER Negativity). "
+                "We start at 85 (perfect stability is rare). "
+                "Each negative news article deducts points based on its severity "
+                "(High = -8, Medium = -4). "
+                "Historical trend is modeled using the VIX Volatility Index."
+            ),
+            "updated": "Live"
+        }
 
     def fetch_history(self, days: int) -> pd.Series:
-        """NewsAPI free tier only covers the last few days.
+        """Fetch historical VIX (Volatility Index) as a proxy for geopolitical risk.
 
-        Returns a synthetic series anchored to the current score with
-        realistic day-to-day variance. For real long-term history, you'd
-        need a paid news archive or GDELT.
+        We align the VIX series so that the *last* point (today) matches our
+        actual NewsAPI-derived score. This ensures the trend looks real (it is)
+        but the absolute level reflects current supply chain news sentiment.
         """
-        current = self.fetch_current()
+        from data.providers.fred_client import fetch_fred_series
+        
+        # 1. Get current score (anchor point)
+        # Handle tuple return from fetch_current
+        current_result = self.fetch_current()
+        if isinstance(current_result, tuple):
+            current_score = current_result[0]
+        else:
+            current_score = current_result
+
+        try:
+            # We fetch a bit more history than needed to ensure we have enough data points
+            # after dropping NaNs and alignment.
+            vix = fetch_fred_series("VIXCLS", lookback_days=days + 60)
+            
+            # 2. Normalize (Inverted: Low VIX is good)
+            # We use a fixed "reasonable" range for VIX normalization to keep it consistent
+            # Low: 10 (very calm), High: 60 (crisis like 2008/2020)
+            # This is better than min/max because VIX can spike hugely.
+            # a VIX of 10 -> Score 100
+            # a VIX of 35 -> Score 50
+            # a VIX of 60 -> Score 0
+            # Formula: Score = 120 - 2 * VIX (clipped 0-100)
+            #   10 -> 100
+            #   35 -> 50
+            #   60 -> 0
+            vix_score = (120 - 2 * vix).clip(0, 100)
+            
+            # 3. Align to current score
+            # We want the shape of the VIX, but the level of our NewsAPI score.
+            if not vix_score.empty:
+                latest_vix = vix_score.iloc[-1]
+                delta = current_score - latest_vix
+                
+                # Apply delta to the whole series
+                adjusted_score = (vix_score + delta).clip(0, 100)
+                
+                # Resample to daily (VIX is trading days only) and fill gaps
+                dates = pd.date_range(
+                    end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
+                    periods=days,
+                    freq="D",
+                )
+                aligned = adjusted_score.reindex(dates, method="ffill")
+                
+                # Force the last point to be exactly our current score (integrity check)
+                aligned.iloc[-1] = current_score
+                
+                return aligned.rename("geopolitical")
+
+        except Exception as e:
+            logger.warning("Failed to fetch VIX history: %s", e)
+
+        # Fallback: Flat line at current score
         dates = pd.date_range(
             end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
             periods=days,
             freq="D",
         )
-        rng = np.random.default_rng(seed=int(current * 100) + days)
-        # Simulate realistic day-to-day news sentiment variance
-        daily_noise = rng.normal(0, 2.5, size=days)
-        values = np.empty(days)
-        values[0] = current + rng.normal(0, 3)
-        for i in range(1, days):
-            # Mean-revert toward current score with noise
-            pull = 0.08 * (current - values[i - 1])
-            values[i] = values[i - 1] + pull + daily_noise[i]
-        values = np.clip(values, 0, 100)
-        values[-1] = current  # pin today's value
-        return pd.Series(values.round(1), index=dates, name="geopolitical")
+        return pd.Series(current_score, index=dates, name="geopolitical")

@@ -32,7 +32,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "tariffs":             "Trade & Tariffs",
     "shipping":            "Shipping Rates",
     "geopolitical":        "Geopolitical Risk",
-    "demand":              "Demand & Inventory",
+    "demand":              "Industrial Demand Stress",
     "chokepoint":          "Critical Chokepoint",
 }
 

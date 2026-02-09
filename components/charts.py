@@ -241,6 +241,13 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"t": 40, "b": 10, "l": 0, "r": 0},
         height=380,
+        hoverlabel={
+            "bgcolor": COLORS["card"],
+            "bordercolor": COLORS["card_border"],
+            "font": {"family": "Inter", "size": 12, "color": COLORS["text"]},
+            "align": "left",
+            "namelength": -1,
+        },
         geo={
             "bgcolor": "rgba(0,0,0,0)",
             "showframe": False,

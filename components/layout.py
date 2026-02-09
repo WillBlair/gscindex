@@ -24,7 +24,7 @@ Layout structure:
 from __future__ import annotations
 
 from datetime import datetime
-
+import dash_bootstrap_components as dbc
 from dash import dcc, html
 
 from components.cards import build_category_cards
@@ -72,11 +72,13 @@ def build_layout(data: dict) -> html.Div:
 
     # Build sub-components
     gauge_fig = build_gauge_figure(composite, delta)
-    category_cards = build_category_cards(current_scores, category_history)
+    category_metadata = data.get("category_metadata", {})
+    category_cards = build_category_cards(current_scores, category_history, category_metadata)
     trend_fig = build_history_chart(category_history)
     health_panel = build_category_panel(current_scores)
     map_fig = build_world_map(map_markers)
-    alerts_panel = build_alerts_feed(alerts)
+    briefing = data.get("briefing", "")
+    alerts_panel = build_alerts_feed(alerts, briefing_text=briefing)
     disruptions_panel = build_disruptions_table(disruptions)
     market_panel = build_market_costs_panel(market_data)
 
@@ -192,6 +194,25 @@ def build_layout(data: dict) -> html.Div:
                         className="footer-text",
                     ),
                 ],
+            ),
+            
+            # ── Hidden Data Stores ──────────────────────────────────
+            dcc.Store(id="category-metadata-store", data=data.get("category_metadata", {})),
+            
+            # ── Detail Modal ────────────────────────────────────────
+            dbc.Modal(
+                [
+                    dbc.ModalHeader(dbc.ModalTitle("Category Details"), id="modal-header"),
+                    dbc.ModalBody(id="modal-body"),
+                    dbc.ModalFooter(
+                        dbc.Button("Close", id="modal-close", className="ms-auto", n_clicks=0)
+                    ),
+                ],
+                id="details-modal",
+                is_open=False,
+                size="lg",  # Large modal
+                centered=True,
+                className="dark-modal" # Custom class for dark theme styling
             ),
         ],
     )

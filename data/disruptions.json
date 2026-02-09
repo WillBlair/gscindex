@@ -1,0 +1,13 @@
+[
+  {
+    "event": "Shipping",
+    "region": "Global",
+    "impact_score": -4.0,
+    "categories": [
+      "shipping"
+    ],
+    "started": "2026-02-08",
+    "status": "Active",
+    "summary": "Drought-induced restrictions and blockages in the Panama Canal are causing major delays for global container shipping."
+  }
+]

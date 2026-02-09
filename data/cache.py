@@ -74,8 +74,39 @@ def set_cached(key: str, data: dict | list) -> None:
     path.write_text(json.dumps(data, default=str))
 
 
+
 def clear_cache() -> None:
     """Delete all cached files. Useful for forcing a full refresh."""
     if _CACHE_DIR.exists():
-        for f in _CACHE_DIR.glob("*.json"):
+        for f in _CACHE_DIR.glob("*"):
             f.unlink()
+
+
+# ── Pickle Support for Complex Objects (DataFrames, etc.) ──────────────────
+
+def get_cached_pickle(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> any:
+    """Return cached pickle data if it exists and hasn't expired."""
+    import pickle
+    path = _CACHE_DIR / f"{key}.pkl"
+    if not path.exists():
+        return None
+
+    age_seconds = time.time() - path.stat().st_mtime
+    if age_seconds > ttl:
+        return None
+
+    try:
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    except Exception:
+        return None
+
+
+def set_cached_pickle(key: str, data: any) -> None:
+    """Write arbitrary Python object to cache via pickle."""
+    import pickle
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _CACHE_DIR / f"{key}.pkl"
+    with open(path, "wb") as f:
+        pickle.dump(data, f)
+

@@ -22,14 +22,15 @@ import numpy as np
 import pandas as pd
 
 from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS, REGIONS
+from data.ports_data import MAJOR_PORTS
 from data.providers.demand import DemandProvider
 from data.providers.energy import EnergyProvider
 from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
 from data.providers.ports import PortsProvider
 from data.providers.shipping import ShippingProvider
-
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
+from data.port_analyst import generate_port_summaries
 from scoring import get_health_tier
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,47 @@ _PROVIDERS = [
 
 ]
 
+def _fetch_market_data() -> dict:
+    """Fetch key market indicators (Oil, Gas, Shipping Stocks)."""
+    import yfinance as yf
+    from data.cache import get_cached, set_cached
+    
+    tickers = {
+        "Crude Oil": "CL=F", 
+        "Natural Gas": "NG=F", 
+        "Copper": "HG=F",
+        "Volatility (VIX)": "^VIX",
+    }
+    
+    cache_key = "raw_market_data"
+    cached = get_cached(cache_key, ttl=3600)
+    if cached: 
+        return cached
+    
+    data = {}
+    for name, sym in tickers.items():
+        try:
+            t = yf.Ticker(sym)
+            hist = t.history(period="5d")
+            if not hist.empty:
+                # Use scalar float() conversion to avoid numpy types
+                current = float(hist["Close"].iloc[-1])
+                prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else current
+                
+                data[name] = {
+                    "price": current,
+                    "prev": prev,
+                    "symbol": sym,
+                    "change_pct": ((current - prev) / prev) * 100 if prev else 0.0
+                }
+        except Exception as e:
+            logger.warning(f"Market data fetch failed for {sym}: {e}")
+            
+    if data: 
+        set_cached(cache_key, data)
+        
+    return data
+
 
 def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Series:
     """Create a flat series at a neutral value for categories that failed to load."""
@@ -56,138 +98,6 @@ def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Serie
     )
     return pd.Series(value, index=dates, name=name)
 
-
-# ---------------------------------------------------------------------------
-# Major Ports — coordinates + news keywords + risk profiles
-# ---------------------------------------------------------------------------
-# Each entry: (name, lat, lon, direct_keywords, regional_keywords)
-#
-#   direct_keywords  — port name, infrastructure, chokepoints → full penalty.
-#   regional_keywords — country, region, waterway → half penalty.
-# ---------------------------------------------------------------------------
-
-_MAJOR_PORTS: list[tuple[str, float, float, list[str], list[str]]] = [
-    # ── North America ───────────────────────────────────────
-    ("Houston",       29.76,  -95.37,
-     ["houston", "gulf coast port"],
-     ["united states", "u.s.", "american port"]),
-    ("New York",      40.68,  -74.04,
-     ["new york port", "newark port", "port authority"],
-     ["united states", "u.s.", "american port", "east coast"]),
-    ("Los Angeles",   33.75, -118.27,
-     ["los angeles", "long beach", "san pedro"],
-     ["united states", "u.s.", "american port", "west coast"]),
-    ("Savannah",      32.08,  -81.09,
-     ["savannah port"],
-     ["united states", "u.s.", "american port"]),
-    ("Vancouver",     49.29, -123.11,
-     ["vancouver port"],
-     ["canada", "canadian"]),
-    # ── Central & South America ─────────────────────────────
-    ("Colon",          9.36,  -79.90,
-     ["panama canal", "colon port"],
-     ["panama", "central america", "latin america"]),
-    ("Manzanillo",    19.05, -104.32,
-     ["manzanillo"],
-     ["mexico", "mexican", "latin america"]),
-    ("Santos",       -23.96,  -46.33,
-     ["santos port"],
-     ["brazil", "brazilian", "south america", "latin america"]),
-    ("Buenos Aires", -34.60,  -58.38,
-     ["buenos aires"],
-     ["argentina", "south america", "latin america"]),
-    # ── Europe ──────────────────────────────────────────────
-    ("Rotterdam",     51.92,    4.48,
-     ["rotterdam", "europoort"],
-     ["netherlands", "dutch", "eu ", "european", "europe "]),
-    ("Hamburg",       53.55,    9.99,
-     ["hamburg"],
-     ["germany", "german", "eu ", "european", "europe "]),
-    ("Antwerp",       51.27,    4.39,
-     ["antwerp"],
-     ["belgium", "eu ", "european", "europe "]),
-    ("Felixstowe",    51.96,    1.35,
-     ["felixstowe"],
-     ["uk ", "u.k.", "britain", "british"]),
-    ("Piraeus",       37.94,   23.65,
-     ["piraeus"],
-     ["greece", "greek", "eu ", "european", "mediterranean"]),
-    ("Algeciras",     36.13,   -5.45,
-     ["algeciras", "strait of gibraltar"],
-     ["spain", "spanish", "eu ", "european", "mediterranean"]),
-    ("Gdansk",        54.35,   18.65,
-     ["gdansk", "baltic port"],
-     ["poland", "eu ", "european", "europe ", "russia", "ukraine"]),
-    # ── East Asia ───────────────────────────────────────────
-    ("Shanghai",      31.23,  121.47,
-     ["shanghai", "yangshan"],
-     ["china", "chinese", "beijing"]),
-    ("Hong Kong",     22.29,  114.17,
-     ["hong kong"],
-     ["china", "chinese"]),
-    ("Busan",         35.10,  129.03,
-     ["busan"],
-     ["south korea", "korean", "korea "]),
-    ("Qingdao",       36.07,  120.38,
-     ["qingdao"],
-     ["china", "chinese"]),
-    ("Tokyo",         35.65,  139.84,
-     ["tokyo"],
-     ["japan", "japanese"]),
-    ("Kaohsiung",     22.62,  120.31,
-     ["kaohsiung"],
-     ["taiwan", "taiwanese"]),
-    # ── Southeast Asia ──────────────────────────────────────
-    ("Singapore",      1.35,  103.82,
-     ["singapore", "malacca strait", "strait of malacca"],
-     ["southeast asia", "asean"]),
-    ("Laem Chabang",  13.08,  100.88,
-     ["laem chabang"],
-     ["thailand", "thai", "southeast asia"]),
-    ("Port Klang",     3.00,  101.39,
-     ["port klang"],
-     ["malaysia", "malaysian", "southeast asia"]),
-    # ── South Asia ──────────────────────────────────────────
-    ("Mumbai",        19.08,   72.88,
-     ["mumbai", "nhava sheva", "jnpt"],
-     ["india", "indian"]),
-    ("Chennai",       13.08,   80.29,
-     ["chennai"],
-     ["india", "indian"]),
-    ("Colombo",        6.93,   79.84,
-     ["colombo"],
-     ["sri lanka", "india", "indian ocean"]),
-    # ── Middle East ─────────────────────────────────────────
-    ("Dubai",         25.28,   55.30,
-     ["dubai", "jebel ali"],
-     ["uae", "emirates", "middle east", "iran", "persian gulf", "gulf state"]),
-    ("Jeddah",        21.49,   39.19,
-     ["jeddah", "red sea"],
-     ["saudi", "middle east", "iran", "persian gulf"]),
-    # ── Africa ──────────────────────────────────────────────
-    ("Durban",       -29.86,   31.02,
-     ["durban"],
-     ["south africa", "african port"]),
-    ("Mombasa",       -4.04,   39.67,
-     ["mombasa"],
-     ["kenya", "east africa"]),
-    ("Djibouti",      11.59,   43.15,
-     ["djibouti"],
-     ["horn of africa", "red sea", "east africa"]),
-    ("Lagos",          6.45,    3.39,
-     ["lagos", "apapa"],
-     ["nigeria", "west africa"]),
-    ("Port Said",     31.26,   32.30,
-     ["port said", "suez canal", "suez"],
-     ["egypt", "red sea", "middle east"]),
-    # ── Oceania ─────────────────────────────────────────────
-    ("Sydney",       -33.86,  151.20,
-     ["sydney port"],
-     ["australia", "australian"]),
-    ("Melbourne",    -37.81,  144.96,
-     ["melbourne port"],
-     ["australia", "australian"]),
-]
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +147,7 @@ def _match_news_to_ports(
             logger.debug("Skipping irrelevant article: %s", alert.get("title", ""))
             continue
 
-        for name, _lat, _lon, direct_kw, regional_kw in _MAJOR_PORTS:
+        for name, _lat, _lon, direct_kw, regional_kw in MAJOR_PORTS:
             if any(kw in text for kw in direct_kw):
                 port_news.setdefault(name, []).append((alert, "direct"))
             elif any(kw in text for kw in regional_kw):
@@ -250,6 +160,7 @@ def _derive_map_markers(
     current_scores: dict[str, float],
     alerts: list[dict],
     weather_provider: WeatherProvider,
+    port_summaries: dict[str, str] | None = None,
 ) -> list[dict]:
     """Build a map marker for every major shipping port.
 
@@ -269,7 +180,7 @@ def _derive_map_markers(
     markers: list[dict] = []
 
     # ── Batch-fetch real weather for all 37 ports (1 HTTP call) ──
-    port_coords = [(name, lat, lon) for name, lat, lon, _, _ in _MAJOR_PORTS]
+    port_coords = [(name, lat, lon) for name, lat, lon, _, _ in MAJOR_PORTS]
     batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
 
     # ── Global macro baseline (non-weather categories) ───────────
@@ -292,7 +203,7 @@ def _derive_map_markers(
     # ── Match news to ports ──────────────────────────────────────
     port_news = _match_news_to_ports(alerts)
 
-    for name, lat, lon, _direct_kw, _regional_kw in _MAJOR_PORTS:
+    for name, lat, lon, _direct_kw, _regional_kw in MAJOR_PORTS:
         # ── Local weather score (real, unique per port) ──────────
         wx = batch_weather.get(name, {})
         local_weather = wx.get("score", 75.0)
@@ -339,25 +250,44 @@ def _derive_map_markers(
             f"<b>Weather:</b> {weather_summary} (score: {local_weather:.0f})",
         ]
 
-        # Show global macro context — only mention stressed or critical
-        critical = [k for k, v in current_scores.items() if k != "weather" and v < 40]
-        stressed = [k for k, v in current_scores.items() if k != "weather" and 40 <= v < 60]
-
-        if critical:
-            names = ", ".join(CATEGORY_LABELS[c] for c in critical)
-            lines.append(f"<b>Global alert:</b> {names} at critical levels")
-        elif stressed:
-            names = ", ".join(CATEGORY_LABELS[s] for s in stressed[:3])
-            lines.append(f"<b>Global:</b> {names} slightly elevated")
+        # ── AI-generated port summary ─────────────────────────────
+        ai_summary = ""
+        if port_summaries:
+            ai_summary = port_summaries.get(name, "")
+        
+        if ai_summary:
+            # Wrap long summaries to ~60 chars per line for tooltip readability
+            words = ai_summary.split()
+            wrapped_lines = []
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 <= 60:
+                    current_line = f"{current_line} {word}".strip()
+                else:
+                    if current_line:
+                        wrapped_lines.append(current_line)
+                    current_line = word
+            if current_line:
+                wrapped_lines.append(current_line)
+            wrapped_summary = "<br>".join(wrapped_lines)
+            lines.append(f"<b>Status:</b> {wrapped_summary}")
         else:
-            lines.append("<b>Global:</b> All macro indicators healthy")
+            # Fallback to old global context if no AI summary
+            critical = [k for k, v in current_scores.items() if k != "weather" and v < 40]
+            stressed = [k for k, v in current_scores.items() if k != "weather" and 40 <= v < 60]
+            if critical:
+                names = ", ".join(CATEGORY_LABELS[c] for c in critical)
+                lines.append(f"<b>Global alert:</b> {names} at critical levels")
+            elif stressed:
+                names = ", ".join(CATEGORY_LABELS[s] for s in stressed[:3])
+                lines.append(f"<b>Global:</b> {names} slightly elevated")
+            else:
+                lines.append("<b>Global:</b> All macro indicators healthy")
 
         if news_lines:
             lines.append("────────────")
             for nl in news_lines[:3]:
                 lines.append(nl)
-        elif not critical and not stressed:
-            lines.append("No active disruptions for this port.")
 
         markers.append({
             "name": name,
@@ -370,8 +300,50 @@ def _derive_map_markers(
     return markers
 
 
+def _fetch_provider_data(provider) -> tuple[str, float, pd.Series | None, dict, str | None]:
+    """Helper to fetch data for a single provider safely."""
+    cat = provider.category
+    current_score = 50.0
+    history_series = None
+    metadata = {}
+    error_msg = None
+
+    try:
+        # 1. Fetch current score + metadata
+        # Support both tuple (new) and float (legacy/fallback) returns
+        result = provider.fetch_current()
+        if isinstance(result, tuple):
+            current_score, metadata = result
+        else:
+            current_score = float(result)
+            metadata = {
+                "source": "Unknown", 
+                "description": "Provider returned simplistic data format."
+            }
+            
+        logger.info("Loaded %s: %.1f", cat, current_score)
+    except Exception as exc:
+        logger.error("Provider %s failed (current): %s", cat, exc)
+        error_msg = str(exc)
+        current_score = 50.0
+        metadata = {"error": str(exc), "description": "Data fetch failed."}
+
+    try:
+        # 2. Fetch history
+        history_series = provider.fetch_history(HISTORY_DAYS)
+    except Exception as exc:
+        logger.error("Provider %s failed (history): %s", cat, exc)
+        if not error_msg: 
+            error_msg = str(exc)
+        history_series = None
+
+    return cat, current_score, history_series, metadata, error_msg
+
 def aggregate_data() -> dict:
     """Fetch data from all providers and assemble the dashboard data dict.
+
+    Fetches are performed in PARALLEL to ensure fast startup.
+    A timeout ensures no single provider hangs the entire app.
 
     Returns
     -------
@@ -379,66 +351,138 @@ def aggregate_data() -> dict:
         ``"dates"``            – pd.DatetimeIndex
         ``"category_history"`` – dict[str, pd.Series]
         ``"current_scores"``   – dict[str, float]
-        ``"map_markers"``      – list[dict] (REPLACES regional_risk)
+        ``"map_markers"``      – list[dict]
         ``"alerts"``           – list[dict]
         ``"disruptions"``      – list[dict]
-        ``"provider_errors"``  – dict[str, str] (category → error message)
+        ``"briefing"``         – str
+        ``"provider_errors"``  – dict[str, str]
+        ``"market_data"``      – dict
     """
+    import concurrent.futures
+    
+    start_time = datetime.now()
+    logger.info("Starting parallel data fetch...")
+
     current_scores: dict[str, float] = {}
     category_history: dict[str, pd.Series] = {}
+    category_metadata: dict[str, dict] = {}
     provider_errors: dict[str, str] = {}
     
-    # Instantiate providers map for easy access
-    providers_map = {}
+    # Prepare the target date range for history alignment
+    dates = pd.date_range(
+        end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
+        periods=HISTORY_DAYS,
+        freq="D",
+    )
 
-    for provider in _PROVIDERS:
-        cat = provider.category
-        providers_map[cat] = provider
-        try:
-            current_scores[cat] = provider.fetch_current()
-            logger.info("Loaded %s: %.1f", cat, current_scores[cat])
-        except Exception as exc:
-            logger.error("Provider %s failed (current): %s", cat, exc)
-            provider_errors[cat] = str(exc)
-            current_scores[cat] = 50.0  # neutral fallback
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # -- Submit Provider Tasks --
+        future_to_provider = {
+            executor.submit(_fetch_provider_data, p): p 
+            for p in _PROVIDERS
+        }
+        
+        # -- Submit News Task --
+        future_news = executor.submit(fetch_supply_chain_news)
+        
+        # -- Submit Market Data Task --
+        future_market = executor.submit(_fetch_market_data)
+        
+        # -- Submit AI Port Summaries Task --
+        future_port_summaries = executor.submit(generate_port_summaries)
 
+        # -------------------------------------------------------------------
+        # 2. Collect Results (with Timeout)
+        # -------------------------------------------------------------------
+        # We give the whole batch a timeout (e.g. 15 seconds)
+        # If it takes longer, we'll proceed with whatever we have.
+
+        # A. Process Providers
+        for future in concurrent.futures.as_completed(future_to_provider, timeout=20):
+            try:
+                # Unpack 5 values now
+                cat, score, hist_series, meta, err = future.result()
+                current_scores[cat] = score
+                
+                # Enrich metadata with calculated score and tier
+                if meta:
+                    meta["score"] = round(score, 1)
+                    meta["tier"] = get_health_tier(score)
+                else:
+                    meta = {"score": round(score, 1), "tier": get_health_tier(score)}
+
+                category_metadata[cat] = meta
+                
+                if err:
+                    provider_errors[cat] = err
+                
+                # Align history series
+                if hist_series is not None and not hist_series.empty:
+                    # Reindex handles filling missing dates with NaNs, then we ffill/bfill
+                    aligned = hist_series.reindex(dates, method="ffill")
+                    # Fill any remaining NaNs (e.g. at start) with current score
+                    aligned = aligned.fillna(score)
+                    category_history[cat] = aligned
+                else:
+                    # Fallback if history fetch failed
+                    category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)
+                    
+            except Exception as e:
+                # This catches timeouts or crashes in the wrapper
+                logger.error("A provider task failed unexpectedly: %s", e)
+
+        # B. Process News
+        alerts = []
+        briefing = ""
         try:
-            history = provider.fetch_history(HISTORY_DAYS)
-            target_dates = pd.date_range(
-                end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-                periods=HISTORY_DAYS,
-                freq="D",
-            )
-            history = history.reindex(target_dates, method="ffill")
-            history = history.fillna(current_scores[cat])
-            category_history[cat] = history
-        except Exception as exc:
-            logger.error("Provider %s failed (history): %s", cat, exc)
-            category_history[cat] = _make_fallback_series(
-                HISTORY_DAYS, cat, current_scores[cat]
-            )
+             # Wait specifically for news
+            _, alerts, briefing = future_news.result(timeout=5) 
+        except Exception as e:
+            logger.warning("News fetch timed out or failed: %s", e)
+
+        # C. Process Market Data
+        market_data = {}
+        try:
+            market_data = future_market.result(timeout=5) or {}
+        except Exception as e:
+            logger.warning("Market data fetch timed out or failed: %s", e)
+        
+        # D. Process Port Summaries
+        port_summaries = {}
+        try:
+            port_summaries = future_port_summaries.result(timeout=10) or {}
+        except Exception as e:
+            logger.warning("Port summaries fetch timed out or failed: %s", e)
+
+
+    # -----------------------------------------------------------------------
+    # 3. Post-Processing (Scoring & Markers)
+    # -----------------------------------------------------------------------
+    # Ensure complete datasets (fill missing providers with neutral)
+    for p in _PROVIDERS:
+        if p.category not in current_scores:
+            current_scores[p.category] = 50.0
+            category_history[p.category] = _make_fallback_series(HISTORY_DAYS, p.category, 50.0)
+            provider_errors[p.category] = "Provider timed out"
 
     # Compute composite
     from scoring.engine import compute_composite_index
     composite = compute_composite_index(current_scores)
 
-    # Alerts from NewsAPI — fetched BEFORE map markers so news intelligence
-    # can influence per-port scores (turning dots yellow / red).
-    alerts: list[dict] = []
-    try:
-        _, news_alerts = fetch_supply_chain_news()
-        alerts = news_alerts
-    except Exception as exc:
-        logger.warning("Could not load alerts: %s", exc)
+    # Map markers — requires WeatherProvider specifically
+    # We need to find the WeatherProvider instance from our list
+    weather_provider = next((p for p in _PROVIDERS if isinstance(p, WeatherProvider)), None)
+    
+    if weather_provider:
+        try:
+            map_markers = _derive_map_markers(current_scores, alerts, weather_provider, port_summaries)
+        except Exception as e:
+            logger.error("Map marker generation failed: %s", e)
+            map_markers = []
+    else:
+        map_markers = []
 
-    # Map markers — real local weather (1 batched call) + global macro + news.
-    weather_provider = providers_map.get("weather")
-    map_markers = _derive_map_markers(current_scores, alerts, weather_provider)
-
-    # Disruptions — derived from TWO sources:
-    #   1. Categories scoring below 70 (stressed or worse)
-    #   2. High-severity news alerts (real events from the news feed)
-
+    # Disruptions aggregation
     disruptions: list[dict] = []
 
     # Source 1: Low-scoring categories
@@ -447,7 +491,7 @@ def aggregate_data() -> dict:
             severity = "Critical" if score < 40 else "Stressed"
             impact = round((100 - score) / 10, 1)
             disruptions.append({
-                "event": f"{CATEGORY_LABELS[cat]} — {severity}",
+                "event": f"{CATEGORY_LABELS.get(cat, cat.title())} — {severity}",
                 "region": "Global",
                 "impact_score": impact,
                 "categories": [cat],
@@ -455,12 +499,11 @@ def aggregate_data() -> dict:
                 "status": "Active" if score < 50 else "Monitoring",
             })
 
-    # Source 2: High-severity news alerts become disruption events
+    # Source 2: High-severity news alerts
     for alert in alerts:
         if alert.get("severity") == "high":
             cat = alert.get("category", "geopolitical")
             title = alert.get("title", "Unknown event")
-            # Truncate long titles for the table
             short_title = title[:60] + "..." if len(title) > 60 else title
             disruptions.append({
                 "event": short_title,
@@ -471,68 +514,29 @@ def aggregate_data() -> dict:
                 "status": "Active",
             })
 
-    dates = pd.date_range(
-        end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-        periods=HISTORY_DAYS,
-        freq="D",
-    )
+    elapsed = (datetime.now() - start_time).total_seconds()
+    logger.info("Data aggregation complete in %.2fs", elapsed)
 
-    # --- Market Data Fetching (Quick & Dirty for Dashboard) ---
-    market_data = {}
-    try:
-        # We import here to avoid circular dependencies if any, though top-level is fine usually.
-        # But specifically we want to access the private tickers from the modules or just re-define.
-        # Let's grab them from the provider instances we already have? 
-        # No, providers don't expose raw data cleanly yet.
-        # Let's just fetch them directly here using yfinance. 
-        # It's cleaner to keep "Raw Data" separate from "Scoring Logic".
-        
-        import yfinance as yf
-        from data.cache import get_cached, set_cached
-        
-        tickers = {
-            "Crude Oil": "CL=F",
-            "Natural Gas": "NG=F",
-            "Copper": "HG=F",
-            "ZIM Shipping": "ZIM",
-            "Shipping ETF": "BOAT"
-        }
-        
-        cache_key = "raw_market_data"
-        cached_market = get_cached(cache_key, ttl=3600)
-        
-        if cached_market:
-            market_data = cached_market
-        else:
-            for name, sym in tickers.items():
-                try:
-                    t = yf.Ticker(sym)
-                    # fast info
-                    hist = t.history(period="5d")
-                    if not hist.empty:
-                        item = {
-                            "price": float(hist["Close"].iloc[-1]),
-                            "prev": float(hist["Close"].iloc[-2]) if len(hist) > 1 else float(hist["Close"].iloc[-1]),
-                            "symbol": sym
-                        }
-                        market_data[name] = item
-                except Exception as e:
-                    logger.warning("Failed to fetch raw market data for %s: %s", name, e)
-            
-            if market_data:
-                set_cached(cache_key, market_data)
-                
-    except Exception as e:
-        logger.warning("Market data fetch failed: %s", e)
-
-
-    return {
+    result = {
         "dates": dates,
         "category_history": category_history,
         "current_scores": current_scores,
         "map_markers": map_markers,
         "alerts": alerts,
+        "briefing": briefing,
         "disruptions": disruptions,
         "provider_errors": provider_errors,
-        "market_data": market_data,  # <--- New field
+        "category_metadata": category_metadata,
+        "market_data": market_data,
     }
+
+    # Persist the full dashboard state to disk for instant startup
+    from data.cache import set_cached_pickle
+    try:
+        set_cached_pickle("dashboard_snapshot", result)
+        logger.info("Dashboard state persisted to disk (pickle).")
+    except Exception as e:
+        logger.warning("Failed to persist dashboard state: %s", e)
+
+    return result
+
