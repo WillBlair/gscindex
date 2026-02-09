@@ -52,12 +52,27 @@ _LOCK = threading.Lock()
 # Attempt to load the last known good state from disk so the app boots instantly.
 try:
     from data.cache import get_cached_pickle
-    # Allow data up to 24 hours old for startup (better than a loading screen)
+    import pickle
+    
+    startup_data = None
+    
+    # 1. Try local cache (fresh from recent run)
     startup_data = get_cached_pickle("dashboard_snapshot", ttl=86400)
+    
+    if startup_data:
+        logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state from cache.")
+    else:
+        # 2. Try committed fallback snapshot (for fresh deployments)
+        fallback_path = os.path.join(os.path.dirname(__file__), "data", "fallback_snapshot.pkl")
+        if os.path.exists(fallback_path):
+             with open(fallback_path, "rb") as f:
+                 startup_data = pickle.load(f)
+                 logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback snapshot.")
+
     if startup_data:
         _DATA_CACHE = startup_data
         _LAST_UPDATE = datetime.now()
-        logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state from disk.")
+        
 except Exception as e:
     logging.getLogger(__name__).warning(f"Failed to load persisted state: {e}")
 
