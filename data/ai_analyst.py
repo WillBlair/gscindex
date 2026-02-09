@@ -28,6 +28,14 @@ GENERATION_CONFIG = {
     "response_mime_type": "application/json",
 }
 
+# Briefing configuration (Plain Text)
+BRIEFING_CONFIG = {
+    "temperature": 0.4,
+    "top_p": 0.8,
+    "top_k": 40,
+    "response_mime_type": "text/plain",
+}
+
 SYSTEM_PROMPT = """
 You are an expert global supply chain risk analyst. 
 Your job is to analyze news headlines and determine if they are relevant to the GLOBAL COMMERCIAL SUPPLY CHAIN.
@@ -105,3 +113,39 @@ def analyze_news_batch(articles: list[dict]) -> dict[int, dict]:
     except Exception as e:
         logger.error(f"Gemini API Analysis failed: {e}")
         return {}
+
+def generate_briefing(articles: list[dict]) -> str:
+    """
+    Generate a 3-bullet executive summary of the provided articles.
+    """
+    if not api_key or not articles:
+        return "No briefing available."
+
+    logger.info(f"Generating briefing from {len(articles)} articles...")
+    
+    model = genai.GenerativeModel(
+        model_name="gemini-flash-latest",
+        generation_config=BRIEFING_CONFIG,
+    )
+
+    prompt_lines = [
+        "You are a global supply chain intelligence officer.",
+        "Write a 'Daily Situation Report' based ONLY on the following news headlines.",
+        "Format: Plain text. 3 short, punchy bullet points starting with '•'.",
+        "Constraint: NO JSON. NO MARKDOWN. NO TITLES. Just the bullets.",
+        "Focus on: Disruptions, Risks, and Major Market Moves.",
+        "Do NOT mention specific article sources or 'The news says'. Just state the facts.",
+        "\nHeadlines:"
+    ]
+    
+    for art in articles[:15]: # Limit context context
+        prompt_lines.append(f"- {art['title']}")
+        
+    prompt = "\n".join(prompt_lines)
+
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Briefing generation failed: {e}")
+        return "Global supply chain outlook is stable. No major disruptions reported at this time."

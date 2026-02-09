@@ -34,7 +34,9 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from data.cache import get_cached, set_cached
 from data.providers.base import BaseProvider
-from data.ai_analyst import analyze_news_batch
+from data.ai_analyst import analyze_news_batch, generate_briefing
+
+# ...
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +90,11 @@ _IRRELEVANT_TERMS: set[str] = {
     
     # Clothing / Retail
     "pants", "shirt", "jeans", "mens", "womens", "apparel", "clothing", 
-    "shoe", "sneaker", "boot", "sandal", "heel",
+    "shoe", "sneaker", "boot", "sandal", "heel", "watch", "jewelry",
+    
+    # Generic Market Research Spam
+    "market size", "market share", "market growth", "market forecast", 
+    "market analysis", "growth analysis", "forecast 20", "cagr",
 }
 
 
@@ -123,12 +129,18 @@ def _score_to_severity(score: float) -> str:
     return "low"
 
 
-def fetch_supply_chain_news() -> tuple[float, list[dict]]:
-    """Fetch news and analyze using AI (Gemini) with VADER fallback."""
-    cache_key = "newsapi_ai_v1"
+def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
+    """Fetch news and analyze using AI (Gemini) with VADER fallback.
+    
+    Returns
+    -------
+    tuple
+        (score, alerts, briefing_text)
+    """
+    cache_key = "newsapi_briefing_v4"
     cached = get_cached(cache_key, ttl=1800)  # 30-min cache
     if cached is not None:
-        return cached["score"], cached["alerts"]
+        return cached["score"], cached["alerts"], cached.get("briefing", "")
 
     api_key = _get_api_key()
     from_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
@@ -246,13 +258,19 @@ def fetch_supply_chain_news() -> tuple[float, list[dict]]:
     # Sort alerts by severity (lowest score = highest risk)
     alerts.sort(key=lambda a: (a["sentiment"], a["timestamp"]), reverse=False) # Ascending sentiment (negative first)
 
+    # Generate Briefing from top 10 relevant alerts
+    briefing_text = ""
+    if alerts:
+        briefing_text = generate_briefing(alerts[:10])
+
     result = {
         "score": round(final_score, 1),
-        "alerts": alerts
+        "alerts": alerts,
+        "briefing": briefing_text
     }
     
     set_cached(cache_key, result)
-    return result["score"], result["alerts"]
+    return result["score"], result["alerts"], result["briefing"]
 
 
 class GeopoliticalProvider(BaseProvider):
@@ -261,7 +279,7 @@ class GeopoliticalProvider(BaseProvider):
     category = "geopolitical"
 
     def fetch_current(self) -> float:
-        score, _ = fetch_supply_chain_news()
+        score, _, _ = fetch_supply_chain_news()
         return score
 
     def fetch_history(self, days: int) -> pd.Series:

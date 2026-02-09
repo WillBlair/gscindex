@@ -47,19 +47,21 @@ def _format_time_ago(iso_timestamp: str) -> str:
     return f"{int(total_seconds / 86400)}d ago"
 
 
-def build_alerts_feed(alerts: list[dict]) -> html.Div:
+def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
     """Build the alerts/news feed panel.
 
     Parameters
     ----------
     alerts : list[dict]
         Each dict has keys: timestamp, severity, title, body, category.
+    briefing_text : str
+        Optional AI-generated daily briefing summary.
 
     Returns
     -------
     html.Div
     """
-    if not alerts:
+    if not alerts and not briefing_text:
         return html.Div(
             className="panel",
             children=[
@@ -73,6 +75,40 @@ def build_alerts_feed(alerts: list[dict]) -> html.Div:
         )
 
     items = []
+
+    # --- Daily Briefing Card ---
+    if briefing_text:
+        items.append(
+            html.Div(
+                className="daily-briefing-card",
+                style={
+                    "backgroundColor": "#f8f9fa",
+                    "border": f"1px solid {COLORS['card_border']}",
+                    "borderRadius": "8px",
+                    "padding": "16px",
+                    "marginBottom": "20px",
+                    "boxShadow": "0 2px 4px rgba(0,0,0,0.05)",
+                },
+                children=[
+                    html.H4(
+                        "AI Daily Briefing", 
+                        style={
+                            "margin": "0 0 12px 0", 
+                            "fontSize": "14px", 
+                            "fontWeight": "700",
+                            "color": COLORS["accent"],
+                            "textTransform": "uppercase",
+                            "letterSpacing": "0.5px"
+                        }
+                    ),
+                    html.Div(
+                        style={"fontSize": "13px", "lineHeight": "1.5", "color": "#1f2937"},
+                        children=[html.P(line) for line in briefing_text.split("\n") if line.strip()]
+                    ),
+                ]
+            )
+        )
+
     for alert in alerts:
         sev = _SEVERITY_STYLES.get(alert["severity"], _SEVERITY_STYLES["low"])
 
