@@ -130,8 +130,12 @@ def build_category_cards(
 
         # 30-day stats
         recent = history.tail(30)
-        min_val = recent.min() if not recent.empty else 0.0
-        max_val = recent.max() if not recent.empty else 0.0
+        
+        # FAIL-SAFE: Explicitly include the CURRENT score in the min/max calculation.
+        # This prevents the UI from ever showing a Current Score that is outside the Lo/Hi range,
+        # regardless of history series alignment or caching lag.
+        min_val = min(float(recent.min()), score) if not recent.empty else score
+        max_val = max(float(recent.max()), score) if not recent.empty else score
 
         # Daily change
         if len(history) >= 2:

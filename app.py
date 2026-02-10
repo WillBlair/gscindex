@@ -116,6 +116,15 @@ def create_app() -> dash.Dash:
         suppress_callback_exceptions=True,
     )
 
+    # ── API & Rate Limiting ──────────────────────────────────────────────
+    from api.routes import api_bp, get_limiter
+    
+    # Initialize Rate Limiter
+    limiter = get_limiter(app.server)
+    
+    # Register API Blueprint
+    app.server.register_blueprint(api_bp)
+
     # ── Layout as a function: Reads from memory instantly ────────────────
     def serve_layout():
         with _LOCK:
@@ -331,6 +340,19 @@ def create_app() -> dash.Dash:
             logging.error(f"Callback Error: {e}")
             logging.error(traceback.format_exc())
             return False, dash.no_update, dash.no_update
+
+    # ── API Modal Callback ──────────────────────────────────────────────
+    @app.callback(
+        Output("api-modal", "is_open"),
+        Input("api-btn", "n_clicks"),
+        Input("api-modal-close", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def toggle_api_modal(open_click, close_click):
+        ctx_id = ctx.triggered_id
+        if ctx_id == "api-btn":
+            return True
+        return False
 
     return app
 

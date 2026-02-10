@@ -9,3 +9,4 @@ requests>=2.31.0
 vaderSentiment>=3.3.2
 yfinance>=0.2.33
 google-generativeai>=0.3.0
+Flask-Limiter>=3.5.0

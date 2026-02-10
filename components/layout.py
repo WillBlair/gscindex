@@ -113,6 +113,15 @@ def build_layout(data: dict) -> html.Div:
                                 className="refresh-note",
                             ),
                             html.Span("● Live", className="live-dot"),
+                            
+                            # API Button
+                            dbc.Button(
+                                "API",
+                                id="api-btn",
+                                color="link",
+                                className="api-btn-header",
+                                style={"color": "#6366f1", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "15px"}
+                            ),
                         ],
                     ),
                 ],
@@ -219,6 +228,38 @@ def build_layout(data: dict) -> html.Div:
                 size="lg",  # Large modal
                 centered=True,
                 className="dark-modal" # Custom class for dark theme styling
+            ),
+
+            # ── API Documentation Modal ─────────────────────────────
+            dbc.Modal(
+                [
+                    dbc.ModalHeader(dbc.ModalTitle("Public API Access"), className="modal-header"),
+                    dbc.ModalBody(
+                        children=[
+                            html.P("Access the Global Supply Chain Index programmatically for your own dashboards or research."),
+                            html.H5("Endpoint", style={"marginTop": "20px"}),
+                            html.Code("GET https://gscindex.com/api/v1/latest", style={"display": "block", "padding": "10px", "backgroundColor": "#111", "borderRadius": "5px", "color": "#a5b4fc"}),
+                            
+                            html.H5("Usage Example (curl)", style={"marginTop": "20px"}),
+                            html.Code("curl -X GET https://gscindex.com/api/v1/latest", style={"display": "block", "padding": "10px", "backgroundColor": "#111", "borderRadius": "5px", "color": "#22c55e"}),
+                            
+                            html.H5("Rate Limits", style={"marginTop": "20px"}),
+                            html.Ul([
+                                html.Li("60 requests per minute per IP"),
+                                html.Li("2000 requests per day"),
+                            ]),
+                            
+                            html.P("Data is cached globally and updated every 5 minutes. Please do not poll faster than that.", style={"color": "#fbbf24", "marginTop": "20px"}),
+                        ]
+                    ),
+                    dbc.ModalFooter(
+                        dbc.Button("Close", id="api-modal-close", className="ms-auto", n_clicks=0)
+                    ),
+                ],
+                id="api-modal",
+                is_open=False,
+                size="lg",
+                centered=True,
             ),
         ],
     )
