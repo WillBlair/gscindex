@@ -72,18 +72,21 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
         font={"family": "Inter", "color": COLORS["text_muted"]},
         margin={"t": 40, "b": 40, "l": 45, "r": 16},
         height=300,
+        dragmode=False,  # Disable drag interactions (pan/zoom selection)
         yaxis={
             "range": [0, 100],
             "gridcolor": COLORS["grid"],
             "zeroline": False,
             "tickfont": {"size": 10},
             "title": None,
+            "fixedrange": True,  # Disable y-axis zoom/pan
         },
         xaxis={
             "gridcolor": COLORS["grid"],
             "zeroline": False,
             "tickfont": {"size": 10},
             "title": None,
+            "fixedrange": True,  # Disable x-axis zoom/pan
         },
         legend={
             "orientation": "h",

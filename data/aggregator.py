@@ -23,7 +23,7 @@ import pandas as pd
 
 from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS, REGIONS
 from data.ports_data import MAJOR_PORTS
-from data.providers.demand import DemandProvider
+
 from data.providers.energy import EnergyProvider
 from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
 from data.providers.ports import PortsProvider
@@ -43,7 +43,7 @@ _PROVIDERS = [
     TariffsProvider(),
     ShippingProvider(),
     GeopoliticalProvider(),
-    DemandProvider(),
+
 
 ]
 
@@ -184,7 +184,7 @@ def _derive_map_markers(
     batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
 
     # ── Global macro baseline (non-weather categories) ───────────
-    non_weather_cats = ["energy", "ports", "tariffs", "shipping", "geopolitical", "demand"]
+    non_weather_cats = ["energy", "ports", "tariffs", "shipping", "geopolitical"]
     non_weather_weights = {
         cat: CATEGORY_WEIGHTS.get(cat, 0)
         for cat in non_weather_cats
@@ -423,6 +423,12 @@ def aggregate_data() -> dict:
                         aligned = hist_series.reindex(dates, method="ffill")
                         # Fill any remaining NaNs (e.g. at start) with current score
                         aligned = aligned.fillna(score)
+                        
+                        # CRITICAL FIX: Overwrite the last data point (today) with the LIVE score.
+                        # This ensures the sparking/delta calculation uses the real current value,
+                        # not yesterday's close (which ffill would do).
+                        aligned.iloc[-1] = score
+                        
                         category_history[cat] = aligned
                     else:
                         # Fallback if history fetch failed

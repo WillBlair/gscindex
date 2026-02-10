@@ -138,7 +138,13 @@ def build_layout(data: dict) -> html.Div:
                             dcc.Graph(
                                 id="trend-chart",
                                 figure=trend_fig,
-                                config={"displayModeBar": False, "responsive": True},
+                                # Disable scroll zoom and double-click reset for mobile stability
+                                config={
+                                    "displayModeBar": False, 
+                                    "responsive": True,
+                                    "scrollZoom": False,
+                                    "doubleClick": False
+                                },
                             ),
                         ],
                     ),

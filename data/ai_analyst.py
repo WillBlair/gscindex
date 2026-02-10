@@ -58,7 +58,7 @@ Return a JSON object with this exact schema:
         {
             "id": 0,
             "is_relevant": true/false,
-            "category": "ports" | "shipping" | "energy" | "tariffs" | "geopolitical" | "demand" | "weather",
+            "category": "ports" | "shipping" | "energy" | "tariffs" | "geopolitical" | "weather",
             "severity_score": -10.0 to 10.0,
             "summary": "1-sentence summary of the supply chain impact",
             "reasoning": "Why relevant or irrelevant"

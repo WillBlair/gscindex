@@ -18,11 +18,10 @@ live here so you never have to hunt through component code to change behavior.
 CATEGORY_WEIGHTS: dict[str, float] = {
     "weather":             0.10,
     "ports":               0.20,  # Increased importance
-    "energy":              0.15,  # Increased
+    "energy":              0.20,  # Increased (+0.05 from demand)
     "tariffs":             0.15,  # Increased
     "shipping":            0.15,  # Increased
-    "geopolitical":        0.15,
-    "demand":              0.10,
+    "geopolitical":        0.20,  # Increased (+0.05 from demand)
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -32,7 +31,6 @@ CATEGORY_LABELS: dict[str, str] = {
     "tariffs":             "Trade & Tariffs",
     "shipping":            "Shipping Rates",
     "geopolitical":        "Geopolitical Risk",
-    "demand":              "Industrial Demand Stress",
     "chokepoint":          "Critical Chokepoint",
 }
 
@@ -93,7 +91,6 @@ CATEGORY_COLORS: dict[str, str] = {
     "tariffs":             "#ef4444",   # red
     "shipping":            "#06b6d4",   # cyan
     "geopolitical":        "#f97316",   # orange
-    "demand":              "#10b981",   # emerald
     "chokepoint":          "#d946ef",   # magenta
 }
 

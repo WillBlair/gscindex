@@ -4,7 +4,6 @@ Scoring Engine
 Calculates the composite Supply Chain Health Index from individual category
 scores using a weighted-average approach.
 
-The math is intentionally simple so it's easy to explain at a career fair:
 
     composite = Σ (weight_i × score_i)  for each category i
 
