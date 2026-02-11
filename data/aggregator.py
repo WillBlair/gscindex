@@ -87,6 +87,7 @@ def _fetch_market_data() -> dict:
     return data
 
 
+
 def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Series:
     """Create a flat series at a neutral value for categories that failed to load."""
     dates = pd.date_range(
@@ -95,6 +96,38 @@ def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Serie
         freq="D",
     )
     return pd.Series(value, index=dates, name=name)
+
+
+def get_safe_fallback_data() -> dict:
+    """Return a completely safe, neutral dataset to ensure dashboard starts."""
+    from config import CATEGORY_WEIGHTS
+    
+    current_scores = {cat: 50.0 for cat in CATEGORY_WEIGHTS}
+    
+    dates = pd.date_range(
+        end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
+        periods=HISTORY_DAYS,
+        freq="D",
+    )
+    
+    category_history = {
+        cat: _make_fallback_series(HISTORY_DAYS, cat, 50.0)
+        for cat in CATEGORY_WEIGHTS
+    }
+    
+    return {
+        "dates": dates,
+        "category_history": category_history,
+        "current_scores": current_scores,
+        "map_markers": [],
+        "alerts": [],
+        "briefing": "System recovering... Data will update shortly.",
+        "full_report": "",
+        "disruptions": [],
+        "provider_errors": {"System": "Using fallback data while background fetch initializes."},
+        "category_metadata": {},
+        "market_data": {},
+    }
 
 
 

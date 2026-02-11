@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 from components.layout import build_layout
 from config import APP_TITLE, CATEGORY_WEIGHTS
-from data import aggregate_data
+from data import aggregate_data, get_safe_fallback_data
 
 # Load .env before anything reads API keys
 load_dotenv()
@@ -85,6 +85,11 @@ try:
                     logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback JSON snapshot.")
                 else:
                     logging.getLogger(__name__).warning("Fallback snapshot also has stale schema. Ignoring.")
+
+    # FINAL SAFETY NET: If we still don't have data, use safe fallback
+    if not startup_data:
+        logging.getLogger(__name__).warning("⚠️ NO VALID PERSISTED DATA FOUND. Starting with neutral fallback data.")
+        startup_data = get_safe_fallback_data()
 
     if startup_data:
         _DATA_CACHE = startup_data
