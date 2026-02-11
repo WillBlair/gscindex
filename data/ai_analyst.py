@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
 
@@ -68,8 +69,9 @@ Return a JSON object with this exact schema:
 }
 
 The "briefing" field should be a 3-bullet executive summary of the most important supply chain developments.
-Focus on: Disruptions, Risks, and Major Market Moves. Be punchy and concise.
-"""
+Format: Plain text. 3 detailed bullet points starting with '•'.
+Constraint: NO JSON. NO MARKDOWN. NO TITLES. Each bullet should be a single, comprehensive sentence.
+Focus on: Disruptions, Risks, and Major Market Moves. Be punchy and concise."""
 
 
 def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
@@ -117,7 +119,7 @@ def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
         for item in result.get("analysis", []):
             analysis_map[item["id"]] = item
         
-        # Extract briefing from same response
+        # Extract briefing from same response (pre-generated)
         briefing = result.get("briefing", "")
         
         return analysis_map, briefing
@@ -143,8 +145,8 @@ def generate_briefing(articles: list[dict]) -> str:
     prompt_lines = [
         "You are a global supply chain intelligence officer.",
         "Write a 'Daily Situation Report' based ONLY on the following news headlines.",
-        "Format: Plain text. 3 short, punchy bullet points starting with '•'.",
-        "Constraint: NO JSON. NO MARKDOWN. NO TITLES. Just the bullets.",
+        "Format: Plain text. 3 detailed bullet points starting with '•'.",
+        "Constraint: NO JSON. NO MARKDOWN. NO TITLES. Each bullet should be a single, comprehensive sentence.",
         "Focus on: Disruptions, Risks, and Major Market Moves.",
         "Do NOT mention specific article sources or 'The news says'. Just state the facts.",
         "\nHeadlines:"
@@ -161,3 +163,76 @@ def generate_briefing(articles: list[dict]) -> str:
     except Exception as e:
         logger.error(f"Briefing generation failed: {e}")
         return "Global supply chain outlook is stable. No major disruptions reported at this time."
+
+
+REPORT_PROMPT = """
+You are the Chief Strategy Officer for a global logistics firm.
+Write a comprehensive "Daily Supply Chain Intelligence Report" based on the provided news headlines.
+
+Format: GitHub-flavored Markdown. Do NOT use any emojis whatsoever.
+
+Structure:
+Start immediately with the first section header (## Critical Disruptions). 
+Do NOT include any title, date, or meta-information like "To:", "From:", or "Subject:". 
+
+## Critical Disruptions
+[Identify the single most dangerous event (e.g., strikes, canal blocks). If none, say "No critical disruptions detected."]
+
+## Ocean Freight & Port Operations
+[Summarize port congestion, shipping rates, and carrier news]
+
+## Air & Land Logistics
+[Trucking, rail, and air cargo updates]
+
+## Market & Economic Context
+[Trade policy, tariffs, fuel prices, and demand signals]
+
+## Forward Outlook
+[What should supply chain managers watch for in the next 48 hours?]
+
+Constraints:
+- Use professional, executive tone.
+- Be specific (mention company names, ports, percentages).
+- Length: Approximately 400-600 words.
+- Do NOT use emojis anywhere.
+- Do NOT use "The news says" or "Article 1 says". Synthesize the information.
+"""
+
+def generate_full_report(articles: list[dict]) -> str:
+    """
+    Generate a long-form Markdown report from a large batch of articles.
+    """
+    if not api_key or not articles:
+        return "## System Error\nAI service unavailable or no news data found."
+
+    logger.info(f"Generating full report from {len(articles)} articles...")
+    
+    model = genai.GenerativeModel(
+        model_name="gemini-flash-latest",
+        generation_config={
+            "temperature": 0.3,
+            "top_p": 0.8,
+            "top_k": 40,
+            "response_mime_type": "text/plain",
+        },
+        system_instruction=REPORT_PROMPT
+    )
+
+    prompt_lines = [
+        "Synthesize these news items into a cohesive daily report:",
+        f"Date: {datetime.now().strftime('%Y-%m-%d')}",
+        "\nHeadlines:"
+    ]
+    
+    # Use a larger context window for the full report (up to 40-50 headlines)
+    for art in articles[:50]:
+        prompt_lines.append(f"- {art['title']} ({art['source']}) - {art['description'][:100]}")
+        
+    prompt = "\n".join(prompt_lines)
+
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Full report generation failed: {e}")
+        return f"## Generation Failed\nError: {e}"

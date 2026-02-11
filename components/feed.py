@@ -84,12 +84,12 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
             html.Div(
                 className="daily-briefing-card",
                 style={
-                    "backgroundColor": "#f8f9fa",
+                    "backgroundColor": "#1a1d26",
                     "border": f"1px solid {COLORS['card_border']}",
                     "borderRadius": "8px",
                     "padding": "16px",
                     "marginBottom": "20px",
-                    "boxShadow": "0 2px 4px rgba(0,0,0,0.05)",
+                    "boxShadow": "0 2px 4px rgba(0,0,0,0.2)",
                 },
                 children=[
                     html.H4(
@@ -105,11 +105,34 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
                     ),
                     html.Div(
                         id="briefing-content",
-                        style={"fontSize": "13px", "lineHeight": "1.6", "color": COLORS["text"]},
+                        style={"fontSize": "13px", "lineHeight": "1.6", "color": "#d1d5db"},
                         children=[html.P(line, style={"marginBottom": "8px"}) for line in briefing_text.split("\n") if line.strip()]
                     ),
                     # Hidden button placeholder to prevent callback errors
                     html.Button(id="generate-briefing-btn", style={"display": "none"}),
+                    
+                    # Full Report Link (opens in new tab)
+                    html.A(
+                        "Read Full Report →",
+                        href="/report",
+                        target="_blank",
+                        style={
+                            "display": "block",
+                            "marginTop": "12px",
+                            "backgroundColor": "transparent",
+                            "color": COLORS["accent"],
+                            "border": f"1px solid {COLORS['accent']}",
+                            "borderRadius": "4px",
+                            "padding": "8px 12px",
+                            "fontSize": "12px",
+                            "fontWeight": "600",
+                            "cursor": "pointer",
+                            "width": "100%",
+                            "textAlign": "center",
+                            "textDecoration": "none",
+                            "transition": "all 0.2s",
+                        },
+                    ),
                 ]
             )
         )
@@ -165,7 +188,7 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
                                 ),
                             ]
                         )
-                    )
+                    ),
                 ]
             )
         )

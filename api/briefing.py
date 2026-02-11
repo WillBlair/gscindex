@@ -15,7 +15,7 @@ from data.cache import get_cached
 logger = logging.getLogger(__name__)
 
 # Cache key used by geopolitical provider for alerts
-ALERTS_CACHE_KEY = "newsapi_briefing_v4"
+ALERTS_CACHE_KEY = "newsapi_briefing_v14"
 
 
 def get_on_demand_briefing() -> dict:

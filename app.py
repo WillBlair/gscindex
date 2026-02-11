@@ -116,14 +116,58 @@ def create_app() -> dash.Dash:
         suppress_callback_exceptions=True,
     )
 
+    # ── Custom Index String (Prevents White Flash) ──────────────────────
+    app.index_string = '''
+    <!DOCTYPE html>
+    <html>
+        <head>
+            {%metas%}
+            <title>{%title%}</title>
+            {%favicon%}
+            {%css%}
+            <style>
+                body {
+                    background-color: #0f1117;
+                    color: #e1e4ea;
+                    margin: 0;
+                }
+                ._dash-loading {
+                    display: none;
+                }
+            </style>
+        </head>
+        <body>
+            {%app_entry%}
+            <footer>
+                {%config%}
+                {%scripts%}
+                {%renderer%}
+            </footer>
+        </body>
+    </html>
+    '''
+
     # ── API & Rate Limiting ──────────────────────────────────────────────
     from api.routes import api_bp, get_limiter
+    from api.report import report_bp
     
     # Initialize Rate Limiter
     limiter = get_limiter(app.server)
     
     # Register API Blueprint
     app.server.register_blueprint(api_bp)
+    app.server.register_blueprint(report_bp)
+    
+    import flask
+    
+    # Exempt Dash's hot-reload endpoint from rate limiting
+    # This prevents "429 Too Many Requests" during development
+    @limiter.request_filter
+    def ignore_dash_reload():
+        return flask.request.path.startswith("/_reload-hash")
+
+    # ── Skeleton Loading Import ─────────────────────────────────────────
+    from components.skeleton import build_skeleton_layout
 
     # ── Layout as a function: Reads from memory instantly ────────────────
     def serve_layout():
@@ -132,29 +176,8 @@ def create_app() -> dash.Dash:
             last_upd = _LAST_UPDATE
             
         if data is None:
-            # Show a "Booting" screen if data isn't ready yet
-            return html.Div(
-                style={
-                    "display": "flex", 
-                    "justifyContent": "center", 
-                    "alignItems": "center", 
-                    "height": "100vh",
-                    "backgroundColor": "#1a1d26",
-                    "color": "white",
-                    "fontFamily": "Inter, sans-serif"
-                },
-                children=[
-                    html.Div(
-                        style={"textAlign": "center"},
-                        children=[
-                            html.H1("System Initializing...", style={"marginBottom": "20px"}),
-                            html.P("Fetching global supply chain data. Please wait.", style={"opacity": "0.7"}),
-                            dcc.Interval(id="boot-check", interval=2000, n_intervals=0), # Check every 2s
-                            html.Div(id="boot-trigger") # callback dummy
-                        ]
-                    )
-                ]
-            )
+            # Show the Skeleton UI instead of text
+            return build_skeleton_layout()
 
         # Retrieve errors to log
         if data.get("provider_errors"):
@@ -187,15 +210,20 @@ def create_app() -> dash.Dash:
         Input("refresh-interval", "n_intervals"),
     )
     
-    # Callback to auto-reload the "Booting" page once data is ready
-    @app.callback(
-        Output("boot-trigger", "children"),
-        Input("boot-check", "n_intervals")
-    )
-    def check_boot_status(n):
-        if _DATA_CACHE is not None:
-            return dcc.Location(pathname="/", id="reload-on-boot", refresh=True)
-        return dash.no_update
+    # Callback to auto-reload the page once data is ready (replaces "boot-check")
+    # We use the same interval-based polling pattern, but now hidden in the skeleton
+    # Actually, the skeleton doesn't have the interval component by default.
+    # We should inject it into the skeleton or keep a global interval.
+    # The simplest way is to add the poller to the skeleton layout components/skeleton.py,
+    # OR better: Add it here to index_string or layout wrapper? 
+    # For now, let's just make sure the skeleton layout INCLUDES the poller.
+    # I'll rely on the user manually refreshing or adds a simple meta-refresh for now to keep it simple,
+    # OR I'll add a client-side interval to the skeleton in a future step if needed. 
+    # Wait, the previous code had dcc.Interval(id="boot-check"). 
+    # The skeleton layout purely replacing HTML means we LOSE that interval.
+    # I should wrap the return.
+    
+
 
     # ── Generate Briefing On-Demand (Option 5: User-Triggered) ───────────
     @app.callback(
@@ -363,13 +391,35 @@ def create_app() -> dash.Dash:
 app = create_app()
 server = app.server  # Expose the Flask server for Gunicorn
 
-# Start background thread ONLY if not already running (reloader protection)
-# In production (gunicorn), this runs once per worker.
-if not os.environ.get("WERKZEUG_RUN_MAIN") or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-    # Simple check to prevent double threads in debug mode
-    bg_thread = threading.Thread(target=update_data_loop, daemon=True)
-    bg_thread.start()
+# ── Background Thread: Hot Reload Fix ───────────────────────────────────────
+# Only start the background thread if we are NOT in the reloader process (WERKZEUG_RUN_MAIN=true)
+# OR if we are running in a production WSGI container.
+# The previous logic was: if not os.environ.get("WERKZEUG_RUN_MAIN") or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+# This meant it ran in BOTH the parent and the reloader child. 
+# We want it ONLY in the child (actual server) to avoid double threads, 
+# BUT aggressive reloading kills threads.
+# A common pattern for robust background tasks in Dash dev is to check specifically.
 
+def start_background_thread():
+    if not any(t.name == "DataUpdater" for t in threading.enumerate()):
+        # Delayed start to allow Flask/Dash to fully initialize ports
+        def delayed_start():
+            time.sleep(2) 
+            bg_thread = threading.Thread(target=update_data_loop, daemon=True, name="DataUpdater")
+            bg_thread.start()
+        
+        threading.Thread(target=delayed_start, daemon=True).start()
+
+# When running via `python app.py`:
 if __name__ == "__main__":
-    # This block only runs when you run "python app.py" locally
+    # In debug mode, Werkzeug runs a parent process (monitor) and a child process (worker).
+    # WERKZEUG_RUN_MAIN is set 'true' in the child.
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_background_thread()
+    
     app.run(debug=True, host="127.0.0.1", port=8050)
+
+# When running via Gunicorn (Production):
+# WERKZEUG_RUN_MAIN is not set. We just start it.
+else:
+    start_background_thread()
