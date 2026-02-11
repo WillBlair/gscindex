@@ -53,7 +53,7 @@ HEALTH_TIERS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 APP_TITLE = "Global Supply Chain Index"
-APP_SUBTITLE = "Global Supply Chain Health Index"
+APP_SUBTITLE = "by William Blair"
 HISTORY_DAYS = 90            # how many days of history to show in charts
 REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 
