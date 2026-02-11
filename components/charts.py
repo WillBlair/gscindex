@@ -129,18 +129,17 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
                     children=[
                         html.Span(
                             label,
-                            style={
-                                "color": COLORS["text"],
-                                "fontSize": "0.8rem",
-                                "fontWeight": "500",
-                            },
+                            # Inline style removed to allow CSS to control font/color
+                            # style={...} 
                         ),
                         html.Span(
                             f"{score:.0f}",
+                            # Inline style removed, color controlled by CSS or parent
+                            # actually score color IS variable, so we need to keep color but remove font styles
                             style={
                                 "color": tier["color"],
-                                "fontSize": "0.8rem",
-                                "fontWeight": "700",
+                                # "fontSize": "0.8rem",  <-- Removed
+                                # "fontWeight": "700",   <-- Removed
                             },
                         ),
                     ],
@@ -166,9 +165,10 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
             html.H3(
                 "Category Health",
                 style={
-                    "margin": "0 0 16px",
-                    "fontSize": "1rem",
-                    "fontWeight": "600",
+                    "margin": "4px 0 16px",  # Reduced margin to align with Plotly title
+                    "fontSize": "14px",      # Matches Plotly
+                    "fontFamily": "Inter, sans-serif", # Matches Plotly
+                    "fontWeight": "500",     # Matches Plotly (Medium)
                     "color": COLORS["text"],
                 },
             ),

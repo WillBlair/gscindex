@@ -361,12 +361,17 @@ class WeatherProvider(BaseProvider):
         set_cached(cache_key, results)
         return results
 
-    def fetch_current(self) -> float:
+    def fetch_current(self) -> tuple[float, dict]:
         """Fetch current weather at all hubs and return the average score."""
-        cache_key = "weather_current"
+        cache_key = "weather_current_v2" # Versioned key to break old float cache
         cached = get_cached(cache_key, ttl=1800)  # 30-min cache
         if cached is not None:
-            return cached["score"]
+            # Check if it's the new format (tuple-like list or dict with metadata)
+            # stored as dict for safety
+            if "metadata" in cached:
+                return cached["score"], cached["metadata"]
+            # Fallback for old cache if any (though key change prevents this)
+            return cached["score"], {}
 
         hub_scores: list[float] = []
 
@@ -399,12 +404,11 @@ class WeatherProvider(BaseProvider):
                 hub_scores.append(75.0)
 
         avg_score = round(float(np.mean(hub_scores)), 1)
-        set_cached(cache_key, {"score": avg_score})
         
         # Count bad weather events for the description
         bad_weather_count = sum(1 for s in hub_scores if s < 80)
         
-        return avg_score, {
+        metadata = {
             "source": "Open-Meteo API",
             "raw_value": f"{len(_SHIPPING_HUBS)} Major Hubs",
             "raw_label": "Global Port Weather",
@@ -412,8 +416,13 @@ class WeatherProvider(BaseProvider):
                 f"Real-time weather analysis of {len(_SHIPPING_HUBS)} major shipping hubs. "
                 f"Currently tracking {bad_weather_count} locations with suboptimal operating conditions."
             ),
-            "updated": "Live"
+            "updated": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
+        
+        # Cache the full result
+        set_cached(cache_key, {"score": avg_score, "metadata": metadata})
+        
+        return avg_score, metadata
 
     def fetch_history(self, days: int) -> pd.Series:
         """Fetch historical weather from Open-Meteo, averaged across all hubs."""

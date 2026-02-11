@@ -17,19 +17,19 @@ live here so you never have to hunt through component code to change behavior.
 
 CATEGORY_WEIGHTS: dict[str, float] = {
     "weather":             0.10,
-    "ports":               0.20,  # Increased importance
-    "energy":              0.20,  # Increased (+0.05 from demand)
-    "tariffs":             0.15,  # Increased
-    "shipping":            0.15,  # Increased
-    "geopolitical":        0.20,  # Increased (+0.05 from demand)
+    "supply_chain":        0.20,  # NY Fed GSCPI (was: ports)
+    "energy":              0.20,
+    "tariffs":             0.15,
+    "trucking":            0.15,  # FRED Trucking PPI (was: shipping)
+    "geopolitical":        0.20,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
     "weather":             "Weather Disruptions",
-    "ports":               "Port Congestion",
+    "supply_chain":        "Supply Chain", # Shortened to fit on one line
     "energy":              "Energy Costs",
     "tariffs":             "Trade & Tariffs",
-    "shipping":            "Shipping Rates",
+    "trucking":            "Inland Freight",
     "geopolitical":        "Geopolitical Risk",
     "chokepoint":          "Critical Chokepoint",
 }
@@ -86,10 +86,10 @@ REGIONS: list[str] = [
 
 CATEGORY_COLORS: dict[str, str] = {
     "weather":             "#3b82f6",   # blue
-    "ports":               "#8b5cf6",   # purple
+    "supply_chain":        "#8b5cf6",   # purple
     "energy":              "#f59e0b",   # amber
     "tariffs":             "#ef4444",   # red
-    "shipping":            "#06b6d4",   # cyan
+    "trucking":            "#06b6d4",   # cyan
     "geopolitical":        "#f97316",   # orange
     "chokepoint":          "#d946ef",   # magenta
 }

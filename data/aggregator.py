@@ -26,8 +26,8 @@ from data.ports_data import MAJOR_PORTS
 
 from data.providers.energy import EnergyProvider
 from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
-from data.providers.ports import PortsProvider
-from data.providers.shipping import ShippingProvider
+from data.providers.supply_chain import SupplyChainProvider
+from data.providers.trucking import TruckingProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.port_analyst import generate_port_summaries
@@ -38,13 +38,11 @@ logger = logging.getLogger(__name__)
 # All providers, instantiated once
 _PROVIDERS = [
     WeatherProvider(),
-    PortsProvider(),
+    SupplyChainProvider(),
     EnergyProvider(),
     TariffsProvider(),
-    ShippingProvider(),
+    TruckingProvider(),
     GeopoliticalProvider(),
-
-
 ]
 
 def _fetch_market_data() -> dict:
@@ -184,7 +182,7 @@ def _derive_map_markers(
     batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
 
     # ── Global macro baseline (non-weather categories) ───────────
-    non_weather_cats = ["energy", "ports", "tariffs", "shipping", "geopolitical"]
+    non_weather_cats = ["energy", "supply_chain", "tariffs", "trucking", "geopolitical"]
     non_weather_weights = {
         cat: CATEGORY_WEIGHTS.get(cat, 0)
         for cat in non_weather_cats
