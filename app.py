@@ -26,7 +26,7 @@ from dash import Input, Output, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
-from config import APP_TITLE
+from config import APP_TITLE, CATEGORY_WEIGHTS
 from data import aggregate_data
 
 # Load .env before anything reads API keys
@@ -57,8 +57,20 @@ try:
     startup_data = get_cached_dashboard()
     
     if startup_data:
-        logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state (cache).")
-        logging.getLogger(__name__).info("Deploy trigger: Ensure markdown dependency is installed.")
+        # VALIDATE SCHEMA: If categories changed (e.g. ports -> supply_chain), 
+        # the old cache will cause a ValueError in the scoring engine.
+        required_keys = set(CATEGORY_WEIGHTS.keys())
+        cached_keys = set(startup_data.get("current_scores", {}).keys())
+        
+        if not required_keys.issubset(cached_keys):
+            logging.getLogger(__name__).warning(
+                f"⚠️ INVALIDATING CACHE: Missing keys {required_keys - cached_keys}. "
+                "Schema has changed."
+            )
+            startup_data = None
+        else:
+            logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state (cache).")
+            logging.getLogger(__name__).info("Deploy trigger: Ensure markdown dependency is installed.")
     
     if not startup_data:
         # Fallback to committed JSON snapshot (for fresh deploys)
@@ -66,8 +78,13 @@ try:
         if os.path.exists(fallback_path):
             with open(fallback_path, "r") as f:
                 raw_data = json.load(f)
-                startup_data = reconstruct_dashboard_state(raw_data)
-                logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback JSON snapshot.")
+                # Helper to also validation fallback
+                fb_scores = raw_data.get("current_scores", {})
+                if set(CATEGORY_WEIGHTS.keys()).issubset(fb_scores.keys()):
+                    startup_data = reconstruct_dashboard_state(raw_data)
+                    logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback JSON snapshot.")
+                else:
+                    logging.getLogger(__name__).warning("Fallback snapshot also has stale schema. Ignoring.")
 
     if startup_data:
         _DATA_CACHE = startup_data
