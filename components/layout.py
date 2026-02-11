@@ -24,6 +24,7 @@ Layout structure:
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
@@ -105,7 +106,7 @@ def build_layout(data: dict) -> html.Div:
                         className="header-meta",
                         children=[
                             html.Span(
-                                f"Last updated: {datetime.now().strftime('%b %d, %Y %H:%M')}",
+                                f"Last updated: {datetime.now(ZoneInfo('America/Denver')).strftime('%b %d, %Y %H:%M')}",
                                 className="last-updated",
                             ),
                             html.Span(

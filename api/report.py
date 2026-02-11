@@ -252,7 +252,8 @@ def serve_report():
         extensions=["extra", "smarty"]
     )
 
-    today = datetime.now().strftime("%B %d, %Y")
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo('America/Denver')).strftime("%B %d, %Y")
 
 
     return render_template_string(

@@ -218,9 +218,10 @@ def generate_full_report(articles: list[dict]) -> str:
         system_instruction=REPORT_PROMPT
     )
 
+    from zoneinfo import ZoneInfo
     prompt_lines = [
         "Synthesize these news items into a cohesive daily report:",
-        f"Date: {datetime.now().strftime('%Y-%m-%d')}",
+        f"Date: {datetime.now(ZoneInfo('America/Denver')).strftime('%Y-%m-%d')}",
         "\nHeadlines:"
     ]
     
