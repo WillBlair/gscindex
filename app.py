@@ -32,6 +32,7 @@ from data import aggregate_data, get_safe_fallback_data
 # Load .env before anything reads API keys
 load_dotenv()
 
+
 # Logging so provider activity is visible in the terminal
 logging.basicConfig(
     level=logging.INFO,
@@ -56,9 +57,29 @@ try:
     
     startup_data = get_cached_dashboard()
     
+    
+    # ── Key Migration: Remap old category names to current ones ──────────
+    _KEY_MIGRATIONS: dict[str, str] = {
+        "ports": "supply_chain",
+        "shipping": "trucking",
+    }
+
+    def _migrate_keys(data: dict) -> dict:
+        """Remap legacy category keys to current names in-place."""
+        for section in ("current_scores", "category_history", "category_metadata"):
+            sub = data.get(section)
+            if not isinstance(sub, dict):
+                continue
+            for old_key, new_key in _KEY_MIGRATIONS.items():
+                if old_key in sub and new_key not in sub:
+                    sub[new_key] = sub.pop(old_key)
+        return data
+
     if startup_data:
-        # VALIDATE SCHEMA: If categories changed (e.g. ports -> supply_chain), 
-        # the old cache will cause a ValueError in the scoring engine.
+        # Attempt to migrate legacy keys before validation
+        startup_data = _migrate_keys(startup_data)
+
+        # VALIDATE SCHEMA: Ensure all required category keys exist.
         required_keys = set(CATEGORY_WEIGHTS.keys())
         cached_keys = set(startup_data.get("current_scores", {}).keys())
         
@@ -78,7 +99,8 @@ try:
         if os.path.exists(fallback_path):
             with open(fallback_path, "r") as f:
                 raw_data = json.load(f)
-                # Helper to also validation fallback
+                # Migrate legacy keys before validation
+                raw_data = _migrate_keys(raw_data)
                 fb_scores = raw_data.get("current_scores", {})
                 if set(CATEGORY_WEIGHTS.keys()).issubset(fb_scores.keys()):
                     startup_data = reconstruct_dashboard_state(raw_data)
