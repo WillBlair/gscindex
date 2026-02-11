@@ -441,6 +441,19 @@ def create_app() -> dash.Dash:
             return True
         return False
 
+    # ── Docs Modal Callback ─────────────────────────────────────────────
+    @app.callback(
+        Output("docs-modal", "is_open"),
+        Input("docs-btn", "n_clicks"),
+        Input("docs-modal-close", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def toggle_docs_modal(open_click, close_click):
+        ctx_id = ctx.triggered_id
+        if ctx_id == "docs-btn":
+            return True
+        return False
+
     return app
 
 

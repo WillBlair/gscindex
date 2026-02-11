@@ -35,6 +35,9 @@ from components.gauge import build_gauge_figure
 from config import APP_SUBTITLE, APP_TITLE, COLORS
 from scoring import compute_composite_index
 
+from scoring import compute_composite_index
+from components.docs import build_docs_modal
+
 from components.market_costs import build_market_costs_panel
 
 # Auto-refresh interval: 5 minutes (in milliseconds)
@@ -115,13 +118,22 @@ def build_layout(data: dict) -> html.Div:
                             ),
                             html.Span("● Live", className="live-dot"),
                             
+                            # Docs Button
+                            dbc.Button(
+                                "Docs",
+                                id="docs-btn",
+                                color="link",
+                                className="docs-btn-header",
+                                style={"color": "#9ca3af", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "15px"}
+                            ),
+                            
                             # API Button
                             dbc.Button(
                                 "API",
                                 id="api-btn",
                                 color="link",
                                 className="api-btn-header",
-                                style={"color": "#6366f1", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "15px"}
+                                style={"color": "#6366f1", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "10px"}
                             ),
                         ],
                     ),
@@ -262,5 +274,8 @@ def build_layout(data: dict) -> html.Div:
                 size="lg",
                 centered=True,
             ),
+
+            # ── Docs Modal ──────────────────────────────────────────
+            build_docs_modal(),
         ],
     )
