@@ -58,6 +58,7 @@ try:
     
     if startup_data:
         logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state (cache).")
+        logging.getLogger(__name__).info("Deploy trigger: Ensure markdown dependency is installed.")
     
     if not startup_data:
         # Fallback to committed JSON snapshot (for fresh deploys)
