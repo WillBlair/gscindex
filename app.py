@@ -75,6 +75,19 @@ try:
 except Exception as e:
     logging.getLogger(__name__).warning(f"Failed to load persisted state: {e}")
 
+# ── Clear Stale News Cache (Deploy Cache Bust) ──────────────────────
+# On every startup (i.e. every deploy), clear the newsapi briefing cache
+# so the background thread regenerates the report with the latest code.
+# Without this, old cached reports survive for 4 hours after a deploy.
+try:
+    from data.cache import _CACHE_DIR
+    _news_cache = _CACHE_DIR / "newsapi_briefing_v14.json"
+    if _news_cache.exists():
+        _news_cache.unlink()
+        logging.getLogger(__name__).info("Cleared stale news cache for fresh report generation.")
+except Exception as e:
+    logging.getLogger(__name__).warning(f"Failed to clear stale news cache: {e}")
+
 
 def update_data_loop():
     """Background loop that refreshes data every 5 minutes."""

@@ -129,18 +129,18 @@ def _score_to_severity(score: float) -> str:
     return "low"
 
 
-def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
+def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     """Fetch news and analyze using AI (Gemini) with VADER fallback.
     
     Returns
     -------
     tuple
-        (score, alerts, briefing_text)
+        (score, alerts, briefing_text, full_report_md)
     """
     cache_key = "newsapi_briefing_v14"
     cached = get_cached(cache_key, ttl=14400)  # 4-hour cache (reduced API usage)
     if cached is not None:
-        return cached["score"], cached["alerts"], cached.get("briefing", "")
+        return cached["score"], cached["alerts"], cached.get("briefing", ""), cached.get("full_report", "")
 
     # 1. Fetch from RSS Feeds (High Quality, User Specified)
     from data.rss_fetcher import fetch_rss_articles
@@ -261,7 +261,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str]:
     }
     
     set_cached(cache_key, result)
-    return result["score"], result["alerts"], result["briefing"]
+    return result["score"], result["alerts"], result["briefing"], result["full_report"]
 
 
 class GeopoliticalProvider(BaseProvider):
@@ -270,7 +270,7 @@ class GeopoliticalProvider(BaseProvider):
     category = "geopolitical"
 
     def fetch_current(self) -> tuple[float, dict]:
-        score, alerts, _ = fetch_supply_chain_news()
+        score, alerts, _, _ = fetch_supply_chain_news()
         
         # Calculate recent negative news count
         high_sev = sum(1 for a in alerts if a['severity'] == 'high')

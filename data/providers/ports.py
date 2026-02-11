@@ -104,7 +104,7 @@ class PortsProvider(BaseProvider):
         # --- 2. Live News Sentiment ---
         # Fetch shared news cache
         try:
-            geo_score, alerts, _ = fetch_supply_chain_news()
+            geo_score, alerts, _, _ = fetch_supply_chain_news()
             
             # Filter specifically for PORTS and CHOKEPOINTS
             port_alerts = [

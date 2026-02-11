@@ -443,9 +443,10 @@ def aggregate_data() -> dict:
         # B. Process News
         alerts = []
         briefing = ""
+        full_report = ""
         try:
              # Wait specifically for news
-            _, alerts, briefing = future_news.result(timeout=5) 
+            _, alerts, briefing, full_report = future_news.result(timeout=5) 
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
@@ -533,6 +534,7 @@ def aggregate_data() -> dict:
         "map_markers": map_markers,
         "alerts": alerts,
         "briefing": briefing,
+        "full_report": full_report,
         "disruptions": disruptions,
         "provider_errors": provider_errors,
         "category_metadata": category_metadata,

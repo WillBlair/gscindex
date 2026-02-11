@@ -78,7 +78,7 @@ def test_news_analysis() -> tuple[dict, str]:
     from data.providers.geopolitical import fetch_supply_chain_news
     
     start = datetime.now()
-    news_score, alerts, briefing = fetch_supply_chain_news()
+    news_score, alerts, briefing, full_report = fetch_supply_chain_news()
     elapsed = (datetime.now() - start).total_seconds()
     
     logger.info("✓ News analysis complete in %.2fs", elapsed)

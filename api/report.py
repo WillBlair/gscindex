@@ -237,6 +237,13 @@ def serve_report():
         report_md = cached.get("full_report", "")
 
     if not report_md:
+        # Fallback: try the persisted dashboard snapshot (survives deploys)
+        from data.cache import get_cached_dashboard
+        dashboard = get_cached_dashboard()
+        if dashboard and isinstance(dashboard, dict):
+            report_md = dashboard.get("full_report", "")
+
+    if not report_md:
         report_md = "## Report Not Yet Available\nThe system is generating the daily report. Please check back in a few minutes."
 
     # Convert markdown to HTML
