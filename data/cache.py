@@ -164,9 +164,7 @@ def reconstruct_dashboard_state(data: dict) -> dict:
         logger.error(f"Failed to reconstruct dashboard state: {e}")
         return data  # Return partial/best-effort data if reconstruction fails
 
-def get_cached_dashboard() -> dict | None:
-    """Retrieve the dashboard state from JSON and reconstruct Pandas objects."""
-    data = get_cached("dashboard_snapshot_safe", ttl=86400)
+    data = get_cached("dashboard_snapshot_safe", ttl=3600)
     if not data:
         return None
     return reconstruct_dashboard_state(data)

@@ -476,9 +476,12 @@ def start_background_thread():
     if not any(t.name == "DataUpdater" for t in threading.enumerate()):
         # Delayed start to allow Flask/Dash to fully initialize ports
         def delayed_start():
+            logger = logging.getLogger("DataUpdater")
+            logger.info("Initializing background data updater thread...")
             time.sleep(2) 
             bg_thread = threading.Thread(target=update_data_loop, daemon=True, name="DataUpdater")
             bg_thread.start()
+            logger.info("Background data updater thread started.")
         
         threading.Thread(target=delayed_start, daemon=True).start()
 

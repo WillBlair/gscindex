@@ -89,7 +89,7 @@ def generate_port_summaries() -> dict[str, str]:
     
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-3-flash-preview",
             generation_config=GENERATION_CONFIG,
             system_instruction=SYSTEM_PROMPT
         )

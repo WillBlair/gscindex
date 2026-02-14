@@ -98,7 +98,7 @@ def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
     logger.info(f"Sending {len(articles)} articles to Gemini for analysis + briefing...")
 
     model = genai.GenerativeModel(
-        model_name="gemini-flash-latest",
+        model_name="gemini-3-flash-preview",
         generation_config=GENERATION_CONFIG,
         system_instruction=SYSTEM_PROMPT
     )
@@ -138,7 +138,7 @@ def generate_briefing(articles: list[dict]) -> str:
     logger.info(f"Generating briefing from {len(articles)} articles...")
     
     model = genai.GenerativeModel(
-        model_name="gemini-flash-latest",
+        model_name="gemini-3-flash-preview",
         generation_config=BRIEFING_CONFIG,
     )
 
@@ -208,7 +208,7 @@ def generate_full_report(articles: list[dict]) -> str:
     logger.info(f"Generating full report from {len(articles)} articles...")
     
     model = genai.GenerativeModel(
-        model_name="gemini-flash-latest",
+        model_name="gemini-3-flash-preview",
         generation_config={
             "temperature": 0.3,
             "top_p": 0.8,

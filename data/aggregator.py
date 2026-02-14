@@ -31,6 +31,7 @@ from data.providers.trucking import TruckingProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.port_analyst import generate_port_summaries
+from data.ai_validator import validate_score
 from scoring import get_health_tier
 
 logger = logging.getLogger(__name__)
@@ -510,6 +511,20 @@ def aggregate_data() -> dict:
     from scoring.engine import compute_composite_index
     composite = compute_composite_index(current_scores)
 
+    # -----------------------------------------------------------------------
+    # 4. AI Verification (New Layer)
+    # -----------------------------------------------------------------------
+    # Ask Gemini if this score makes sense
+    ai_validation = validate_score(composite, current_scores, alerts)
+    
+    # Optional: Adjust the score based on AI feedback (weighted 80/20?)
+    # For now, we trust the math but Show the AI opinion.
+    # If we wanted to adjust:
+    # adjustment = ai_validation.get("adjustment", 0.0)
+    # composite += adjustment
+    # composite = max(0.0, min(100.0, composite))
+
+
     # Map markers — requires WeatherProvider specifically
     # We need to find the WeatherProvider instance from our list
     weather_provider = next((p for p in _PROVIDERS if isinstance(p, WeatherProvider)), None)
@@ -570,6 +585,7 @@ def aggregate_data() -> dict:
         "provider_errors": provider_errors,
         "category_metadata": category_metadata,
         "market_data": market_data,
+        "ai_validation": ai_validation,
     }
 
     # Persist the full dashboard state to disk for instant startup
