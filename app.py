@@ -47,14 +47,11 @@ logging.basicConfig(
 
 _DATA_CACHE = None
 _LAST_UPDATE = None
-_LOADING_STATUS = "Initializing..."
+_DATA_CACHE = None
+_LAST_UPDATE = None
 _LOCK = threading.Lock()
 
-def set_status(msg: str):
-    """Update the global loading status message safely."""
-    global _LOADING_STATUS
-    with _LOCK:
-        _LOADING_STATUS = msg
+from data.status import set_status, get_status
 
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
 # Safe JSON-based persistence to avoid production crashes (Error 520).
@@ -152,6 +149,7 @@ def update_data_loop():
         try:
             logger.info("Fetching fresh data from all providers...")
             set_status("Starting data update...")
+            # Pass our file-based set_status as the callback
             new_data = aggregate_data(status_callback=set_status)
             
             with _LOCK:
@@ -238,10 +236,24 @@ def create_app() -> dash.Dash:
 
     # ── Layout as a function: Reads from memory instantly ────────────────
     def serve_layout():
+        global _DATA_CACHE, _LAST_UPDATE
+        
         with _LOCK:
             data = _DATA_CACHE
-            last_upd = _LAST_UPDATE
             
+        # If no memory cache, try lazy-load from disk (recovers if another worker updated it)
+        if data is None:
+            from data.cache import get_cached_dashboard
+            try:
+                disk_data = get_cached_dashboard()
+                if disk_data:
+                    with _LOCK:
+                        _DATA_CACHE = disk_data
+                        _LAST_UPDATE = datetime.now()
+                    data = disk_data
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
+
         if data is None:
             # Show the Skeleton UI instead of text
             return build_skeleton_layout()
@@ -287,17 +299,26 @@ def create_app() -> dash.Dash:
         Input("boot-interval", "n_intervals"),
     )
     def update_boot_status(n):
-        # 1. Check if data is ready
-        data_ready = False
+        # 1. Check if data is ready in memory
         with _LOCK:
             if _DATA_CACHE is not None:
-                data_ready = True
-            current_status = _LOADING_STATUS
-
-        if data_ready:
-            return "Data loaded! Launching dashboard...", "RELOAD"
+                return "Data loaded! Launching dashboard...", "RELOAD"
         
-        return current_status, dash.no_update
+        # 2. Check if data is ready on disk (from another worker)
+        # This handles the multi-worker production case
+        from data.cache import get_cached_dashboard
+        try:
+             # Only check disk if status says ready, or periodically? 
+             # Actually, simpler: read the status file.
+             current_status = get_status()
+             
+             if current_status == "Data ready!":
+                 # Trigger reload, which will hit serve_layout, which needs to load from disk
+                 return "Data loaded! Launching dashboard...", "RELOAD"
+                 
+             return current_status, dash.no_update
+        except Exception:
+            return "Initializing...", dash.no_update
 
     app.clientside_callback(
         """
