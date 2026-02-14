@@ -113,12 +113,22 @@ def build_skeleton_layout():
                 id="loading-message",
                 children="Initializing system...",
                 style={
+                    "position": "fixed",
+                    "top": "50%",
+                    "left": "50%",
+                    "transform": "translate(-50%, -50%)",
+                    "backgroundColor": "rgba(15, 17, 23, 0.95)",
+                    "border": "1px solid #374151",
+                    "borderRadius": "8px",
+                    "padding": "24px 40px",
+                    "color": "#10b981",  # Technical Green
+                    "fontFamily": "'JetBrains Mono', monospace",
+                    "fontSize": "18px",
+                    "fontWeight": "600",
+                    "boxShadow": "0 10px 25px rgba(0,0,0,0.5)",
+                    "zIndex": "9999",
+                    "minWidth": "300px",
                     "textAlign": "center",
-                    "marginTop": "20px",
-                    "color": "#6b7280",
-                    "fontFamily": "Inter, sans-serif",
-                    "fontSize": "14px",
-                    "animation": "pulse 1.5s infinite"
                 }
             ),
 
