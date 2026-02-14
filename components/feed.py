@@ -47,13 +47,11 @@ def _format_time_ago(iso_timestamp: str) -> str:
     return f"{int(total_seconds / 86400)}d ago"
 
 
-def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
-    """Build the alerts/news feed panel.
+def build_briefing_panel(briefing_text: str = "") -> html.Div:
+    """Build the AI Daily Briefing panel.
 
     Parameters
     ----------
-    alerts : list[dict]
-        Each dict has keys: timestamp, severity, title, body, category.
     briefing_text : str
         Optional AI-generated daily briefing summary.
 
@@ -61,13 +59,118 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
     -------
     html.Div
     """
-    if not alerts and not briefing_text:
+    if briefing_text:
+        # Briefing exists - display it
+        content = html.Div(
+            className="daily-briefing-card",
+            style={
+                "backgroundColor": "transparent", # Blend into panel
+                "padding": "0",
+                "marginBottom": "0",
+            },
+            children=[
+                html.Div(
+                    id="briefing-content",
+                    style={"fontSize": "16px", "lineHeight": "1.6", "color": "#d1d5db"},
+                    children=[html.P(line, style={"marginBottom": "8px"}) for line in briefing_text.split("\n") if line.strip()]
+                ),
+                # Hidden button placeholder
+                html.Button(id="generate-briefing-btn", style={"display": "none"}),
+                
+                # Full Report Link
+                html.A(
+                    "Read Full Report →",
+                    href="/report",
+                    target="_blank",
+                    style={
+                        "display": "block",
+                        "marginTop": "20px",
+                        "backgroundColor": "transparent",
+                        "color": COLORS["accent"],
+                        "border": f"1px solid {COLORS['accent']}",
+                        "borderRadius": "4px",
+                        "padding": "8px 12px",
+                        "fontSize": "12px",
+                        "fontWeight": "600",
+                        "cursor": "pointer",
+                        "width": "100%",
+                        "textAlign": "center",
+                        "textDecoration": "none",
+                        "transition": "all 0.2s",
+                    },
+                ),
+            ]
+        )
+    else:
+        # No briefing yet - show generate button
+        content = html.Div(
+            className="daily-briefing-card",
+            style={
+                "backgroundColor": "transparent",
+                "padding": "0",
+                "marginBottom": "0",
+                "textAlign": "center",
+            },
+            children=[
+                dcc.Loading(
+                    id="briefing-loading",
+                    type="dot",
+                    color=COLORS["accent"],
+                    children=html.Div(
+                        id="briefing-content",
+                        children=[
+                            html.P(
+                                "Click to generate an AI-powered summary of today's supply chain news.",
+                                style={"color": COLORS["text_muted"], "marginBottom": "12px", "fontSize": "13px"}
+                            ),
+                            html.Button(
+                                "Generate Briefing",
+                                id="generate-briefing-btn",
+                                style={
+                                    "backgroundColor": COLORS["accent"],
+                                    "color": "white",
+                                    "border": "none",
+                                    "borderRadius": "6px",
+                                    "padding": "10px 20px",
+                                    "fontSize": "13px",
+                                    "fontWeight": "600",
+                                    "cursor": "pointer",
+                                },
+                            ),
+                        ]
+                    )
+                ),
+            ]
+        )
+
+    return html.Div(
+        className="panel",
+        children=[
+            html.H3("AI Daily Briefing", className="panel-title", style={"color": COLORS["accent"]}),
+            content,
+        ],
+    )
+
+
+def build_news_panel(alerts: list[dict]) -> html.Div:
+    """Build the Recent Alerts / News list panel.
+
+    Parameters
+    ----------
+    alerts : list[dict]
+        Each dict has keys: timestamp, severity, title, body, category.
+
+    Returns
+    -------
+    html.Div
+    """
+    if not alerts:
         return html.Div(
             className="panel",
             children=[
                 html.H3("Recent Alerts", className="panel-title"),
                 html.P(
-                    "No alerts available. Configure API keys to enable live alerts.",
+                    "No alerts available.",
                     className="alert-body",
                     style={"color": COLORS["text_muted"], "padding": "20px 0"},
                 ),
@@ -75,128 +178,8 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
         )
 
     items = []
-
-    # --- Daily Briefing Card ---
-    # Option 5: Show button to generate briefing on-demand (reduces automatic API usage)
-    if briefing_text:
-        # Briefing already exists - display it
-        items.append(
-            html.Div(
-                className="daily-briefing-card",
-                style={
-                    "backgroundColor": "#1a1d26",
-                    "border": f"1px solid {COLORS['card_border']}",
-                    "borderRadius": "8px",
-                    "padding": "16px",
-                    "marginBottom": "20px",
-                    "boxShadow": "0 2px 4px rgba(0,0,0,0.2)",
-                },
-                children=[
-                    html.H4(
-                        "AI Daily Briefing", 
-                        style={
-                            "margin": "0 0 12px 0", 
-                            "fontSize": "14px", 
-                            "fontWeight": "700",
-                            "color": COLORS["accent"],
-                            "textTransform": "uppercase",
-                            "letterSpacing": "0.5px"
-                        }
-                    ),
-                    html.Div(
-                        id="briefing-content",
-                        style={"fontSize": "13px", "lineHeight": "1.6", "color": "#d1d5db"},
-                        children=[html.P(line, style={"marginBottom": "8px"}) for line in briefing_text.split("\n") if line.strip()]
-                    ),
-                    # Hidden button placeholder to prevent callback errors
-                    html.Button(id="generate-briefing-btn", style={"display": "none"}),
-                    
-                    # Full Report Link (opens in new tab)
-                    html.A(
-                        "Read Full Report →",
-                        href="/report",
-                        target="_blank",
-                        style={
-                            "display": "block",
-                            "marginTop": "12px",
-                            "backgroundColor": "transparent",
-                            "color": COLORS["accent"],
-                            "border": f"1px solid {COLORS['accent']}",
-                            "borderRadius": "4px",
-                            "padding": "8px 12px",
-                            "fontSize": "12px",
-                            "fontWeight": "600",
-                            "cursor": "pointer",
-                            "width": "100%",
-                            "textAlign": "center",
-                            "textDecoration": "none",
-                            "transition": "all 0.2s",
-                        },
-                    ),
-                ]
-            )
-        )
-    else:
-        # No briefing yet - show generate button (reduces automatic API calls)
-        items.append(
-            html.Div(
-                className="daily-briefing-card",
-                style={
-                    "backgroundColor": "#1a1d26",
-                    "border": f"1px solid {COLORS['card_border']}",
-                    "borderRadius": "8px",
-                    "padding": "16px",
-                    "marginBottom": "20px",
-                    "textAlign": "center",
-                },
-                children=[
-                    html.H4(
-                        "AI Daily Briefing", 
-                        style={
-                            "margin": "0 0 12px 0", 
-                            "fontSize": "14px", 
-                            "fontWeight": "700",
-                            "color": COLORS["accent"],
-                            "textTransform": "uppercase",
-                            "letterSpacing": "0.5px"
-                        }
-                    ),
-                    dcc.Loading(
-                        id="briefing-loading",
-                        type="dot",
-                        color=COLORS["accent"],
-                        children=html.Div(
-                            id="briefing-content",
-                            children=[
-                                html.P(
-                                    "Click to generate an AI-powered summary of today's supply chain news.",
-                                    style={"color": COLORS["text_muted"], "marginBottom": "12px", "fontSize": "13px"}
-                                ),
-                                html.Button(
-                                    "Generate Briefing",
-                                    id="generate-briefing-btn",
-                                    style={
-                                        "backgroundColor": COLORS["accent"],
-                                        "color": "white",
-                                        "border": "none",
-                                        "borderRadius": "6px",
-                                        "padding": "10px 20px",
-                                        "fontSize": "13px",
-                                        "fontWeight": "600",
-                                        "cursor": "pointer",
-                                    },
-                                ),
-                            ]
-                        )
-                    ),
-                ]
-            )
-        )
-
     for alert in alerts:
         sev = _SEVERITY_STYLES.get(alert["severity"], _SEVERITY_STYLES["low"])
-
-        # Show which supply chain category this alert was classified into
         cat_key = alert.get("category", "geopolitical")
         cat_label = CATEGORY_LABELS.get(cat_key, cat_key.title())
 
@@ -248,7 +231,7 @@ def build_alerts_feed(alerts: list[dict], briefing_text: str = "") -> html.Div:
                     href=alert.get("url", "#"),
                     target="_blank",
                     className="alert-title",
-                    style={"display": "block", "textDecoration": "none", "color": "inherit", "fontWeight": "600", "marginBottom": "4px", "hover": {"textDecoration": "underline"}}
+                    style={"display": "block", "textDecoration": "none", "color": "inherit", "fontWeight": "600", "marginBottom": "4px"},
                 ),
                 html.P(alert["body"], className="alert-body"),
             ],

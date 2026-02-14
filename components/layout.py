@@ -30,7 +30,7 @@ from dash import dcc, html
 
 from components.cards import build_category_cards
 from components.charts import build_category_panel, build_history_chart, build_world_map
-from components.feed import build_alerts_feed, build_disruptions_table
+from components.feed import build_briefing_panel, build_news_panel
 from components.gauge import build_gauge_figure
 from config import APP_SUBTITLE, APP_TITLE
 from components.docs import build_docs_modal
@@ -94,8 +94,11 @@ def build_layout(
     health_panel = build_category_panel(current_scores)
     map_fig = build_world_map(map_markers)
     briefing = data.get("briefing", "")
-    alerts_panel = build_alerts_feed(alerts, briefing_text=briefing)
-    disruptions_panel = build_disruptions_table(disruptions)
+    
+    # New Layout Components
+    briefing_panel = build_briefing_panel(briefing_text=briefing)
+    news_panel = build_news_panel(alerts)
+    
     market_panel = build_market_costs_panel(market_data)
 
     return html.Div(
@@ -224,12 +227,13 @@ def build_layout(
                 ],
             ),
 
-            # ── Bottom Panels (alerts + disruptions) ────────────────
+            # ── Bottom Panels (Briefing + News) ─────────────────────
+            # Replacing Disruptions Table with News Panel as requested
             html.Section(
                 className="bottom-row",
                 children=[
-                    html.Div(className="bottom-panel", children=[alerts_panel]),
-                    html.Div(className="bottom-panel", children=[disruptions_panel]),
+                    html.Div(className="bottom-panel", children=[briefing_panel]),
+                    html.Div(className="bottom-panel", children=[news_panel]),
                 ],
             ),
 
