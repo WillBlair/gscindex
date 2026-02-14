@@ -108,6 +108,9 @@ if not startup_data:
 # _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
 _LAST_UPDATE = datetime.now() if startup_data else None
+# Disk cache = prior successful fetch, so treat as fresh (no 20s refresh loop)
+if startup_data:
+    _DATA_IS_FRESH = True
 
 # ── Clear Stale News Cache (Deploy Cache Bust) ──────────────────────
 # On every startup (i.e. every deploy), clear the newsapi briefing cache
@@ -219,7 +222,7 @@ def create_app() -> dash.Dash:
 
     # ── Layout as a function: Reads from memory instantly ────────────────
     def serve_layout():
-        global _DATA_CACHE, _LAST_UPDATE
+        global _DATA_CACHE, _LAST_UPDATE, _DATA_IS_FRESH
         
         with _LOCK:
             data = _DATA_CACHE
@@ -234,7 +237,9 @@ def create_app() -> dash.Dash:
                     with _LOCK:
                         _DATA_CACHE = disk_data
                         _LAST_UPDATE = datetime.now()
+                        _DATA_IS_FRESH = True  # disk cache = prior successful fetch
                     data = disk_data
+                    is_fresh = True
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
 
