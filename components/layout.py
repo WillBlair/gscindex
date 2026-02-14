@@ -32,11 +32,9 @@ from components.cards import build_category_cards
 from components.charts import build_category_panel, build_history_chart, build_world_map
 from components.feed import build_alerts_feed, build_disruptions_table
 from components.gauge import build_gauge_figure
-from config import APP_SUBTITLE, APP_TITLE, COLORS
-from scoring import compute_composite_index
-
-from scoring import compute_composite_index
+from config import APP_SUBTITLE, APP_TITLE
 from components.docs import build_docs_modal
+from scoring import compute_composite_index
 
 from components.market_costs import build_market_costs_panel
 
@@ -45,7 +43,12 @@ _REFRESH_MS_NORMAL = 5 * 60 * 1000       # 5 min when data is fresh
 _REFRESH_MS_PROVISIONAL = 20 * 1000       # 20 sec when serving stale/cached data
 
 
-def build_layout(data: dict, *, is_provisional: bool = False) -> html.Div:
+def build_layout(
+    data: dict,
+    *,
+    is_provisional: bool = False,
+    last_updated: datetime | None = None,
+) -> html.Div:
     """Construct the full dashboard layout from aggregated data.
 
     Parameters
@@ -58,6 +61,9 @@ def build_layout(data: dict, *, is_provisional: bool = False) -> html.Div:
         session).  A shorter auto-refresh interval is used so the page
         reloads automatically once the background thread finishes.
 
+    last_updated : datetime | None
+        Actual fetch/update time in UTC from the backend cache.
+
     Returns
     -------
     html.Div
@@ -69,11 +75,12 @@ def build_layout(data: dict, *, is_provisional: bool = False) -> html.Div:
     alerts = data["alerts"]
     disruptions = data["disruptions"]
     market_data = data.get("market_data", {})
+    display_last_updated = last_updated.astimezone(ZoneInfo("America/Denver")) if last_updated else None
 
     # Compute composite index and day-over-day delta
     composite = compute_composite_index(current_scores)
     yesterday_scores = {
-        cat: float(series.iloc[-2])
+        cat: float(series.iloc[-2] if len(series) > 1 else series.iloc[-1])
         for cat, series in category_history.items()
     }
     composite_yesterday = compute_composite_index(yesterday_scores)
@@ -115,7 +122,11 @@ def build_layout(data: dict, *, is_provisional: bool = False) -> html.Div:
                         className="header-meta",
                         children=[
                             html.Span(
-                                f"Last updated: {datetime.now(ZoneInfo('America/Denver')).strftime('%b %d, %Y %H:%M')}",
+                                (
+                                    f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
+                                    if display_last_updated
+                                    else "Last updated: warming up..."
+                                ),
                                 className="last-updated",
                             ),
                             html.Span(

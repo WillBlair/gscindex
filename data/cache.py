@@ -41,6 +41,34 @@ else:
 DEFAULT_TTL_SECONDS = 3600
 
 
+def _get_cache_path(key: str, ext: str = ".json") -> Path:
+    """Return cache path for a key and extension."""
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return _CACHE_DIR / f"{key}{ext}"
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    """Atomically write text file to avoid torn writes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False) as tmp:
+        tmp.write(content)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        temp_name = tmp.name
+    os.replace(temp_name, path)
+
+
+def _write_pickle_atomic(path: Path, data: Any) -> None:
+    """Atomically write pickle file to avoid torn writes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("wb", dir=path.parent, delete=False) as tmp:
+        pickle.dump(data, tmp)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        temp_name = tmp.name
+    os.replace(temp_name, path)
+
+
 def get_cached(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> dict | list | None:
     """Return cached data if it exists and hasn't expired.
 
@@ -56,7 +84,7 @@ def get_cached(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> dict | list | None:
     dict | list | None
         The cached data, or ``None`` if cache is missing or expired.
     """
-    path = _CACHE_DIR / f"{key}.json"
+    path = _get_cache_path(key, ext=".json")
     if not path.exists():
         return None
 
@@ -64,7 +92,11 @@ def get_cached(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> dict | list | None:
     if age_seconds > ttl:
         return None
 
-    return json.loads(path.read_text())
+    try:
+        return json.loads(path.read_text())
+    except Exception as e:
+        logger.warning("Cache read failed for %s: %s", key, e)
+        return None
 
 
 def set_cached(key: str, data: dict | list) -> None:
@@ -77,9 +109,8 @@ def set_cached(key: str, data: dict | list) -> None:
     data : dict | list
         JSON-serializable data to store.
     """
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _CACHE_DIR / f"{key}.json"
-    path.write_text(json.dumps(data, default=str))
+    path = _get_cache_path(key, ext=".json")
+    _write_text_atomic(path, json.dumps(data, default=str))
 
 
 
@@ -114,8 +145,7 @@ def set_cached_pickle(key: str, data: Any) -> None:
     """Save an object to cache using pickle."""
     filename = _get_cache_path(key, ext=".pkl")
     try:
-        with open(filename, "wb") as f:
-            pickle.dump(data, f)
+        _write_pickle_atomic(filename, data)
     except Exception as e:
         logger.warning(f"Failed to write cache (pickle) {key}: {e}")
 
@@ -145,17 +175,6 @@ def set_cached_dashboard(data: dict) -> None:
         safe_data["category_history"] = safe_history
 
     set_cached("dashboard_snapshot_safe", safe_data)
-
-    # Also update the fallback snapshot that ships with the repo.
-    # On Render, the filesystem persists within a deploy (between spin-down/spin-up
-    # cycles) even though it's wiped on a new deploy.  This ensures that after the
-    # first successful background fetch, every subsequent cold start within this
-    # deploy serves data that is at most 5 minutes old instead of days old.
-    try:
-        fallback_path = Path(__file__).parent / "fallback_snapshot_safe.json"
-        fallback_path.write_text(json.dumps(safe_data, default=str))
-    except Exception as e:
-        logger.warning("Failed to update fallback snapshot: %s", e)
 
 
 def reconstruct_dashboard_state(data: dict) -> dict:

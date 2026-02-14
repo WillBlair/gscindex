@@ -578,6 +578,7 @@ def aggregate_data(status_callback=None) -> dict:
     logger.info("Data aggregation complete in %.2fs", elapsed)
 
     result = {
+        "last_updated_utc": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         "dates": dates,
         "category_history": category_history,
         "current_scores": current_scores,

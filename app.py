@@ -18,7 +18,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import dash
 import dash_bootstrap_components as dbc
@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 from components.layout import build_layout
 from config import APP_TITLE, CATEGORY_WEIGHTS
-from data import aggregate_data, get_safe_fallback_data
+from data import aggregate_data
 
 # Load .env before anything reads API keys
 load_dotenv()
@@ -69,6 +69,21 @@ def _migrate_keys(data: dict) -> dict:
                 sub[new_key] = sub.pop(old_key)
     return data
 
+
+def _extract_last_updated(data: dict | None) -> datetime | None:
+    """Parse last update timestamp from dashboard payload if present."""
+    if not data:
+        return None
+    raw = data.get("last_updated_utc")
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        normalized = raw.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
 # On Render, the filesystem is ephemeral: wiped on every deploy and spin-down.
 # So we ONLY trust the disk cache if it exists (written by a prior run in this
@@ -82,7 +97,7 @@ startup_data = None
 
 # Layer 1: Disk cache only (from a previous successful run in this instance)
 try:
-    from data.cache import get_cached_dashboard, reconstruct_dashboard_state
+    from data.cache import get_cached_dashboard
     startup_data = get_cached_dashboard()
     if startup_data:
         startup_data = _migrate_keys(startup_data)
@@ -107,7 +122,7 @@ if not startup_data:
 
 # _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
-_LAST_UPDATE = datetime.now() if startup_data else None
+_LAST_UPDATE = _extract_last_updated(startup_data) if startup_data else None
 # Disk cache = prior successful fetch, so treat as fresh (no 20s refresh loop)
 if startup_data:
     _DATA_IS_FRESH = True
@@ -141,7 +156,7 @@ def update_data_loop():
             
             with _LOCK:
                 _DATA_CACHE = new_data
-                _LAST_UPDATE = datetime.now()
+                _LAST_UPDATE = _extract_last_updated(new_data) or datetime.now(timezone.utc)
                 _DATA_IS_FRESH = True
             
             logger.info("Data update complete. Sleeping for 5 minutes.")
@@ -227,6 +242,7 @@ def create_app() -> dash.Dash:
         with _LOCK:
             data = _DATA_CACHE
             is_fresh = _DATA_IS_FRESH
+            last_update = _LAST_UPDATE
             
         # If no memory cache, try lazy-load from disk (recovers if another worker updated it)
         if data is None:
@@ -236,10 +252,11 @@ def create_app() -> dash.Dash:
                 if disk_data:
                     with _LOCK:
                         _DATA_CACHE = disk_data
-                        _LAST_UPDATE = datetime.now()
+                        _LAST_UPDATE = _extract_last_updated(disk_data) or datetime.now(timezone.utc)
                         _DATA_IS_FRESH = True  # disk cache = prior successful fetch
                     data = disk_data
                     is_fresh = True
+                    last_update = _LAST_UPDATE
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
 
@@ -250,7 +267,7 @@ def create_app() -> dash.Dash:
         # When data is provisional (from fallback/cache, not a live fetch),
         # use a 20-second refresh so the page auto-reloads once the
         # background thread finishes (~50-60s).  Once fresh, back to 5 min.
-        layout = build_layout(data, is_provisional=not is_fresh)
+        layout = build_layout(data, is_provisional=not is_fresh, last_updated=last_update)
         return layout
 
     app.layout = serve_layout
@@ -284,8 +301,12 @@ def create_app() -> dash.Dash:
         with _LOCK:
             if _DATA_CACHE is not None:
                 return "Data loaded! Launching dashboard...", "RELOAD"
+
+        # 2. If startup exceeds 5 minutes, show actionable status.
+        if n >= 300:
+            return "Startup is taking longer than expected. Please refresh in 30 seconds.", dash.no_update
         
-        # 2. Check the disk-based status file (handles multi-worker case)
+        # 3. Check the disk-based status file (handles multi-worker case)
         try:
             current_status = get_status()
             if current_status == "Data ready!":

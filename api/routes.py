@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from scoring import compute_composite_index
 
 # Create Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
@@ -32,10 +33,11 @@ def get_latest_data():
     # to save bandwidth, unless requested? 
     # Actually, user asked "add this data to your project", so full snapshot is better.
     
+    current_scores = data.get("current_scores", {})
     response = {
         "timestamp": data.get("dates", [])[-1] if data.get("dates") else None,
-        "composite_index": 0, # Calculate if needed? Or just let them sum it?
-        "categories": data.get("current_scores", {}),
+        "composite_index": round(compute_composite_index(current_scores), 1) if current_scores else None,
+        "categories": current_scores,
         "disruptions": data.get("disruptions", []),
         "map_markers": data.get("map_markers", []),
         "meta": {
