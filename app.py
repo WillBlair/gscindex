@@ -48,6 +48,9 @@ logging.basicConfig(
 _DATA_CACHE = None
 _LAST_UPDATE = None
 _DATA_IS_FRESH = False  # True only after the background thread completes a real fetch
+_LAST_FETCH_STATUS = "starting"
+_LAST_FETCH_ERROR = None
+_LAST_FETCH_DURATION_SECONDS = None
 _LOCK = threading.Lock()
 
 from data.status import set_status, get_status
@@ -83,6 +86,15 @@ def _extract_last_updated(data: dict | None) -> datetime | None:
         return parsed.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """Normalize datetime to UTC-aware."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
 # On Render, the filesystem is ephemeral: wiped on every deploy and spin-down.
@@ -144,6 +156,7 @@ except Exception as e:
 def update_data_loop():
     """Background loop that refreshes data every 5 minutes."""
     global _DATA_CACHE, _LAST_UPDATE, _DATA_IS_FRESH
+    global _LAST_FETCH_STATUS, _LAST_FETCH_ERROR, _LAST_FETCH_DURATION_SECONDS
     
     logger = logging.getLogger("DataUpdater")
     logger.info("Starting background data updater...")
@@ -151,19 +164,30 @@ def update_data_loop():
     while True:
         try:
             logger.info("Fetching fresh data from all providers...")
+            fetch_started = datetime.now(timezone.utc)
+            with _LOCK:
+                _LAST_FETCH_STATUS = "running"
+                _LAST_FETCH_ERROR = None
             set_status("Starting data update...")
             new_data = aggregate_data(status_callback=set_status)
+            fetch_duration = (datetime.now(timezone.utc) - fetch_started).total_seconds()
             
             with _LOCK:
                 _DATA_CACHE = new_data
                 _LAST_UPDATE = _extract_last_updated(new_data) or datetime.now(timezone.utc)
                 _DATA_IS_FRESH = True
+                _LAST_FETCH_STATUS = "ok"
+                _LAST_FETCH_ERROR = None
+                _LAST_FETCH_DURATION_SECONDS = round(fetch_duration, 2)
             
             logger.info("Data update complete. Sleeping for 5 minutes.")
             time.sleep(300)
             
         except Exception as e:
             logger.error(f"Data update failed: {e}")
+            with _LOCK:
+                _LAST_FETCH_STATUS = "failed"
+                _LAST_FETCH_ERROR = str(e)
             time.sleep(60)
 
 def create_app() -> dash.Dash:
@@ -231,6 +255,56 @@ def create_app() -> dash.Dash:
     @limiter.request_filter
     def ignore_dash_reload():
         return flask.request.path.startswith("/_reload-hash")
+
+    @app.server.get("/health")
+    @app.server.get("/healthz")
+    def health():
+        """Lightweight operational health endpoint for freshness monitoring."""
+        now_utc = datetime.now(timezone.utc)
+        with _LOCK:
+            has_data = _DATA_CACHE is not None
+            is_fresh = _DATA_IS_FRESH
+            last_update = _as_utc(_LAST_UPDATE)
+            fetch_status = _LAST_FETCH_STATUS
+            fetch_error = _LAST_FETCH_ERROR
+            fetch_duration = _LAST_FETCH_DURATION_SECONDS
+
+        age_seconds = round((now_utc - last_update).total_seconds(), 1) if last_update else None
+        try:
+            status_message = get_status()
+        except Exception:
+            status_message = "status_unavailable"
+
+        # Health policy:
+        # - healthy: data exists and is not too old
+        # - warming_up: no data yet
+        # - degraded: data exists but stale (>30m) or fetch is failing
+        state = "healthy"
+        http_status = 200
+        if not has_data:
+            state = "warming_up"
+            http_status = 503
+        elif fetch_status == "failed":
+            state = "degraded"
+            if age_seconds is None or age_seconds > 1800:
+                http_status = 503
+        elif age_seconds is not None and age_seconds > 1800:
+            state = "degraded"
+
+        payload = {
+            "state": state,
+            "now_utc": now_utc.isoformat().replace("+00:00", "Z"),
+            "is_fresh": is_fresh,
+            "has_data": has_data,
+            "last_updated_utc": last_update.isoformat().replace("+00:00", "Z") if last_update else None,
+            "data_age_seconds": age_seconds,
+            "last_fetch_status": fetch_status,
+            "last_fetch_error": fetch_error,
+            "last_fetch_duration_seconds": fetch_duration,
+            "status_message": status_message,
+            "update_interval_seconds": 300,
+        }
+        return flask.jsonify(payload), http_status
 
     # ── Skeleton Loading Import ─────────────────────────────────────────
     from components.skeleton import build_skeleton_layout

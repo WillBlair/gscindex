@@ -1,8 +1,6 @@
-import os
-from pathlib import Path
+from data.cache import _CACHE_DIR
 
-# Use the same cache directory as data/cache.py
-_CACHE_DIR = Path(os.path.dirname(__file__)) / ".cache"
+# Share exact same cache directory as data/cache.py
 _STATUS_FILE = _CACHE_DIR / "loading_status.txt"
 
 def set_status(message: str):
