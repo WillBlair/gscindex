@@ -40,11 +40,12 @@ from components.docs import build_docs_modal
 
 from components.market_costs import build_market_costs_panel
 
-# Auto-refresh interval: 5 minutes (in milliseconds)
-_REFRESH_MS = 5 * 60 * 1000
+# Auto-refresh intervals (milliseconds)
+_REFRESH_MS_NORMAL = 5 * 60 * 1000       # 5 min when data is fresh
+_REFRESH_MS_PROVISIONAL = 20 * 1000       # 20 sec when serving stale/cached data
 
 
-def build_layout(data: dict) -> html.Div:
+def build_layout(data: dict, *, is_provisional: bool = False) -> html.Div:
     """Construct the full dashboard layout from aggregated data.
 
     Parameters
@@ -52,6 +53,10 @@ def build_layout(data: dict) -> html.Div:
     data : dict
         Output of ``aggregate_data()`` containing all data needed
         by every component.
+    is_provisional : bool
+        If True, the data is from a cache/fallback (not a live fetch this
+        session).  A shorter auto-refresh interval is used so the page
+        reloads automatically once the background thread finishes.
 
     Returns
     -------
@@ -90,9 +95,10 @@ def build_layout(data: dict) -> html.Div:
         className="dashboard",
         children=[
             # ── Auto-refresh interval (hidden) ──────────────────────
+            # 20s when provisional (waiting for background fetch), 5 min when fresh
             dcc.Interval(
                 id="refresh-interval",
-                interval=_REFRESH_MS,
+                interval=_REFRESH_MS_PROVISIONAL if is_provisional else _REFRESH_MS_NORMAL,
                 n_intervals=0,
             ),
             html.Div(id="refresh-trigger", style={"display": "none"}),
@@ -113,10 +119,14 @@ def build_layout(data: dict) -> html.Div:
                                 className="last-updated",
                             ),
                             html.Span(
-                                "Auto-refreshes every 5 min",
+                                "Updating — refreshing in ~20s..." if is_provisional else "Auto-refreshes every 5 min",
                                 className="refresh-note",
                             ),
-                            html.Span("● Live", className="live-dot"),
+                            html.Span(
+                                "● Updating..." if is_provisional else "● Live",
+                                className="live-dot",
+                                style={"color": "#fbbf24"} if is_provisional else {},
+                            ),
                             
                             # Docs Button
                             dbc.Button(

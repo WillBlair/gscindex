@@ -47,6 +47,7 @@ logging.basicConfig(
 
 _DATA_CACHE = None
 _LAST_UPDATE = None
+_DATA_IS_FRESH = False  # True only after the background thread completes a real fetch
 _LOCK = threading.Lock()
 
 from data.status import set_status, get_status
@@ -139,7 +140,7 @@ except Exception as e:
 
 def update_data_loop():
     """Background loop that refreshes data every 5 minutes."""
-    global _DATA_CACHE, _LAST_UPDATE
+    global _DATA_CACHE, _LAST_UPDATE, _DATA_IS_FRESH
     
     logger = logging.getLogger("DataUpdater")
     logger.info("Starting background data updater...")
@@ -148,21 +149,19 @@ def update_data_loop():
         try:
             logger.info("Fetching fresh data from all providers...")
             set_status("Starting data update...")
-            # Pass our file-based set_status as the callback
             new_data = aggregate_data(status_callback=set_status)
             
             with _LOCK:
                 _DATA_CACHE = new_data
                 _LAST_UPDATE = datetime.now()
+                _DATA_IS_FRESH = True
             
             logger.info("Data update complete. Sleeping for 5 minutes.")
-            
-            # Use sleep for the interval. 
-            time.sleep(300) 
+            time.sleep(300)
             
         except Exception as e:
             logger.error(f"Data update failed: {e}")
-            time.sleep(60) # Retry sooner on failure
+            time.sleep(60)
 
 def create_app() -> dash.Dash:
     """Factory function that creates and configures the Dash application."""
@@ -239,6 +238,7 @@ def create_app() -> dash.Dash:
         
         with _LOCK:
             data = _DATA_CACHE
+            is_fresh = _DATA_IS_FRESH
             
         # If no memory cache, try lazy-load from disk (recovers if another worker updated it)
         if data is None:
@@ -254,21 +254,13 @@ def create_app() -> dash.Dash:
                 logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
 
         if data is None:
-            # Show the Skeleton UI instead of text
             return build_skeleton_layout()
 
-        # Retrieve errors to log
-        if data.get("provider_errors"):
-            for cat, err in data["provider_errors"].items():
-                logging.getLogger(__name__).warning(
-                    "Category '%s' using fallback: %s", cat, err
-                )
-                
-        # Build the actual dashboard
-        layout = build_layout(data)
-        
-        # Add a timestamp footer or indicator if desired? 
-        # For now just return the layout.
+        # Build the actual dashboard.
+        # When data is provisional (from fallback/cache, not a live fetch),
+        # use a 20-second refresh so the page auto-reloads once the
+        # background thread finishes (~50-60s).  Once fresh, back to 5 min.
+        layout = build_layout(data, is_provisional=not is_fresh)
         return layout
 
     app.layout = serve_layout

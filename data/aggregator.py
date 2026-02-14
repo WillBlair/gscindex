@@ -474,29 +474,28 @@ def aggregate_data(status_callback=None) -> dict:
         except concurrent.futures.TimeoutError:
             logger.warning("Data fetch timed out. Some providers may be missing.")
 
-        # B. Process News
+        # B. Process News (AI analysis takes 20-40s — old 5s timeout killed it every time)
         alerts = []
         briefing = ""
         full_report = ""
         try:
-             # Wait specifically for news
             if status_callback: status_callback("Analyzing news feeds (AI)...")
-            _, alerts, briefing, full_report = future_news.result(timeout=5)  
+            _, alerts, briefing, full_report = future_news.result(timeout=120)
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
-        # C. Process Market Data
+        # C. Process Market Data (yfinance is slow on cold start)
         market_data = {}
         try:
-            market_data = future_market.result(timeout=5) or {}
+            market_data = future_market.result(timeout=30) or {}
         except Exception as e:
             logger.warning("Market data fetch timed out or failed: %s", e)
         
-        # D. Process Port Summaries
+        # D. Process Port Summaries (Gemini AI generation)
         port_summaries = {}
         try:
             if status_callback: status_callback("Generating port summaries...")
-            port_summaries = future_port_summaries.result(timeout=10) or {}
+            port_summaries = future_port_summaries.result(timeout=60) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
 

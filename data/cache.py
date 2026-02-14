@@ -146,6 +146,17 @@ def set_cached_dashboard(data: dict) -> None:
 
     set_cached("dashboard_snapshot_safe", safe_data)
 
+    # Also update the fallback snapshot that ships with the repo.
+    # On Render, the filesystem persists within a deploy (between spin-down/spin-up
+    # cycles) even though it's wiped on a new deploy.  This ensures that after the
+    # first successful background fetch, every subsequent cold start within this
+    # deploy serves data that is at most 5 minutes old instead of days old.
+    try:
+        fallback_path = Path(__file__).parent / "fallback_snapshot_safe.json"
+        fallback_path.write_text(json.dumps(safe_data, default=str))
+    except Exception as e:
+        logger.warning("Failed to update fallback snapshot: %s", e)
+
 
 def reconstruct_dashboard_state(data: dict) -> dict:
     """Helper to reconstruct Pandas types from JSON-safe dashboard state."""
@@ -168,10 +179,16 @@ def reconstruct_dashboard_state(data: dict) -> dict:
 def get_cached_dashboard() -> dict | None:
     """Load the full dashboard state from disk cache.
 
+    Uses a 24-hour TTL (not the default 1-hour) because stale-but-real data
+    is always better than the ancient committed fallback snapshot.  On hosts
+    like Render where the service spins down after 15 min of inactivity, the
+    1-hour TTL was expiring before any visitor returned, forcing a fallback
+    to the days-old committed snapshot every single time.
+
     Returns the reconstructed dashboard dict (with Pandas types restored),
     or ``None`` if there is no cached snapshot or it has expired.
     """
-    data = get_cached("dashboard_snapshot_safe", ttl=3600)
+    data = get_cached("dashboard_snapshot_safe", ttl=86400)
     if not data:
         return None
     return reconstruct_dashboard_state(data)
