@@ -70,13 +70,17 @@ def _migrate_keys(data: dict) -> dict:
     return data
 
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
-# Layered recovery: disk cache → fallback snapshot → neutral defaults.
-# Each layer is individually guarded so a single failure can never leave
-# _DATA_CACHE as None (which would show the skeleton forever).
+# On Render, the filesystem is ephemeral: wiped on every deploy and spin-down.
+# So we ONLY trust the disk cache if it exists (written by a prior run in this
+# instance).  We do NOT load the committed fallback_snapshot_safe.json — it is
+# always days old and was the root cause of "stuck on 87.9 for 5 days".
+#
+# Cold start flow: _DATA_CACHE = None → skeleton → background thread fetches
+# → boot callback triggers reload → fresh data.  No stale fallback ever.
 
 startup_data = None
 
-# Layer 1: Try the disk cache written by the last successful run
+# Layer 1: Disk cache only (from a previous successful run in this instance)
 try:
     from data.cache import get_cached_dashboard, reconstruct_dashboard_state
     startup_data = get_cached_dashboard()
@@ -96,33 +100,14 @@ except Exception as e:
     logging.getLogger(__name__).warning("Disk cache load failed: %s", e)
     startup_data = None
 
-# Layer 2: Fall back to the committed JSON snapshot (for fresh deploys)
+# Layer 2: NO fallback snapshot.  On cold start, stay empty so we show skeleton
+# until the background thread completes.  Never show days-old committed data.
 if not startup_data:
-    try:
-        import json
-        from data.cache import reconstruct_dashboard_state
-        fallback_path = os.path.join(os.path.dirname(__file__), "data", "fallback_snapshot_safe.json")
-        if os.path.exists(fallback_path):
-            with open(fallback_path, "r") as f:
-                raw_data = json.load(f)
-            raw_data = _migrate_keys(raw_data)
-            fb_scores = raw_data.get("current_scores", {})
-            if set(CATEGORY_WEIGHTS.keys()).issubset(fb_scores.keys()):
-                startup_data = reconstruct_dashboard_state(raw_data)
-                logging.getLogger(__name__).info("FRESH DEPLOY RECOVERY: Loaded fallback JSON snapshot.")
-            else:
-                logging.getLogger(__name__).warning("Fallback snapshot has stale schema. Ignoring.")
-    except Exception as e:
-        logging.getLogger(__name__).warning("Fallback snapshot load failed: %s", e)
+    logging.getLogger(__name__).info("Cold start: no cache. Showing skeleton until background fetch completes.")
 
-# Layer 3: Absolute safety net — neutral 50s for every category
-if not startup_data:
-    logging.getLogger(__name__).warning("NO VALID PERSISTED DATA FOUND. Starting with neutral fallback data.")
-    startup_data = get_safe_fallback_data()
-
-# _DATA_CACHE is guaranteed non-None from this point forward
+# _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
-_LAST_UPDATE = datetime.now()
+_LAST_UPDATE = datetime.now() if startup_data else None
 
 # ── Clear Stale News Cache (Deploy Cache Bust) ──────────────────────
 # On every startup (i.e. every deploy), clear the newsapi briefing cache
