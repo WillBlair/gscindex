@@ -108,12 +108,27 @@ def build_skeleton_layout():
             html.Div(id="refresh-trigger", style={"display": "none"}),
             html.Div(id="boot-trigger", style={"display": "none"}), # Preserved for safety
             
-            # Check every 2 seconds if data is ready
-            # This shares the ID with the main layout's refresher or we use a dedicated one.
-            # app.py uses "refresh-interval". Let's use that one.
+            # ── Loading Status Feedback ─────────────────────────────────────
+            html.Div(
+                id="loading-message",
+                children="Initializing system...",
+                style={
+                    "textAlign": "center",
+                    "marginTop": "20px",
+                    "color": "#6b7280",
+                    "fontFamily": "Inter, sans-serif",
+                    "fontSize": "14px",
+                    "animation": "pulse 1.5s infinite"
+                }
+            ),
+
+            # Special triggers for boot sequence
+            html.Div(id="boot-reload-trigger", style={"display": "none"}),
+            
+            # Check every 1 second for data readiness
             dcc.Interval(
-                id="refresh-interval",
-                interval=2000,  # 2 seconds (faster check during boot)
+                id="boot-interval",
+                interval=1000, 
                 n_intervals=0
             ),
         ]

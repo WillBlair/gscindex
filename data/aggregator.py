@@ -371,7 +371,7 @@ def _fetch_provider_data(provider) -> tuple[str, float, pd.Series | None, dict, 
 
     return cat, current_score, history_series, metadata, error_msg
 
-def aggregate_data() -> dict:
+def aggregate_data(status_callback=None) -> dict:
     """Fetch data from all providers and assemble the dashboard data dict.
 
     Fetches are performed in PARALLEL to ensure fast startup.
@@ -394,6 +394,7 @@ def aggregate_data() -> dict:
     
     start_time = datetime.now()
     logger.info("Starting parallel data fetch...")
+    if status_callback: status_callback("Starting parallel data fetch...")
 
     current_scores: dict[str, float] = {}
     category_history: dict[str, pd.Series] = {}
@@ -431,6 +432,7 @@ def aggregate_data() -> dict:
 
         # A. Process Providers
         try:
+            if status_callback: status_callback("Waiting for data providers...")
             for future in concurrent.futures.as_completed(future_to_provider, timeout=45):
                 try:
                     # Unpack 5 values now
@@ -478,7 +480,8 @@ def aggregate_data() -> dict:
         full_report = ""
         try:
              # Wait specifically for news
-            _, alerts, briefing, full_report = future_news.result(timeout=5) 
+            if status_callback: status_callback("Analyzing news feeds (AI)...")
+            _, alerts, briefing, full_report = future_news.result(timeout=5)  
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
@@ -492,6 +495,7 @@ def aggregate_data() -> dict:
         # D. Process Port Summaries
         port_summaries = {}
         try:
+            if status_callback: status_callback("Generating port summaries...")
             port_summaries = future_port_summaries.result(timeout=10) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
@@ -515,6 +519,7 @@ def aggregate_data() -> dict:
     # 4. AI Verification (New Layer)
     # -----------------------------------------------------------------------
     # Ask Gemini if this score makes sense
+    if status_callback: status_callback("Validating score with Gemini 3...")
     ai_validation = validate_score(composite, current_scores, alerts)
     
     # Optional: Adjust the score based on AI feedback (weighted 80/20?)

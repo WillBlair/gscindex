@@ -47,7 +47,14 @@ logging.basicConfig(
 
 _DATA_CACHE = None
 _LAST_UPDATE = None
+_LOADING_STATUS = "Initializing..."
 _LOCK = threading.Lock()
+
+def set_status(msg: str):
+    """Update the global loading status message safely."""
+    global _LOADING_STATUS
+    with _LOCK:
+        _LOADING_STATUS = msg
 
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
 # Safe JSON-based persistence to avoid production crashes (Error 520).
@@ -144,7 +151,8 @@ def update_data_loop():
     while True:
         try:
             logger.info("Fetching fresh data from all providers...")
-            new_data = aggregate_data()
+            set_status("Starting data update...")
+            new_data = aggregate_data(status_callback=set_status)
             
             with _LOCK:
                 _DATA_CACHE = new_data
@@ -267,6 +275,42 @@ def create_app() -> dash.Dash:
         """,
         Output("refresh-trigger", "children"),
         Input("refresh-interval", "n_intervals"),
+    )
+
+    # ── Boot Sequence: Polling & Reload ─────────────────────────────────
+    # This callback handles the "Loading..." screen updates and triggers
+    # a reload once data is ready.
+    
+    @app.callback(
+        [Output("loading-message", "children"), 
+         Output("boot-reload-trigger", "children")],
+        Input("boot-interval", "n_intervals"),
+    )
+    def update_boot_status(n):
+        # 1. Check if data is ready
+        data_ready = False
+        with _LOCK:
+            if _DATA_CACHE is not None:
+                data_ready = True
+            current_status = _LOADING_STATUS
+
+        if data_ready:
+            return "Data loaded! Launching dashboard...", "RELOAD"
+        
+        return current_status, dash.no_update
+
+    app.clientside_callback(
+        """
+        function(trigger) {
+            if (trigger === "RELOAD") {
+                window.location.reload();
+            }
+            return '';
+        }
+        """,
+        Output("boot-reload-trigger", "children", allow_duplicate=True),
+        Input("boot-reload-trigger", "children"),
+        prevent_initial_call=True
     )
     
     # Callback to auto-reload the page once data is ready (replaces "boot-check")
