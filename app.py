@@ -47,82 +47,81 @@ logging.basicConfig(
 
 _DATA_CACHE = None
 _LAST_UPDATE = None
-_DATA_CACHE = None
-_LAST_UPDATE = None
 _LOCK = threading.Lock()
 
 from data.status import set_status, get_status
 
+# ── Key Migration: Remap old category names to current ones ──────────
+_KEY_MIGRATIONS: dict[str, str] = {
+    "ports": "supply_chain",
+    "shipping": "trucking",
+}
+
+def _migrate_keys(data: dict) -> dict:
+    """Remap legacy category keys to current names in-place."""
+    for section in ("current_scores", "category_history", "category_metadata"):
+        sub = data.get(section)
+        if not isinstance(sub, dict):
+            continue
+        for old_key, new_key in _KEY_MIGRATIONS.items():
+            if old_key in sub and new_key not in sub:
+                sub[new_key] = sub.pop(old_key)
+    return data
+
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
-# Safe JSON-based persistence to avoid production crashes (Error 520).
+# Layered recovery: disk cache → fallback snapshot → neutral defaults.
+# Each layer is individually guarded so a single failure can never leave
+# _DATA_CACHE as None (which would show the skeleton forever).
+
+startup_data = None
+
+# Layer 1: Try the disk cache written by the last successful run
 try:
     from data.cache import get_cached_dashboard, reconstruct_dashboard_state
-    import json
-    
     startup_data = get_cached_dashboard()
-    
-    
-    # ── Key Migration: Remap old category names to current ones ──────────
-    _KEY_MIGRATIONS: dict[str, str] = {
-        "ports": "supply_chain",
-        "shipping": "trucking",
-    }
-
-    def _migrate_keys(data: dict) -> dict:
-        """Remap legacy category keys to current names in-place."""
-        for section in ("current_scores", "category_history", "category_metadata"):
-            sub = data.get(section)
-            if not isinstance(sub, dict):
-                continue
-            for old_key, new_key in _KEY_MIGRATIONS.items():
-                if old_key in sub and new_key not in sub:
-                    sub[new_key] = sub.pop(old_key)
-        return data
-
     if startup_data:
-        # Attempt to migrate legacy keys before validation
         startup_data = _migrate_keys(startup_data)
-
-        # VALIDATE SCHEMA: Ensure all required category keys exist.
         required_keys = set(CATEGORY_WEIGHTS.keys())
         cached_keys = set(startup_data.get("current_scores", {}).keys())
-        
         if not required_keys.issubset(cached_keys):
             logging.getLogger(__name__).warning(
-                f"⚠️ INVALIDATING CACHE: Missing keys {required_keys - cached_keys}. "
-                "Schema has changed."
+                "INVALIDATING CACHE: Missing keys %s. Schema has changed.",
+                required_keys - cached_keys,
             )
             startup_data = None
         else:
-            logging.getLogger(__name__).info("🚀 INSTANT STARTUP: Loaded persisted dashboard state (cache).")
-            logging.getLogger(__name__).info("Deploy trigger: Ensure markdown dependency is installed.")
-    
-    if not startup_data:
-        # Fallback to committed JSON snapshot (for fresh deploys)
+            logging.getLogger(__name__).info("INSTANT STARTUP: Loaded persisted dashboard state (cache).")
+except Exception as e:
+    logging.getLogger(__name__).warning("Disk cache load failed: %s", e)
+    startup_data = None
+
+# Layer 2: Fall back to the committed JSON snapshot (for fresh deploys)
+if not startup_data:
+    try:
+        import json
+        from data.cache import reconstruct_dashboard_state
         fallback_path = os.path.join(os.path.dirname(__file__), "data", "fallback_snapshot_safe.json")
         if os.path.exists(fallback_path):
             with open(fallback_path, "r") as f:
                 raw_data = json.load(f)
-                # Migrate legacy keys before validation
-                raw_data = _migrate_keys(raw_data)
-                fb_scores = raw_data.get("current_scores", {})
-                if set(CATEGORY_WEIGHTS.keys()).issubset(fb_scores.keys()):
-                    startup_data = reconstruct_dashboard_state(raw_data)
-                    logging.getLogger(__name__).info("🚀 FRESH DEPLOY RECOVERY: Loaded fallback JSON snapshot.")
-                else:
-                    logging.getLogger(__name__).warning("Fallback snapshot also has stale schema. Ignoring.")
+            raw_data = _migrate_keys(raw_data)
+            fb_scores = raw_data.get("current_scores", {})
+            if set(CATEGORY_WEIGHTS.keys()).issubset(fb_scores.keys()):
+                startup_data = reconstruct_dashboard_state(raw_data)
+                logging.getLogger(__name__).info("FRESH DEPLOY RECOVERY: Loaded fallback JSON snapshot.")
+            else:
+                logging.getLogger(__name__).warning("Fallback snapshot has stale schema. Ignoring.")
+    except Exception as e:
+        logging.getLogger(__name__).warning("Fallback snapshot load failed: %s", e)
 
-    # FINAL SAFETY NET: If we still don't have data, use safe fallback
-    if not startup_data:
-        logging.getLogger(__name__).warning("⚠️ NO VALID PERSISTED DATA FOUND. Starting with neutral fallback data.")
-        startup_data = get_safe_fallback_data()
+# Layer 3: Absolute safety net — neutral 50s for every category
+if not startup_data:
+    logging.getLogger(__name__).warning("NO VALID PERSISTED DATA FOUND. Starting with neutral fallback data.")
+    startup_data = get_safe_fallback_data()
 
-    if startup_data:
-        _DATA_CACHE = startup_data
-        _LAST_UPDATE = datetime.now()
-        
-except Exception as e:
-    logging.getLogger(__name__).warning(f"Failed to load persisted state: {e}")
+# _DATA_CACHE is guaranteed non-None from this point forward
+_DATA_CACHE = startup_data
+_LAST_UPDATE = datetime.now()
 
 # ── Clear Stale News Cache (Deploy Cache Bust) ──────────────────────
 # On every startup (i.e. every deploy), clear the newsapi briefing cache
@@ -304,19 +303,12 @@ def create_app() -> dash.Dash:
             if _DATA_CACHE is not None:
                 return "Data loaded! Launching dashboard...", "RELOAD"
         
-        # 2. Check if data is ready on disk (from another worker)
-        # This handles the multi-worker production case
-        from data.cache import get_cached_dashboard
+        # 2. Check the disk-based status file (handles multi-worker case)
         try:
-             # Only check disk if status says ready, or periodically? 
-             # Actually, simpler: read the status file.
-             current_status = get_status()
-             
-             if current_status == "Data ready!":
-                 # Trigger reload, which will hit serve_layout, which needs to load from disk
-                 return "Data loaded! Launching dashboard...", "RELOAD"
-                 
-             return current_status, dash.no_update
+            current_status = get_status()
+            if current_status == "Data ready!":
+                return "Data loaded! Launching dashboard...", "RELOAD"
+            return current_status, dash.no_update
         except Exception:
             return "Initializing...", dash.no_update
 
