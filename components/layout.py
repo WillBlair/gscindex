@@ -206,6 +206,16 @@ def build_layout(
                 children=category_cards,
             ),
 
+            # ── Bottom Panels (Briefing + News) ─────────────────────
+            # Replacing Disruptions Table with News Panel as requested
+            html.Section(
+                className="bottom-row",
+                children=[
+                    html.Div(className="bottom-panel", children=[briefing_panel]),
+                    html.Div(className="bottom-panel", children=[news_panel]),
+                ],
+            ),
+
             # ── Middle Row (health bars + world map) ────────────────
             html.Section(
                 className="charts-row",
@@ -224,16 +234,6 @@ def build_layout(
                             ),
                         ],
                     ),
-                ],
-            ),
-
-            # ── Bottom Panels (Briefing + News) ─────────────────────
-            # Replacing Disruptions Table with News Panel as requested
-            html.Section(
-                className="bottom-row",
-                children=[
-                    html.Div(className="bottom-panel", children=[briefing_panel]),
-                    html.Div(className="bottom-panel", children=[news_panel]),
                 ],
             ),
 

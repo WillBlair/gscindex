@@ -43,9 +43,9 @@ CATEGORY_LABELS: dict[str, str] = {
 
 HEALTH_TIERS: list[dict] = [
     {"min": 80, "max": 100, "label": "Healthy",       "color": "#00d97e"},
-    {"min": 60, "max": 79,  "label": "Moderate Risk",  "color": "#f6c343"},
-    {"min": 40, "max": 59,  "label": "Elevated Risk",  "color": "#fd7e14"},
-    {"min": 0,  "max": 39,  "label": "Critical",       "color": "#e63757"},
+    {"min": 60, "max": 79,  "label": "Stable",        "color": "#f6c343"},
+    {"min": 40, "max": 59,  "label": "Stressed",      "color": "#fd7e14"},
+    {"min": 0,  "max": 39,  "label": "Critical",      "color": "#e63757"},
 ]
 
 # ---------------------------------------------------------------------------

@@ -105,7 +105,7 @@ def get_health_tier(score: float) -> dict:
         ``min``, ``max``, ``label``, ``color``.
     """
     for tier in HEALTH_TIERS:
-        if tier["min"] <= score <= tier["max"]:
+        if score >= tier["min"]:
             return tier
     # Fallback — should never happen if tiers cover 0–100
     return HEALTH_TIERS[-1]
