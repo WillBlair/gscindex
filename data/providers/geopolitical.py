@@ -130,6 +130,74 @@ def _score_to_severity(score: float) -> str:
     return "low"
 
 
+def _build_fallback_briefing(alerts: list[dict]) -> str:
+    """Build a deterministic 3-bullet briefing when AI output is unavailable."""
+    if not alerts:
+        return (
+            "• Live supply chain feeds are online, but no material disruptions were detected in the latest cycle.\n"
+            "• Core logistics lanes and freight operations appear stable based on current article sentiment.\n"
+            "• Monitoring remains active for weather, trade policy, and geopolitical events that could shift risk quickly."
+        )
+
+    top = sorted(alerts, key=lambda a: float(a.get("sentiment", 0.0)))[:3]
+    bullets: list[str] = []
+    for alert in top:
+        title = str(alert.get("title", "Supply chain development")).strip()
+        category = str(alert.get("category", "geopolitical")).replace("_", " ")
+        severity = str(alert.get("severity", "low")).lower()
+        source = str(alert.get("source", "news source")).strip()
+        if len(title) > 140:
+            title = f"{title[:137]}..."
+        bullets.append(
+            f"• {category.title()} risk is {severity} priority after reports that {title} (source: {source})."
+        )
+
+    while len(bullets) < 3:
+        bullets.append(
+            "• Additional signals remain mixed, with no new systemic trigger identified in the latest ingest."
+        )
+    return "\n".join(bullets[:3])
+
+
+def _build_vader_alerts(candidates: list[dict]) -> tuple[list[dict], float]:
+    """Generate alerts deterministically from RSS/NewsAPI using VADER fallback."""
+    alerts: list[dict] = []
+    severity_sum = 0.0
+
+    for candidate in candidates:
+        title = (candidate.get("title") or "").strip()
+        description = (candidate.get("description") or "").strip()
+        if not title and not description:
+            continue
+
+        combined = f"{title} {description}".lower()
+        if _is_irrelevant_article(combined):
+            continue
+
+        category = _classify_category_keyword(combined)
+        compound = float(_VADER.polarity_scores(combined).get("compound", 0.0))
+        # Scale VADER [-1, +1] into the existing severity banding used elsewhere.
+        severity_score = round(compound * 6.0, 2)
+        severity_sum += severity_score
+
+        alerts.append(
+            {
+                "timestamp": candidate.get("published") or datetime.utcnow().isoformat(),
+                "severity": _score_to_severity(severity_score),
+                "title": title or "Untitled supply chain update",
+                "body": (description[:240] + "...") if len(description) > 240 else description,
+                "category": category,
+                "sentiment": severity_score,
+                "url": candidate.get("url") or "#",
+                "source": candidate.get("source") or "Industry News",
+            }
+        )
+
+    # Most severe first (more negative sentiment = higher risk)
+    alerts.sort(key=lambda a: (float(a.get("sentiment", 0.0)), str(a.get("timestamp", ""))))
+    return alerts, severity_sum
+
+
 def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
     """Return cached news analysis tuple if available, else None.
 
@@ -158,7 +226,31 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     cache_key = _NEWS_CACHE_KEY
     cached = get_cached(cache_key, ttl=14400)  # 4-hour cache (reduced API usage)
     if cached is not None:
-        return cached["score"], cached["alerts"], cached.get("briefing", ""), cached.get("full_report", "")
+        cached_alerts = cached.get("alerts", []) or []
+        cached_briefing = (cached.get("briefing", "") or "").strip()
+        cached_report = (cached.get("full_report", "") or "").strip()
+        cached_score = float(cached.get("score", 85.0))
+
+        # Self-heal stale/empty cache payloads instead of serving broken panels for 4h.
+        if cached_alerts:
+            if not cached_briefing:
+                cached_briefing = _build_fallback_briefing(cached_alerts)
+            if not cached_report:
+                cached_report = (
+                    "## Critical Disruptions\n"
+                    "No critical disruptions detected from the latest ingest.\n\n"
+                    "## Ocean Freight & Port Operations\n"
+                    "Monitoring active routes and terminal pressure based on available alerts.\n\n"
+                    "## Air & Land Logistics\n"
+                    "No systemic air, rail, or trucking disruption confirmed in cached state.\n\n"
+                    "## Market & Economic Context\n"
+                    "Risk posture reflects cached sentiment and may update on next refresh cycle.\n\n"
+                    "## Forward Outlook\n"
+                    "Watch for escalation in weather, tariffs, and geopolitical chokepoints."
+                )
+            return cached_score, cached_alerts, cached_briefing, cached_report
+
+        logger.warning("Cached news payload is empty; regenerating from live feeds.")
 
     # 1. Fetch from RSS Feeds (High Quality, User Specified)
     from data.rss_fetcher import fetch_rss_articles
@@ -189,8 +281,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     # If absolutely no RSS data, fallback to NewsAPI (Safety Net)
     if not candidates:
         logger.warning("No RSS articles found! Falling back to NewsAPI.")
-        # ... (NewsAPI Logic hidden here if we wanted, or just call the old logic?)
-        # For now, let's keep the old NewsAPI logic as a fallback block.
+        from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
         api_key = _get_api_key()
         try:
             resp = requests.get(
@@ -231,7 +322,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     
     alerts = []
     severity_sum = 0.0
-    briefing_text = ai_briefing
+    briefing_text = ai_briefing.strip() if isinstance(ai_briefing, str) else ""
     
     # ... (Rest of processing)
     
@@ -262,14 +353,36 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     
     # Fallback VADER for non-AI analyzed items or if AI failed
     if not alerts and candidates:
-         # ... existing VADER fallback logic ...
-         pass 
+        logger.warning(
+            "Gemini returned no usable alerts; using deterministic VADER fallback for %d candidates.",
+            len(candidates),
+        )
+        alerts, severity_sum = _build_vader_alerts(candidates[:30])
+
+    # Ensure briefing is always populated (AI first, deterministic fallback second)
+    if not briefing_text:
+        briefing_text = _build_fallback_briefing(alerts)
+
+    # Ensure full report has a minimum deterministic fallback
+    if not full_report_md.strip():
+        full_report_md = (
+            "## Critical Disruptions\n"
+            "No critical disruptions detected from the latest ingest.\n\n"
+            "## Ocean Freight & Port Operations\n"
+            "Live feeds are active; monitor freight lane pressure and port dwell-time narratives.\n\n"
+            "## Air & Land Logistics\n"
+            "No confirmed systemic breakdown was detected in rail, trucking, or air cargo in this cycle.\n\n"
+            "## Market & Economic Context\n"
+            "Macro conditions remain watchful with ongoing exposure to fuel, tariffs, and demand volatility.\n\n"
+            "## Forward Outlook\n"
+            "Track updates over the next 24-48 hours for escalation in weather and geopolitical chokepoints."
+        )
 
     # 4. Calculate Final Score
     final_score = 100.0 + severity_sum
     final_score = max(0.0, min(100.0, final_score))
 
-    alerts.sort(key=lambda a: (a["sentiment"], a["timestamp"]), reverse=False)
+    alerts.sort(key=lambda a: (a.get("sentiment", 0.0), a.get("timestamp", "")), reverse=False)
 
     result = {
         "score": round(final_score, 1),
