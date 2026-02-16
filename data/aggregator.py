@@ -408,7 +408,7 @@ def aggregate_data(status_callback=None) -> dict:
         freq="D",
     )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         # -- Submit Provider Tasks --
         future_to_provider = {
             executor.submit(_fetch_provider_data, p): p 

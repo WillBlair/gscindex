@@ -30,13 +30,33 @@ FEED_URLS = [
     "https://www.supplychainbrain.com/rss/topic/296-last-mile-delivery",
     
     # Logistics Management
-    "http://feeds.feedburner.com/logisticsmgmt/latest", # Note: http often used in older RSS for feedburner, let's try https if fails but list provided was https
+    "https://www.logisticsmgmt.com/rss/topic/transportation_news",
+    "https://www.logisticsmgmt.com/rss/topic/ocean_freight",
+    
+    # Maritime & Shipping (High Volume)
+    "https://gcaptain.com/feed/",
+    "https://splash247.com/feed/",
+    "https://theloadstar.com/feed/",
     
     # Strategic & Global
     "https://www.scmr.com/rss/resources", # Supply Chain Management Review
     "https://logisticsviewpoints.com/feed/",
-    "https://theloadstar.com/feed/",
+    "https://www.maritime-executive.com/rss/news",
 ]
+
+def parse_pub_date(entry) -> str:
+    """Robustly extract and normalize publication date."""
+    # 1. Try parsed struct_time first (most reliable)
+    if hasattr(entry, "published_parsed") and entry.published_parsed:
+        return datetime(*entry.published_parsed[:6]).isoformat()
+        
+    # 2. Try raw strings
+    raw_date = entry.get("published", "") or entry.get("updated", "") or entry.get("pubDate", "")
+    
+    if not raw_date:
+        return datetime.now().isoformat()
+        
+    return str(raw_date)
 
 def fetch_single_feed(url: str) -> list[dict]:
     """Fetch and parse a single RSS feed."""
@@ -52,25 +72,21 @@ def fetch_single_feed(url: str) -> list[dict]:
         
         source_name = feed.feed.get("title", "Industry News")
         
-        for entry in feed.entries[:10]: # Top 10 per feed to keep it recent
+        # Take top 15 to ensure we get enough recent ones even if some are irrelevant
+        for entry in feed.entries[:15]: 
             # Normalize fields
             title = entry.get("title", "No Title")
             link = entry.get("link", "#")
             
             # Description can be in summary, description, or content
             description = entry.get("summary", "") or entry.get("description", "")
-            # Clean up HTML tags if simple text needed? 
-            # For AI input, some HTML is okay, but cleaner is better.
-            # We'll leave it raw-ish for now, the AI handles it well.
             
             # Published date
-            pub_date = entry.get("published", "")
-            if not pub_date:
-                pub_date = entry.get("updated", datetime.now().isoformat())
+            pub_date = parse_pub_date(entry)
             
             articles.append({
                 "title": title,
-                "description": description[:500], # Truncate massive contents
+                "description": description[:800], # Truncate massive contents
                 "url": link,
                 "source": source_name,
                 "published": pub_date,
@@ -82,7 +98,7 @@ def fetch_single_feed(url: str) -> list[dict]:
         
     return articles
 
-def fetch_rss_articles(max_items: int = 50) -> list[dict]:
+def fetch_rss_articles(max_items: int = 60) -> list[dict]:
     """
     Fetch from all RSS feeds in parallel and return distinct articles.
     
@@ -91,9 +107,10 @@ def fetch_rss_articles(max_items: int = 50) -> list[dict]:
     list[dict]
         List of normalized article dicts sorted by date (if possible) or just shuffled.
     """
+    import random
     all_articles = []
     
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_url = {executor.submit(fetch_single_feed, url): url for url in FEED_URLS}
         
         for future in as_completed(future_to_url):
@@ -110,10 +127,13 @@ def fetch_rss_articles(max_items: int = 50) -> list[dict]:
         if art["url"] not in seen_urls:
             unique_articles.append(art)
             seen_urls.add(art["url"])
+            
+    # Mix them up so we don't get 10 articles from the same source in a row
+    random.shuffle(unique_articles)
     
-    # Assign IDs
-    # We use a simple hash or counter. In `geopolitical.py` they are assigned index IDs.
-    # Here we just return the list.
+    # Try to sort by date if possible, but date formats vary wildly. 
+    # Reliability of 'published' string vary.
+    # For now, shuffling is better than sorted-by-source.
     
     logger.info(f"Fetched {len(unique_articles)} unique articles from RSS feeds.")
     return unique_articles[:max_items]

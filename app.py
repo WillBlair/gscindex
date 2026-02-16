@@ -135,9 +135,14 @@ if not startup_data:
 # _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
 _LAST_UPDATE = _extract_last_updated(startup_data) if startup_data else None
-# Disk cache = prior successful fetch, so treat as fresh (no 20s refresh loop)
-if startup_data:
-    _DATA_IS_FRESH = True
+# Disk cache = prior successful fetch. Check if it's actually fresh (< 2 hours).
+if startup_data and _LAST_UPDATE:
+    age = (datetime.now(timezone.utc) - _LAST_UPDATE).total_seconds()
+    if age < 7200:
+        _DATA_IS_FRESH = True
+    else:
+        logging.getLogger(__name__).warning(f"Startup cache is stale ({age/3600:.1f}h old). Marking as provisional.")
+        _DATA_IS_FRESH = False
 
 # ── Clear Stale News Cache (Deploy Cache Bust) ──────────────────────
 # On every startup (i.e. every deploy), clear the newsapi briefing cache
