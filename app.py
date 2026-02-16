@@ -14,6 +14,7 @@ unnecessary API calls during rapid reloads.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -127,10 +128,29 @@ except Exception as e:
     logging.getLogger(__name__).warning("Disk cache load failed: %s", e)
     startup_data = None
 
-# Layer 2: NO fallback snapshot.  On cold start, stay empty so we show skeleton
-# until the background thread completes.  Never show days-old committed data.
+# Layer 2: Fallback snapshot for cold start.  On Render, disk cache is empty on
+# every deploy.  Without fallback, users see skeleton for 60+ seconds while the
+# background fetch runs — often causing "waiting for gscindex.com" timeouts.
+# Stale fallback (2–3 days old) is preferable to infinite loading.
 if not startup_data:
-    logging.getLogger(__name__).info("Cold start: no cache. Showing skeleton until background fetch completes.")
+    from pathlib import Path
+    from data.cache import reconstruct_dashboard_state
+    _fallback_path = Path(__file__).parent / "data" / "fallback_snapshot_safe.json"
+    try:
+        if _fallback_path.exists():
+            raw = json.loads(_fallback_path.read_text())
+            raw = _migrate_keys(raw)
+            required_keys = set(CATEGORY_WEIGHTS.keys())
+            cached_keys = set(raw.get("current_scores", {}).keys())
+            if required_keys.issubset(cached_keys):
+                startup_data = reconstruct_dashboard_state(raw)
+                logging.getLogger(__name__).info(
+                    "Cold start: Loaded fallback snapshot. Background fetch will refresh."
+                )
+    except Exception as e:
+        logging.getLogger(__name__).warning("Fallback load failed: %s", e)
+if not startup_data:
+    logging.getLogger(__name__).info("Cold start: no cache or fallback. Showing skeleton until background fetch completes.")
 
 # _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
@@ -282,13 +302,13 @@ def create_app() -> dash.Dash:
 
         # Health policy:
         # - healthy: data exists and is not too old
-        # - warming_up: no data yet
+        # - warming_up: no data yet (return 200 so Render doesn't fail deploy)
         # - degraded: data exists but stale (>30m) or fetch is failing
         state = "healthy"
         http_status = 200
         if not has_data:
             state = "warming_up"
-            http_status = 503
+            # Return 200 during warmup — Render fails deploy if health returns 503
         elif fetch_status == "failed":
             state = "degraded"
             if age_seconds is None or age_seconds > 1800:
