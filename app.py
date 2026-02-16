@@ -144,6 +144,11 @@ if not startup_data:
             cached_keys = set(raw.get("current_scores", {}).keys())
             if required_keys.issubset(cached_keys):
                 startup_data = reconstruct_dashboard_state(raw)
+                # Never show stale narrative/news from committed fallback.
+                startup_data["alerts"] = []
+                startup_data["briefing"] = "Loading live supply-chain news analysis..."
+                startup_data["full_report"] = ""
+                startup_data["disruptions"] = []
                 logging.getLogger(__name__).info(
                     "Cold start: Loaded fallback snapshot. Background fetch will refresh."
                 )

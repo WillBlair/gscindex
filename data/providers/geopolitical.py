@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 _NEWSAPI_URL = "https://newsapi.org/v2/everything"
 _VADER = SentimentIntensityAnalyzer()
+_NEWS_CACHE_KEY = "newsapi_briefing_v14"
 
 # ---------------------------------------------------------------------------
 # Category classification keywords
@@ -129,6 +130,23 @@ def _score_to_severity(score: float) -> str:
     return "low"
 
 
+def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
+    """Return cached news analysis tuple if available, else None.
+
+    This is intentionally fast and non-blocking so provider calls never trigger
+    long AI/RSS fetches. Fresh news fetch runs in the aggregator job.
+    """
+    cached = get_cached(_NEWS_CACHE_KEY, ttl=14400)
+    if not cached:
+        return None
+    return (
+        float(cached.get("score", 85.0)),
+        cached.get("alerts", []),
+        cached.get("briefing", ""),
+        cached.get("full_report", ""),
+    )
+
+
 def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     """Fetch news and analyze using AI (Gemini) with VADER fallback.
     
@@ -137,7 +155,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     tuple
         (score, alerts, briefing_text, full_report_md)
     """
-    cache_key = "newsapi_briefing_v14"
+    cache_key = _NEWS_CACHE_KEY
     cached = get_cached(cache_key, ttl=14400)  # 4-hour cache (reduced API usage)
     if cached is not None:
         return cached["score"], cached["alerts"], cached.get("briefing", ""), cached.get("full_report", "")
@@ -270,28 +288,36 @@ class GeopoliticalProvider(BaseProvider):
     category = "geopolitical"
 
     def fetch_current(self) -> tuple[float, dict]:
-        score, alerts, _, _ = fetch_supply_chain_news()
-        
-        # Calculate recent negative news count
-        high_sev = sum(1 for a in alerts if a['severity'] == 'high')
-        med_sev = sum(1 for a in alerts if a['severity'] == 'medium')
-        
-        return score, {
-            "source": "NewsAPI + VADER Sentiment",
-            "raw_value": f"{len(alerts)} articles",
+        # Never trigger long AI/RSS pipeline from provider path.
+        # Aggregator fetches fresh news once per cycle and merges it.
+        cached_tuple = _get_cached_news_tuple()
+        if cached_tuple:
+            score, alerts, _, _ = cached_tuple
+            high_sev = sum(1 for a in alerts if a.get("severity") == "high")
+            med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
+            return score, {
+                "source": "RSS + Gemini (cached)",
+                "raw_value": f"{len(alerts)} articles",
+                "raw_label": "Analyzed News Volume",
+                "description": (
+                    f"Using cached analysis. Found {high_sev} high-severity "
+                    f"and {med_sev} medium-severity risk events."
+                ),
+                "calculation": (
+                    "Score is derived from Gemini severity analysis of recent supply-chain "
+                    "articles and used as the current anchor for geopolitical risk."
+                ),
+                "updated": "Cached",
+            }
+
+        neutral = 85.0
+        return neutral, {
+            "source": "RSS + Gemini",
+            "raw_value": "0 articles",
             "raw_label": "Analyzed News Volume",
-            "description": (
-                f"Analyzed recent supply chain news. Found {high_sev} high-severity "
-                f"and {med_sev} medium-severity risk events affecting the score."
-            ),
-            "calculation": (
-                "Score = 85 - (Total VADER Negativity). "
-                "We start at 85 (perfect stability is rare). "
-                "Each negative news article deducts points based on its severity "
-                "(High = -8, Medium = -4). "
-                "Historical trend is modeled using the VIX Volatility Index."
-            ),
-            "updated": "Live"
+            "description": "Awaiting live news analysis. Showing neutral baseline temporarily.",
+            "calculation": "Neutral baseline of 85 is used until fresh analysis completes.",
+            "updated": "Initializing",
         }
 
     def fetch_history(self, days: int) -> pd.Series:

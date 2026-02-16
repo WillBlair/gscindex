@@ -79,15 +79,19 @@ def build_layout(
 
     # Compute composite index and day-over-day delta
     composite = compute_composite_index(current_scores)
-    yesterday_scores = {
-        cat: float(series.iloc[-2] if len(series) > 1 else series.iloc[-1])
-        for cat, series in category_history.items()
-    }
-    composite_yesterday = compute_composite_index(yesterday_scores)
-    delta = round(composite - composite_yesterday, 1)
+    if is_provisional:
+        # Provisional fallback can carry stale history; suppress misleading delta.
+        delta = 0.0
+    else:
+        yesterday_scores = {
+            cat: float(series.iloc[-2] if len(series) > 1 else series.iloc[-1])
+            for cat, series in category_history.items()
+        }
+        composite_yesterday = compute_composite_index(yesterday_scores)
+        delta = round(composite - composite_yesterday, 1)
 
     # Build sub-components
-    gauge_fig = build_gauge_figure(composite, delta)
+    gauge_fig = build_gauge_figure(composite, delta, show_delta=not is_provisional)
     category_metadata = data.get("category_metadata", {})
     category_cards = build_category_cards(current_scores, category_history, category_metadata)
     trend_fig = build_history_chart(category_history)
@@ -128,7 +132,7 @@ def build_layout(
                                 (
                                     f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
                                     if display_last_updated
-                                    else "Last updated: warming up..."
+                                    else ("Last updated: provisional snapshot" if is_provisional else "Last updated: warming up...")
                                 ),
                                 className="last-updated",
                             ),

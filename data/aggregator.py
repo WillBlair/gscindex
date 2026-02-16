@@ -478,9 +478,10 @@ def aggregate_data(status_callback=None) -> dict:
         alerts = []
         briefing = ""
         full_report = ""
+        news_score: float | None = None
         try:
             if status_callback: status_callback("Analyzing news feeds (AI)...")
-            _, alerts, briefing, full_report = future_news.result(timeout=120)
+            news_score, alerts, briefing, full_report = future_news.result(timeout=120)
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
@@ -512,6 +513,33 @@ def aggregate_data(status_callback=None) -> dict:
 
     # Compute composite
     from scoring.engine import compute_composite_index
+
+    # Use fresh news result as the source of truth for geopolitical current score.
+    # This avoids stale provider snapshots and keeps alerts/score aligned.
+    if news_score is not None:
+        current_scores["geopolitical"] = float(news_score)
+        geo_meta = category_metadata.get("geopolitical", {})
+        high_sev = sum(1 for a in alerts if a.get("severity") == "high")
+        med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
+        geo_meta.update(
+            {
+                "source": "RSS + Gemini AI",
+                "raw_value": f"{len(alerts)} articles",
+                "raw_label": "Analyzed News Volume",
+                "description": (
+                    f"Analyzed recent supply chain news. Found {high_sev} high-severity "
+                    f"and {med_sev} medium-severity risk events affecting the score."
+                ),
+                "updated": "Live",
+                "score": round(float(news_score), 1),
+                "tier": get_health_tier(float(news_score)),
+            }
+        )
+        category_metadata["geopolitical"] = geo_meta
+        geo_hist = category_history.get("geopolitical")
+        if geo_hist is not None and not geo_hist.empty:
+            geo_hist.iloc[-1] = float(news_score)
+
     composite = compute_composite_index(current_scores)
 
     # -----------------------------------------------------------------------

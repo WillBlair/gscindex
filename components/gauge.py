@@ -14,7 +14,7 @@ from config import COLORS, HEALTH_TIERS, hex_to_rgba
 from scoring import get_health_tier
 
 
-def build_gauge_figure(composite: float, delta: float) -> go.Figure:
+def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) -> go.Figure:
     """Build the main gauge indicator for the composite health index.
 
     Parameters
@@ -23,6 +23,8 @@ def build_gauge_figure(composite: float, delta: float) -> go.Figure:
         Current composite score (0–100).
     delta : float
         Day-over-day change in composite score.
+    show_delta : bool
+        If False, suppresses the delta indicator (used for provisional data).
 
     Returns
     -------
@@ -33,19 +35,23 @@ def build_gauge_figure(composite: float, delta: float) -> go.Figure:
 
     fig = go.Figure(
         go.Indicator(
-            mode="gauge+number+delta",
+            mode="gauge+number+delta" if show_delta else "gauge+number",
             value=composite,
             number={
                 "font": {"size": 48, "color": tier["color"], "family": "Inter"},
                 "suffix": "",
             },
-            delta={
-                "reference": composite - delta,
-                "relative": False,
-                "increasing": {"color": COLORS["green"]},
-                "decreasing": {"color": COLORS["red"]},
-                "font": {"size": 16},
-            },
+            delta=(
+                {
+                    "reference": composite - delta,
+                    "relative": False,
+                    "increasing": {"color": COLORS["green"]},
+                    "decreasing": {"color": COLORS["red"]},
+                    "font": {"size": 16},
+                }
+                if show_delta
+                else {}
+            ),
             title={
                 "text": f"Supply Chain Health Index<br><span style='font-size:14px;color:{tier['color']}'>{tier['label']}</span>",
                 "font": {"size": 16, "color": COLORS["text"], "family": "Inter"},
