@@ -97,6 +97,15 @@ def _as_utc(dt: datetime | None) -> datetime | None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
+
+def _is_placeholder_news_state(data: dict | None) -> bool:
+    """Detect startup fallback state where news panels are intentionally blank."""
+    if not data or not isinstance(data, dict):
+        return False
+    briefing = str(data.get("briefing", "") or "").strip().lower()
+    alerts = data.get("alerts", [])
+    return briefing.startswith("loading live supply-chain news analysis") and not alerts
+
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
 # On Render, the filesystem is ephemeral: wiped on every deploy and spin-down.
 # So we ONLY trust the disk cache if it exists (written by a prior run in this
@@ -347,19 +356,28 @@ def create_app() -> dash.Dash:
             data = _DATA_CACHE
             is_fresh = _DATA_IS_FRESH
             last_update = _LAST_UPDATE
-            
-        # If no memory cache, try lazy-load from disk (recovers if another worker updated it)
-        if data is None:
+
+        # If no memory cache OR we are still on startup placeholder news state,
+        # try lazy-load from disk. This lets a stale worker self-heal after
+        # another worker/thread has already persisted fresh dashboard data.
+        needs_disk_refresh = data is None or _is_placeholder_news_state(data)
+        if needs_disk_refresh:
             from data.cache import get_cached_dashboard
             try:
                 disk_data = get_cached_dashboard()
                 if disk_data:
+                    disk_last_update = _extract_last_updated(disk_data)
+                    disk_age = (
+                        (datetime.now(timezone.utc) - disk_last_update).total_seconds()
+                        if disk_last_update else None
+                    )
+                    disk_is_fresh = bool(disk_age is not None and disk_age < 7200)
                     with _LOCK:
                         _DATA_CACHE = disk_data
-                        _LAST_UPDATE = _extract_last_updated(disk_data) or datetime.now(timezone.utc)
-                        _DATA_IS_FRESH = True  # disk cache = prior successful fetch
+                        _LAST_UPDATE = disk_last_update or datetime.now(timezone.utc)
+                        _DATA_IS_FRESH = disk_is_fresh
                     data = disk_data
-                    is_fresh = True
+                    is_fresh = disk_is_fresh
                     last_update = _LAST_UPDATE
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
