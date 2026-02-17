@@ -229,9 +229,11 @@ def serve_report():
     """Serve the full report as a clean standalone page."""
     from datetime import datetime
     from markupsafe import Markup
+    from zoneinfo import ZoneInfo
 
     cached = get_cached("newsapi_briefing_v14")
     report_md = ""
+    report_generated = None
     
     if cached and isinstance(cached, dict):
         report_md = cached.get("full_report", "")
@@ -242,6 +244,12 @@ def serve_report():
         dashboard = get_cached_dashboard()
         if dashboard and isinstance(dashboard, dict):
             report_md = dashboard.get("full_report", "")
+            raw_last_updated = dashboard.get("last_updated_utc")
+            if isinstance(raw_last_updated, str) and raw_last_updated:
+                try:
+                    report_generated = datetime.fromisoformat(raw_last_updated.replace("Z", "+00:00"))
+                except ValueError:
+                    report_generated = None
 
     if not report_md:
         report_md = "## Report Not Yet Available\nThe system is generating the daily report. Please check back in a few minutes."
@@ -252,12 +260,15 @@ def serve_report():
         extensions=["extra", "smarty"]
     )
 
-    from zoneinfo import ZoneInfo
-    today = datetime.now(ZoneInfo('America/Denver')).strftime("%B %d, %Y")
+    display_dt = report_generated or datetime.now(ZoneInfo("America/Denver"))
+    if display_dt.tzinfo is None:
+        display_dt = display_dt.replace(tzinfo=ZoneInfo("UTC"))
+    display_dt = display_dt.astimezone(ZoneInfo("America/Denver"))
+    report_date = display_dt.strftime("%B %d, %Y")
 
 
     return render_template_string(
         _REPORT_TEMPLATE,
         content=Markup(report_html),
-        date=today,
+        date=report_date,
     )

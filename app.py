@@ -19,7 +19,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import dash
 import dash_bootstrap_components as dbc
@@ -105,6 +105,13 @@ def _is_placeholder_news_state(data: dict | None) -> bool:
     briefing = str(data.get("briefing", "") or "").strip().lower()
     alerts = data.get("alerts", [])
     return briefing.startswith("loading live supply-chain news analysis") and not alerts
+
+
+def _is_stale(last_update: datetime | None, *, max_age_seconds: int) -> bool:
+    """Return True if timestamp is missing or older than max_age_seconds."""
+    if last_update is None:
+        return True
+    return (datetime.now(timezone.utc) - last_update).total_seconds() > max_age_seconds
 
 # ── Load Persisted State (Fast Startup) ──────────────────────────────
 # On Render, the filesystem is ephemeral: wiped on every deploy and spin-down.
@@ -357,21 +364,39 @@ def create_app() -> dash.Dash:
             is_fresh = _DATA_IS_FRESH
             last_update = _LAST_UPDATE
 
-        # If no memory cache OR we are still on startup placeholder news state,
-        # try lazy-load from disk. This lets a stale worker self-heal after
-        # another worker/thread has already persisted fresh dashboard data.
-        needs_disk_refresh = data is None or _is_placeholder_news_state(data)
-        if needs_disk_refresh:
-            from data.cache import get_cached_dashboard
-            try:
-                disk_data = get_cached_dashboard()
-                if disk_data:
-                    disk_last_update = _extract_last_updated(disk_data)
-                    disk_age = (
-                        (datetime.now(timezone.utc) - disk_last_update).total_seconds()
-                        if disk_last_update else None
+        # Keep worker memory in sync with disk snapshot.
+        # This self-heals stale workers and protects against background-thread hangs.
+        # We refresh from disk when:
+        # - memory is empty
+        # - memory still has startup placeholder news
+        # - memory timestamp is stale
+        # - disk has a strictly newer snapshot
+        from data.cache import get_cached_dashboard
+        try:
+            disk_data = get_cached_dashboard()
+            if disk_data:
+                disk_data = _migrate_keys(disk_data)
+                disk_last_update = _extract_last_updated(disk_data)
+                disk_age_seconds = (
+                    (datetime.now(timezone.utc) - disk_last_update).total_seconds()
+                    if disk_last_update else None
+                )
+                disk_is_fresh = bool(disk_age_seconds is not None and disk_age_seconds < 7200)
+                memory_stale = _is_stale(last_update, max_age_seconds=1800)
+                disk_is_newer = bool(
+                    disk_last_update
+                    and (
+                        last_update is None
+                        or disk_last_update > (last_update + timedelta(seconds=30))
                     )
-                    disk_is_fresh = bool(disk_age is not None and disk_age < 7200)
+                )
+                needs_disk_refresh = (
+                    data is None
+                    or _is_placeholder_news_state(data)
+                    or memory_stale
+                    or disk_is_newer
+                )
+                if needs_disk_refresh:
                     with _LOCK:
                         _DATA_CACHE = disk_data
                         _LAST_UPDATE = disk_last_update or datetime.now(timezone.utc)
@@ -379,8 +404,8 @@ def create_app() -> dash.Dash:
                     data = disk_data
                     is_fresh = disk_is_fresh
                     last_update = _LAST_UPDATE
-            except Exception as e:
-                logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
 
         if data is None:
             return build_skeleton_layout()

@@ -408,37 +408,32 @@ def aggregate_data(status_callback=None) -> dict:
         freq="D",
     )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    try:
         # -- Submit Provider Tasks --
         future_to_provider = {
-            executor.submit(_fetch_provider_data, p): p 
+            executor.submit(_fetch_provider_data, p): p
             for p in _PROVIDERS
         }
-        
-        # -- Submit News Task --
+
+        # -- Submit News/Market/Port Tasks --
         future_news = executor.submit(fetch_supply_chain_news)
-        
-        # -- Submit Market Data Task --
         future_market = executor.submit(_fetch_market_data)
-        
-        # -- Submit AI Port Summaries Task --
         future_port_summaries = executor.submit(generate_port_summaries)
 
         # -------------------------------------------------------------------
         # 2. Collect Results (with Timeout)
         # -------------------------------------------------------------------
-        # We give the whole batch a timeout (e.g. 15 seconds)
-        # If it takes longer, we'll proceed with whatever we have.
-
         # A. Process Providers
         try:
-            if status_callback: status_callback("Waiting for data providers...")
+            if status_callback:
+                status_callback("Waiting for data providers...")
             for future in concurrent.futures.as_completed(future_to_provider, timeout=45):
                 try:
                     # Unpack 5 values now
                     cat, score, hist_series, meta, err = future.result()
                     current_scores[cat] = score
-                    
+
                     # Enrich metadata with calculated score and tier
                     if meta:
                         meta["score"] = round(score, 1)
@@ -447,27 +442,27 @@ def aggregate_data(status_callback=None) -> dict:
                         meta = {"score": round(score, 1), "tier": get_health_tier(score)}
 
                     category_metadata[cat] = meta
-                    
+
                     if err:
                         provider_errors[cat] = err
-                    
+
                     # Align history series
                     if hist_series is not None and not hist_series.empty:
                         # Reindex handles filling missing dates with NaNs, then we ffill/bfill
                         aligned = hist_series.reindex(dates, method="ffill")
                         # Fill any remaining NaNs (e.g. at start) with current score
                         aligned = aligned.fillna(score)
-                        
+
                         # CRITICAL FIX: Overwrite the last data point (today) with the LIVE score.
                         # This ensures the sparking/delta calculation uses the real current value,
                         # not yesterday's close (which ffill would do).
                         aligned.iloc[-1] = score
-                        
+
                         category_history[cat] = aligned
                     else:
                         # Fallback if history fetch failed
                         category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)
-                        
+
                 except Exception as e:
                     # This catches timeouts or crashes in the wrapper
                     logger.error("A provider task failed unexpectedly: %s", e)
@@ -480,7 +475,8 @@ def aggregate_data(status_callback=None) -> dict:
         full_report = ""
         news_score: float | None = None
         try:
-            if status_callback: status_callback("Analyzing news feeds (AI)...")
+            if status_callback:
+                status_callback("Analyzing news feeds (AI)...")
             news_score, alerts, briefing, full_report = future_news.result(timeout=120)
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
@@ -491,14 +487,19 @@ def aggregate_data(status_callback=None) -> dict:
             market_data = future_market.result(timeout=30) or {}
         except Exception as e:
             logger.warning("Market data fetch timed out or failed: %s", e)
-        
+
         # D. Process Port Summaries (Gemini AI generation)
         port_summaries = {}
         try:
-            if status_callback: status_callback("Generating port summaries...")
+            if status_callback:
+                status_callback("Generating port summaries...")
             port_summaries = future_port_summaries.result(timeout=60) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
+    finally:
+        # Do not block forever on a hung upstream call.
+        # Stuck futures are abandoned so the main update loop can keep running.
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
     # -----------------------------------------------------------------------
