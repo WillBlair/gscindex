@@ -5,17 +5,11 @@ RSS Fetcher Module
 Fetches supply chain news from specific high-quality industry RSS feeds.
 """
 import feedparser
-import time
 import logging
-import ssl
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
-
-# Bypass SSL verification for RSS feeds (common issue with some old feed servers or local certs)
-if hasattr(ssl, '_create_unverified_context'):
-    ssl._create_default_https_context = ssl._create_unverified_context
 
 # List of high-quality industry feeds provided by user
 FEED_URLS = [

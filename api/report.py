@@ -5,6 +5,8 @@ Serves the daily supply chain intelligence report as a clean,
 standalone HTML page at /report.
 """
 from flask import Blueprint, render_template_string
+import html
+import re
 from data.cache import get_cached
 import markdown
 
@@ -254,10 +256,27 @@ def serve_report():
     if not report_md:
         report_md = "## Report Not Yet Available\nThe system is generating the daily report. Please check back in a few minutes."
 
-    # Convert markdown to HTML
-    report_html = markdown.markdown(
-        report_md,
+    # Escape raw HTML first so untrusted inline tags/scripts cannot execute.
+    escaped_md = html.escape(report_md)
+
+    # Convert markdown to HTML.
+    raw_report_html = markdown.markdown(
+        escaped_md,
         extensions=["extra", "smarty"]
+    )
+
+    # Block dangerous link protocols that markdown may still render.
+    report_html = re.sub(
+        r'href\s*=\s*"(?:\s*javascript:|\s*data:)[^"]*"',
+        'href="#" rel="nofollow noopener noreferrer"',
+        raw_report_html,
+        flags=re.IGNORECASE,
+    )
+    report_html = re.sub(
+        r"href\s*=\s*'(?:\s*javascript:|\s*data:)[^']*'",
+        "href='#' rel='nofollow noopener noreferrer'",
+        report_html,
+        flags=re.IGNORECASE,
     )
 
     display_dt = report_generated or datetime.now(ZoneInfo("America/Denver"))

@@ -33,7 +33,7 @@ def check_gemini_api_key() -> bool:
     """Check if Gemini API key is configured."""
     key = os.environ.get("GEMINI_API_KEY")
     if key:
-        logger.info("✓ GEMINI_API_KEY found (starts with: %s...)", key[:10])
+        logger.info("✓ GEMINI_API_KEY found")
         return True
     logger.error("✗ GEMINI_API_KEY not found in environment")
     return False
