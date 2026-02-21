@@ -661,6 +661,34 @@ def create_app() -> dash.Dash:
             return True
         return False
 
+    # ── Newsletter Modal Callback ─────────────────────────────────────────────
+    @app.callback(
+        Output("newsletter-modal", "is_open"),
+        Input("newsletter-btn", "n_clicks"),
+        Input("newsletter-modal-close", "n_clicks"),
+        State("newsletter-modal", "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_newsletter_modal(open_click, close_click, is_open):
+        if open_click or close_click:
+            return not is_open
+        return is_open
+
+    # ── Newsletter Submit Callback ────────────────────────────────────────────
+    @app.callback(
+        Output("newsletter-feedback", "children"),
+        Output("newsletter-feedback", "style"),
+        Output("newsletter-email", "value"),
+        Input("newsletter-submit", "n_clicks"),
+        State("newsletter-email", "value"),
+        prevent_initial_call=True,
+    )
+    def handle_newsletter_submit(n_clicks, email):
+        if not email or "@" not in email:
+            return "Please enter a valid email address.", {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
+        # Mock successful submission
+        return "Successfully subscribed! Check your inbox tomorrow morning.", {"color": "#10b981", "marginTop": "15px", "fontSize": "14px"}, ""
+
     return app
 
 
