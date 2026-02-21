@@ -38,7 +38,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
             mode="gauge+number+delta" if show_delta else "gauge+number",
             value=composite,
             number={
-                "font": {"size": 48, "color": tier["color"], "family": "Inter"},
+                "font": {"size": 48, "color": tier["color"], "family": "JetBrains Mono, monospace"},
                 "suffix": "",
             },
             delta=(
@@ -47,7 +47,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
                     "relative": False,
                     "increasing": {"color": COLORS["green"]},
                     "decreasing": {"color": COLORS["red"]},
-                    "font": {"size": 16},
+                    "font": {"size": 16, "family": "JetBrains Mono, monospace"},
                 }
                 if show_delta
                 else {}

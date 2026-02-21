@@ -71,26 +71,56 @@ body {
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
+    margin-top: 10px;
 }
 
 .last-updated {
-    font-size: 0.8rem;
-    color: #8a8f9e;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.70rem;
+    color: #4b5563;
+    letter-spacing: 0.05em;
 }
 
 .refresh-note {
-    font-size: 0.75rem;
-    color: #6366f1;
-    background: rgba(99, 102, 241, 0.1);
-    padding: 3px 10px;
-    border-radius: 12px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.70rem;
+    color: #4b5563;
+    letter-spacing: 0.05em;
+    padding-right: 12px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .live-dot {
     font-size: 0.8rem;
     color: #00d97e;
     font-weight: 600;
+}
+
+.live-dot.pulsing {
+    animation: livePulse 2.5s infinite;
+}
+
+@keyframes livePulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+.system-stats {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.70rem;
+    color: #4b5563;
+    letter-spacing: 0.05em;
+    padding-right: 0px;
+    margin-right: -4px;
 }
 
 /* --------------------------------------------------------------------------
@@ -270,12 +300,14 @@ body {
 }
 
 .card-score {
+    font-family: "JetBrains Mono", monospace;
     font-size: 1.75rem;
     font-weight: 700;
     line-height: 1;
 }
 
 .card-delta {
+    font-family: "JetBrains Mono", monospace;
     font-size: 0.8rem;
     font-weight: 600;
 }
@@ -581,6 +613,99 @@ body {
     font-size: 0.75rem;
     color: #8a8f9e;
     margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Active Ingestion Feed (Startup Sequence Overlay)
+   -------------------------------------------------------------------------- */
+
+.ingestion-terminal {
+    position: fixed;
+    bottom: 24px;
+    left: 24px;
+    background: rgba(15, 17, 23, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 12px;
+    z-index: 1040;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.65rem;
+    pointer-events: none;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+
+    /* Fade out the entire container at the very end */
+    animation: terminalContainerHide 0.5s 6.0s forwards;
+}
+
+@keyframes terminalContainerHide {
+    to {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+.terminal-line {
+    display: block;
+    color: #8a8f9e;
+    margin-bottom: 6px;
+    opacity: 1;
+}
+
+.terminal-line.final {
+    color: #00d97e;
+    margin-bottom: 0;
+}
+
+/* Staggered disappearances */
+.terminal-line:nth-child(1) {
+    animation: seqOut 0.3s 4.0s forwards;
+}
+
+.terminal-line:nth-child(2) {
+    animation: seqOut 0.3s 4.2s forwards;
+}
+
+.terminal-line:nth-child(3) {
+    animation: seqOut 0.3s 4.4s forwards;
+}
+
+.terminal-line:nth-child(4) {
+    animation: seqOut 0.3s 4.6s forwards;
+}
+
+.terminal-line:nth-child(5) {
+    animation: seqOut 0.3s 4.8s forwards;
+}
+
+.terminal-line.final::after {
+    content: '█';
+    margin-left: 6px;
+    animation: seqBlink 1s step-end infinite;
+}
+
+@keyframes seqOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
+@keyframes seqBlink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
 }
 
 /* --------------------------------------------------------------------------
