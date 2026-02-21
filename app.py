@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, html, dcc
+from dash import Input, Output, State, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
