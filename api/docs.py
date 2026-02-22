@@ -92,49 +92,37 @@ _DOCS_TEMPLATE = """
             margin-bottom: 16px;
         }
         .docs-title {
-            font-size: 48px;
-            font-weight: 800;
-            color: #ffffff;
+            font-size: 2rem;
+            font-weight: 700;
+            color: #e1e4ea;
             line-height: 1.1;
             margin-bottom: 24px;
-            letter-spacing: -1px;
+            letter-spacing: -0.02em;
         }
         .docs-subtitle {
-            font-size: 18px;
-            color: #9ca3af;
+            font-size: 0.95rem;
+            color: #8a8f9e;
+            font-weight: 400;
             max-width: 700px;
             margin: 0 auto;
         }
 
         /* ── Markdown Content Styling ──────────────────────────── */
         .prose h2 {
-            font-size: 26px;
-            font-weight: 800;
-            color: #ffffff;
-            margin-top: 80px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        /* Style the H2 numbers */
-        .prose h2 span.section-num {
-            background: rgba(99, 102, 241, 0.15);
-            color: #818cf8;
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            border-radius: 6px;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e1e4ea;
+            margin-top: 60px;
+            margin-bottom: 20px;
+            letter-spacing: -0.02em;
+            border-bottom: 1px solid #2a2d3a;
+            padding-bottom: 12px;
         }
 
         .prose h3 {
-            font-size: 18px;
-            font-weight: 700;
-            color: #e5e7eb;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #e1e4ea;
             margin-top: 32px;
             margin-bottom: 12px;
         }
@@ -279,7 +267,7 @@ _DOCS_TEMPLATE = """
         
         /* ── Responsive ────────────────────────────────────────── */
         @media (max-width: 768px) {
-            .docs-title { font-size: 36px; }
+            .docs-title { font-size: 1.5rem; }
             .grid-3, .grid-2 { grid-template-columns: 1fr; }
             .docs-container { padding: 40px 16px 80px; }
             .math-block code { font-size: 14px; }
@@ -318,7 +306,7 @@ _DOCS_TEMPLATE = """
 """
 
 _DOCS_MARKDOWN = """
-<h2><span class="section-num">1</span> System Architecture</h2>
+## System Architecture
 <p>The GSC Index completely diverges from traditional, static macroeconomic reports. It operates as an autonomous, multi-threaded intelligence engine. Background threads poll raw data arrays, feed them through Google's Gemini Pro LLM for contextual analysis, save state to a persistent Neon PostgreSQL database, and serve clients instantly via an optimized Dash/Flask cache.</p>
 
 <div class="mermaid">
@@ -340,7 +328,7 @@ flowchart LR
     E --> G[Dash UI<br>Live Dashboard]
 </div>
 
-<h2><span class="section-num">2</span> Data Aggregation Engine</h2>
+## Data Aggregation Engine
 <p>The platform reconstructs global logistics health by aggregating hundreds of disparate signals into a unified environment every 5 minutes.</p>
 
 <div class="grid-3">
@@ -358,7 +346,7 @@ flowchart LR
     </div>
 </div>
 
-<h2><span class="section-num">3</span> Autonomous AI Intelligence (Gemini)</h2>
+## Autonomous AI Intelligence (Gemini)
 <p>The core differentiator of the platform is passing raw string arrays through Google Gemini Pro to convert unstructured noise into rigid numerical intelligence.</p>
 
 <div class="grid-2">
@@ -372,7 +360,7 @@ flowchart LR
     </div>
 </div>
 
-<h2><span class="section-num">4</span> Calculus & Algorithmic Weights</h2>
+## Calculus & Algorithmic Weights
 <p>The underlying Index Score is a mathematically rigid 0-100 gauge. <strong>A score of 100 represents a completely frictionless global logistics network.</strong></p>
 
 | Category | Weight | Primary Data Driver | Function |
@@ -395,7 +383,7 @@ flowchart LR
     <span class="math-caption">The baseline is established by economic fundamentals, and aggressively throttled downward by real-time disruptions.</span>
 </div>
 
-<h2><span class="section-num">5</span> Infrastructure & Database State</h2>
+## Infrastructure & Database State
 <p>To survive traffic spikes and maintain permanent historical records, the underlying application architecture avoids standard single-thread bottlenecks.</p>
 
 <div class="grid-2">
