@@ -6,8 +6,7 @@ as a clean, standalone HTML page at /docs.
 """
 from flask import Blueprint, render_template_string
 import markdown
-import html
-
+from markupsafe import Markup
 docs_bp = Blueprint("docs", __name__)
 
 _DOCS_TEMPLATE = """
@@ -342,5 +341,5 @@ def serve_docs():
     
     return render_template_string(
         _DOCS_TEMPLATE,
-        content=html.Markup(docs_html)
+        content=Markup(docs_html)
     )
