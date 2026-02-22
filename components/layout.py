@@ -272,19 +272,7 @@ def build_layout(
                 ],
             ),
             
-            # ── Active Ingestion Feed (Startup Sequence Overlay) ──────────
-            html.Div(
-                className="ingestion-terminal",
-                children=[
-                    html.Span(f"[{display_last_updated.strftime('%H:%M:%S') if display_last_updated else 'SYSTEM'}] INIT secure connection... ESTABLISHED", className="terminal-line"),
-                    html.Span(f"[{display_last_updated.strftime('%H:%M:%S') if display_last_updated else 'SYSTEM'}] FETCH global container freight... OK", className="terminal-line"),
-                    html.Span(f"[{display_last_updated.strftime('%H:%M:%S') if display_last_updated else 'SYSTEM'}] INGEST live AIS positions... OK", className="terminal-line"),
-                    html.Span(f"[{display_last_updated.strftime('%H:%M:%S') if display_last_updated else 'SYSTEM'}] RUN Gemini Pro intelligence... OK", className="terminal-line"),
-                    html.Span(f"[{display_last_updated.strftime('%H:%M:%S') if display_last_updated else 'SYSTEM'}] SYNC market stream... LIVE [LATENCY: 42ms]", className="terminal-line final"),
-                ]
-            ),
 
-            
             # ── Hidden Data Stores ──────────────────────────────────
             dcc.Store(id="category-metadata-store", data=data.get("category_metadata", {})),
             
