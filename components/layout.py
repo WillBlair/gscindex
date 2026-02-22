@@ -34,7 +34,6 @@ from components.charts import build_category_panel, build_history_chart, build_w
 from components.feed import build_briefing_panel, build_news_panel
 from components.gauge import build_gauge_figure
 from config import APP_SUBTITLE, APP_TITLE
-from components.docs import build_docs_modal
 from scoring import compute_composite_index
 
 from components.market_costs import build_market_costs_panel
@@ -153,10 +152,11 @@ def build_layout(
                                 className="system-stats",
                             ),
                             
-                            # Docs Button
+                            # Docs Link
                             dbc.Button(
                                 "Docs",
-                                id="docs-btn",
+                                href="/docs",
+                                external_link=True,
                                 color="link",
                                 className="docs-btn-header",
                                 style={"color": "#9ca3af", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "15px"}
@@ -326,9 +326,6 @@ def build_layout(
                 size="lg",
                 centered=True,
             ),
-
-            # ── Docs Modal ──────────────────────────────────────────
-            build_docs_modal(),
 
             # ── Newsletter Modal ──────────────────────────────────────────
             dbc.Modal(

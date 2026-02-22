@@ -287,6 +287,7 @@ def create_app() -> dash.Dash:
     from api.routes import api_bp, get_limiter
     from api.report import report_bp
     from api.admin import admin_bp
+    from api.docs import docs_bp
     
     # Initialize Rate Limiter
     limiter = get_limiter(app.server)
@@ -295,6 +296,7 @@ def create_app() -> dash.Dash:
     app.server.register_blueprint(api_bp)
     app.server.register_blueprint(report_bp)
     app.server.register_blueprint(admin_bp)
+    app.server.register_blueprint(docs_bp)
     
     import flask
     
@@ -647,19 +649,6 @@ def create_app() -> dash.Dash:
     def toggle_api_modal(open_click, close_click):
         ctx_id = ctx.triggered_id
         if ctx_id == "api-btn":
-            return True
-        return False
-
-    # ── Docs Modal Callback ─────────────────────────────────────────────
-    @app.callback(
-        Output("docs-modal", "is_open"),
-        Input("docs-btn", "n_clicks"),
-        Input("docs-modal-close", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def toggle_docs_modal(open_click, close_click):
-        ctx_id = ctx.triggered_id
-        if ctx_id == "docs-btn":
             return True
         return False
 
