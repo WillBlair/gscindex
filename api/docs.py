@@ -287,9 +287,7 @@ _DOCS_TEMPLATE = """
     <!-- Content -->
     <main class="docs-container">
         <header class="docs-header">
-            <span class="docs-kicker">Platform Architecture</span>
-            <h1 class="docs-title">System Documentation</h1>
-            <p class="docs-subtitle">A technical deep-dive into the data pipelines, autonomous AI models, and real-time computation engines powering the Global Supply Chain Index.</p>
+            <h1 class="docs-title">Documentation</h1>
         </header>
 
         <div class="prose">
