@@ -625,7 +625,9 @@ def aggregate_data(status_callback=None) -> dict:
     # Persist the full dashboard state to disk for instant startup
     from data.cache import set_cached_dashboard
     from data.status import set_status
+    from data.database import record_daily_score
     try:
+        record_daily_score(composite)
         set_cached_dashboard(result)
         logger.info("Dashboard state persisted to disk (JSON/Safe).")
         if status_callback: status_callback("Data ready! Launching...")

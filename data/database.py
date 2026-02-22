@@ -52,6 +52,12 @@ def init_db():
                         is_active BOOLEAN DEFAULT TRUE
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_scores (
+                        date DATE PRIMARY KEY,
+                        score REAL NOT NULL
+                    )
+                """)
             elif DB_TYPE == "sqlite":
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS subscribers (
@@ -59,6 +65,12 @@ def init_db():
                         email TEXT UNIQUE NOT NULL,
                         subscribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         is_active BOOLEAN DEFAULT 1
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_scores (
+                        date DATE PRIMARY KEY,
+                        score REAL NOT NULL
                     )
                 """)
         logger.info(f"Database initialized ({DB_TYPE}).")
@@ -135,5 +147,56 @@ def unsubscribe_user(email: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to unsubscribe: {e}")
         return False
+    finally:
+        conn.close()
+
+def record_daily_score(score: float) -> bool:
+    """Record today's score into the database."""
+    conn = get_connection()
+    if not conn:
+        return False
+        
+    try:
+        with conn:
+            cursor = conn.cursor()
+            if DB_TYPE == "postgres":
+                cursor.execute("""
+                    INSERT INTO daily_scores (date, score)
+                    VALUES (CURRENT_DATE, %s)
+                    ON CONFLICT (date) DO UPDATE 
+                    SET score = EXCLUDED.score
+                """, (score,))
+            elif DB_TYPE == "sqlite":
+                cursor.execute("""
+                    INSERT INTO daily_scores (date, score)
+                    VALUES (DATE('now'), ?)
+                    ON CONFLICT(date) DO UPDATE 
+                    SET score = excluded.score
+                """, (score,))
+        return True
+    except Exception as e:
+        logger.error(f"Failed to record daily score: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_previous_daily_score() -> float | None:
+    """Fetch the most recent daily score strictly prior to today."""
+    conn = get_connection()
+    if not conn:
+        return None
+        
+    try:
+        cursor = conn.cursor()
+        if DB_TYPE == "postgres":
+            cursor.execute("SELECT score FROM daily_scores WHERE date < CURRENT_DATE ORDER BY date DESC LIMIT 1")
+        elif DB_TYPE == "sqlite":
+            cursor.execute("SELECT score FROM daily_scores WHERE date < DATE('now') ORDER BY date DESC LIMIT 1")
+            
+        row = cursor.fetchone()
+        return float(row[0]) if row else None
+    except Exception as e:
+        logger.error(f"Failed to fetch previous daily score: {e}")
+        return None
     finally:
         conn.close()
