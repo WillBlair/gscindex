@@ -286,6 +286,7 @@ def create_app() -> dash.Dash:
     # ── API & Rate Limiting ──────────────────────────────────────────────
     from api.routes import api_bp, get_limiter
     from api.report import report_bp
+    from api.admin import admin_bp
     
     # Initialize Rate Limiter
     limiter = get_limiter(app.server)
@@ -293,6 +294,7 @@ def create_app() -> dash.Dash:
     # Register API Blueprint
     app.server.register_blueprint(api_bp)
     app.server.register_blueprint(report_bp)
+    app.server.register_blueprint(admin_bp)
     
     import flask
     
@@ -686,13 +688,23 @@ def create_app() -> dash.Dash:
     def handle_newsletter_submit(n_clicks, email):
         if not email or "@" not in email:
             return "Please enter a valid email address.", {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
-        # Mock successful submission
-        return "Successfully subscribed! Check your inbox tomorrow morning.", {"color": "#10b981", "marginTop": "15px", "fontSize": "14px"}, ""
+        
+        from data.database import add_subscriber
+        result = add_subscriber(email)
+        
+        if result.get("success"):
+            return "Successfully subscribed! Check your inbox tomorrow morning.", {"color": "#10b981", "marginTop": "15px", "fontSize": "14px"}, ""
+        else:
+            return result.get("message", "An error occurred."), {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
 
     return app
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
+
+# Initialize Database
+from data.database import init_db
+init_db()
 
 # Create the app globally so Gunicorn can find it
 app = create_app()

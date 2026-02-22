@@ -159,6 +159,9 @@ def main():
         logger.error(f"Provided: recipient={bool(recipient)}, server={bool(smtp_server)}, user={bool(smtp_user)}, pass={bool(smtp_pass)}")
         return
 
+    from data.database import init_db
+    init_db()
+
     logger.info("Loading cached dashboard data...")
     data = get_cached_dashboard()
     
@@ -187,19 +190,20 @@ def main():
     html_content = generate_html_email(score, tier, briefing, website_url)
     text_content = generate_text_email(score, tier, briefing, website_url)
     
-    msg = EmailMessage()
-    msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"
-    msg["From"] = smtp_user if smtp_user else "dry-run@example.com"
-    msg["To"] = recipient if recipient else "user@example.com"
+    from data.database import get_active_subscribers
+    subscribers = get_active_subscribers()
     
-    msg.set_content(text_content)
-    msg.add_alternative(html_content, subtype='html')
+    # Always include the hardcoded recipient for testing/admin purposes
+    if recipient and recipient not in subscribers:
+        subscribers.append(recipient)
+        
+    if not subscribers:
+        logger.info("No active subscribers found. Exiting.")
+        return
     
     if args.dry_run:
-        logger.info("DRY RUN MODE: Skipping actual SMTP dispatch. Email contents:")
-        print("-" * 50)
-        print(f"Subject: {msg['Subject']}")
-        print(f"To: {msg['To']}")
+        logger.info(f"DRY RUN MODE: Skipping actual SMTP dispatch.")
+        logger.info(f"Would send to {len(subscribers)} subscribers: {subscribers}")
         print("-" * 50)
         print("--- Text Version ---")
         print(text_content)
@@ -212,11 +216,58 @@ def main():
         with smtplib.SMTP(smtp_server, int(smtp_port)) as server:
             server.starttls()
             server.login(smtp_user, smtp_pass)
-            logger.info("Sending email...")
-            server.send_message(msg)
-            logger.info(f"Email successfully sent to {recipient}.")
+            
+            logger.info(f"Dispatching emails to {len(subscribers)} subscribers...")
+            successful_sends = 0
+            failed_emails = []
+            
+            for email in subscribers:
+                try:
+                    msg = EmailMessage()
+                    msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"
+                    msg["From"] = smtp_user if smtp_user else "no-reply@gscindex.com"
+                    msg["To"] = email
+                    
+                    msg.set_content(text_content)
+                    msg.add_alternative(html_content, subtype='html')
+                    
+                    server.send_message(msg)
+                    successful_sends += 1
+                except Exception as e:
+                    logger.error(f"Failed to send to {email}: {e}")
+                    failed_emails.append(f"{email} ({e})")
+                    
+            logger.info(f"Successfully sent {successful_sends}/{len(subscribers)} emails.")
+            
+            # --- Send Admin Summary Report ---
+            if recipient:
+                try:
+                    admin_msg = EmailMessage()
+                    admin_msg["Subject"] = f"GSC Config: Newsletter Dispatch Summary"
+                    admin_msg["From"] = smtp_user if smtp_user else "no-reply@gscindex.com"
+                    admin_msg["To"] = recipient
+                    
+                    summary_text = (
+                        f"Newsletter Dispatch Summary\n"
+                        f"===========================\n\n"
+                        f"Total Subscribers Attempted: {len(subscribers)}\n"
+                        f"Successful Sends: {successful_sends}\n"
+                        f"Failed Sends: {len(failed_emails)}\n\n"
+                    )
+                    
+                    if failed_emails:
+                        summary_text += "Failures:\n"
+                    for f in failed_emails:
+                        summary_text += f"- {f}\n"
+                        
+                    admin_msg.set_content(summary_text)
+                    server.send_message(admin_msg)
+                    logger.info("Admin summary report sent successfully.")
+                except Exception as e:
+                    logger.error(f"Failed to send admin summary report: {e}")
+                    
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"Failed to connect or configure SMTP session: {e}")
 
 if __name__ == "__main__":
     main()
