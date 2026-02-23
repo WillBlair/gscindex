@@ -23,18 +23,8 @@ def build_market_costs_panel(market_data: dict) -> html.Div:
     if not market_data:
         return html.Div(style={"display": "none"})
 
-    # 1. Build the list of distinct items (Header + Data)
+    # 1. Build the list of distinct items
     base_items = []
-
-    # Header Item (Part of the flow now)
-    header_item = html.Div(
-        className="market-ticker-header",
-        children=[
-            html.Span("MARKET DATA LIVE", className="ticker-label"),
-            html.Span("● LIVE", className="ticker-live-dot")
-        ]
-    )
-    base_items.append(header_item)
     
     # Data Items
     for name, data in market_data.items():

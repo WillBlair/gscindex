@@ -55,6 +55,7 @@ def _fetch_market_data() -> dict:
         "Crude Oil": "CL=F", 
         "Natural Gas": "NG=F", 
         "Copper": "HG=F",
+        "Gold": "GC=F",
         "Volatility (VIX)": "^VIX",
     }
     
