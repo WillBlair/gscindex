@@ -154,9 +154,10 @@ def main():
     smtp_pass = os.environ.get("SMTP_PASSWORD")
     website_url = os.environ.get("WEBSITE_URL", "https://gscindex.com")
 
-    if not args.dry_run and not all([recipient, smtp_server, smtp_user, smtp_pass]):
-        logger.error("Missing required email environment variables. Please check .env or deployment vars.")
-        logger.error(f"Provided: recipient={bool(recipient)}, server={bool(smtp_server)}, user={bool(smtp_user)}, pass={bool(smtp_pass)}")
+    if not args.dry_run and not all([smtp_server, smtp_user, smtp_pass]):
+        logger.error("Missing required SMTP environment variables. Please check .env or deployment vars.")
+        logger.error(f"Provided: server={bool(smtp_server)}, user={bool(smtp_user)}, pass={bool(smtp_pass)}")
+        logger.error("Optional: recipient=%s (admin fallback)", bool(recipient))
         return
 
     from data.database import init_db
