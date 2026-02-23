@@ -155,36 +155,30 @@ _DOCS_TEMPLATE = """
         }
 
         .p-card {
-            background: #11131a;
-            border: 1px solid #1f222e;
-            border-radius: 12px;
-            padding: 24px;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        .p-card:hover {
-            transform: translateY(-2px);
-            border-color: #374151;
+            background: #1a1d26;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
         .p-card h4 {
-            font-size: 16px;
-            font-weight: 700;
-            color: #f3f4f6;
-            margin-bottom: 12px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #8a8f9e;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .p-card.fred h4 { color: #38bdf8; }         /* Light Blue */
-        .p-card.market h4 { color: #facc15; }       /* Yellow */
-        .p-card.weather h4 { color: #4ade80; }      /* Green */
-        .p-card.ai h4 { color: #a78bfa; }           /* Purple */
-        .p-card.db h4 { color: #f87171; }           /* Red */
-
         .p-card p {
             font-size: 14px;
-            color: #9ca3af;
+            color: #b0b5bf;
             margin-bottom: 0;
-            line-height: 1.5;
+            line-height: 1.6;
         }
 
         /* ── Visual Math Block ─────────────────────────────────── */
@@ -330,16 +324,16 @@ flowchart LR
 <p>The platform reconstructs global logistics health by aggregating hundreds of disparate signals into a unified environment every 5 minutes.</p>
 
 <div class="grid-3">
-    <div class="p-card fred">
-        <h4>🏦 Institutional Macro</h4>
+    <div class="p-card">
+        <h4>Institutional Macro</h4>
         <p>Polling the Federal Reserve Economic Data (FRED) API for foundational indicators like the Global Supply Chain Pressure Index (GSCPI), absolute Trucking PPI, and Retail Diesel Prices. We normalize this against a 5-year rolling baseline.</p>
     </div>
-    <div class="p-card market">
-        <h4>📈 Real-Time Markets</h4>
+    <div class="p-card">
+        <h4>Real-Time Markets</h4>
         <p>Because physical shipping rates update weekly, we scrape live futures markets via <code>yfinance</code> (WTI Crude Oil, Natural Gas) and volatility indices (CBOE VIX) to measure the immediate, minute-by-minute operational cost pressure.</p>
     </div>
-    <div class="p-card weather">
-        <h4>🌪️ Satellite Weather</h4>
+    <div class="p-card">
+        <h4>Satellite Weather</h4>
         <p>Executing parallelized API queries to Open-Meteo for 37 distinctly latitude/longitude-mapped global shipping hubs, pulling wind gusts, wave heights, and storm data to dynamically throttle port efficiency logic.</p>
     </div>
 </div>
@@ -348,11 +342,11 @@ flowchart LR
 <p>The core differentiator of the platform is passing raw string arrays through Google Gemini Pro to convert unstructured noise into rigid numerical intelligence.</p>
 
 <div class="grid-2">
-    <div class="p-card ai">
+    <div class="p-card">
         <h4>Geopolitical Severity Engine</h4>
         <p>Gemini intercepts hundreds of RSS headlines (from <em>Supply Chain Dive, FreightWaves</em>) and filters out corporate PR. It identifies severe kinetic events (canal blockages, piracy, port strikes) and assigns absolute numerical penalties (-10 to +10) that dynamically override the global index score.</p>
     </div>
-    <div class="p-card ai">
+    <div class="p-card">
         <h4>Synthesized Human Briefings</h4>
         <p>Instead of forcing users to read a ticker of raw events, a specialized prompt instructs Gemini to write a 3-bullet executive "Daily Briefing" summarizing the global state, as well as distinct, hoverable contextual summaries for individual ports on the live map.</p>
     </div>
@@ -385,11 +379,11 @@ flowchart LR
 <p>To survive traffic spikes and maintain permanent historical records, the underlying application architecture avoids standard single-thread bottlenecks.</p>
 
 <div class="grid-2">
-    <div class="p-card db">
+    <div class="p-card">
         <h4>Threaded Instant Startup</h4>
         <p>Live API aggregations take roughly 50 seconds to complete. The Flask server instantly returns a skeleton React DOM to the client, displaying safe, provisional JSON state from the hard disk while the background python thread silently updates global variables.</p>
     </div>
-    <div class="p-card db">
+    <div class="p-card">
         <h4>Neon PostgreSQL Engine</h4>
         <p>A live Postgres database maintains the newsletter subscriber array and permanently logs the mathematically absolute <strong>Daily Score</strong> right before midnight. The UI dashboard queries this remote table to compute perfectly accurate day-over-day tracking arrows.</p>
     </div>
