@@ -72,7 +72,7 @@ _DOCS_TEMPLATE = """
 
         /* ── Main Container (Wider for UI Grids) ───────────────── */
         .docs-container {
-            max-width: 1000px;
+            max-width: 800px;
             margin: 0 auto;
             padding: 60px 24px 120px;
         }
@@ -181,33 +181,38 @@ _DOCS_TEMPLATE = """
             margin-bottom: 0;
             line-height: 1.6;
         }
-        .p-card ul.docs-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
+        .step-list {
             display: flex;
             flex-direction: column;
+            gap: 16px;
+            margin-top: 8px;
+        }
+        .step-item {
+            display: flex;
+            align-items: flex-start;
             gap: 12px;
-            margin-top: 4px;
         }
-        .p-card ul.docs-list li {
-            font-size: 13px;
-            color: #9ca3af;
-            line-height: 1.5;
-            padding-left: 18px;
-            position: relative;
+        .step-num {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #3730a3;
+            color: #e0e7ff;
+            font-size: 11px;
+            font-weight: 700;
+            flex-shrink: 0;
+            margin-top: -1px;
         }
-        .p-card ul.docs-list li::before {
-            content: "▹";
-            color: #6366f1;
-            position: absolute;
-            left: 0;
-            top: 1px;
+        .step-text {
             font-size: 14px;
-            font-weight: 800;
+            color: #b0b5bf;
+            line-height: 1.5;
         }
-        .p-card ul.docs-list li strong {
-            color: #e1e4ea;
+        .step-text strong {
+            color: #f3f4f6;
             font-weight: 600;
         }
         .highlight-green { color: #4ade80; }
@@ -332,7 +337,7 @@ _DOCS_TEMPLATE = """
 
 _DOCS_MARKDOWN = """
 ## System Architecture
-<p>The GSC Index completely diverges from traditional, static macroeconomic reports. It operates as an autonomous, multi-threaded intelligence engine. Background threads poll raw data arrays, feed them through Google's Gemini Pro LLM for contextual analysis, save state to a persistent Neon PostgreSQL database, and serve clients instantly via an optimized Dash/Flask cache.</p>
+<p>A background thread manages data ingestion to prevent slow page loads. It fetches raw data, passes it through the Gemini API for analysis, saves the daily state to a Postgres database, and caches the final layout for the frontend.</p>
 
 <div class="mermaid">
 flowchart LR
@@ -348,64 +353,64 @@ flowchart LR
     B[NewsAPI] --> D
     C[FRED / Markets] --> D
     
-    D[Background Thread<br>Data Aggregator] --> E[Gemini AI<br>Context Engine]
+    D[Background Thread<br>Data Aggregator] --> E[Gemini API<br>Context Engine]
     E --> F[Neon Postgres DB<br>Daily Scores]
     E --> G[Dash UI<br>Live Dashboard]
 </div>
 
-## Data Aggregation Engine
-<p>The platform reconstructs global logistics health by aggregating hundreds of disparate signals into a unified environment every 5 minutes.</p>
+## Data Ingestion
+<p>The background thread polls three primary data categories every 5 minutes to calculate the global supply chain health.</p>
 
 <div class="grid-3">
     <div class="p-card">
         <h3>Institutional Macro</h3>
-        <ul class="docs-list">
-            <li><strong>Source:</strong> Federal Reserve Economic Data (FRED) API</li>
-            <li><strong>Metrics:</strong> GSCPI, Trucking PPI, Retail Diesel</li>
-            <li><strong>Logic:</strong> Extrapolated against a <span class="highlight-blue">5-year rolling baseline</span></li>
-        </ul>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Pulls Federal Reserve Economic Data (FRED).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> GSCPI, Trucking PPI, and Retail Diesel.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Normalize:</strong> Extrapolates against a <span class="highlight-blue">5-year rolling baseline</span>.</div></div>
+        </div>
     </div>
     <div class="p-card">
         <h3>Real-Time Markets</h3>
-        <ul class="docs-list">
-            <li><strong>Source:</strong> Live futures markets (yfinance)</li>
-            <li><strong>Assets:</strong> WTI Crude Oil, Natural Gas, CBOE VIX</li>
-            <li><strong>Logic:</strong> Tracks <span class="highlight-red">minute-by-minute</span> operational cost pressure</li>
-        </ul>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Scrapes live futures markets via yfinance.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> WTI Crude Oil, Natural Gas, CBOE VIX.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Tracks <span class="highlight-red">minute-by-minute</span> operational cost pressure.</div></div>
+        </div>
     </div>
     <div class="p-card">
         <h3>Satellite Weather</h3>
-        <ul class="docs-list">
-            <li><strong>Source:</strong> Open-Meteo parallelized API queries</li>
-            <li><strong>Target:</strong> 37 specific lat/long global shipping hubs</li>
-            <li><strong>Logic:</strong> Monitors wind/waves to <span class="highlight-red">throttle port efficiency</span></li>
-        </ul>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Queries Open-Meteo API.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> 37 specific lat/long global shipping hubs.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Monitors wind & waves to <span class="highlight-red">throttle port efficiency</span>.</div></div>
+        </div>
     </div>
 </div>
 
-## Autonomous AI Intelligence (Gemini)
-<p>The core differentiator of the platform is passing raw string arrays through Google Gemini Pro to convert unstructured noise into rigid numerical intelligence.</p>
+## Gemini API
+<p>Google's Gemini model converts unstructured text from news feeds and our proprietary data into readable summaries and numerical values.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Geopolitical Severity Engine</h3>
-        <ul class="docs-list">
-            <li><strong>Input:</strong> Logistics RSS (Supply Chain Dive, FreightWaves)</li>
-            <li><strong>Process:</strong> Filters out corporate PR, flags kinetic events</li>
-            <li><strong>Action:</strong> Applies <span class="highlight-red">-10 to +10 penalties</span> to global score</li>
-        </ul>
+        <h3>Geopolitical Analysis</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Intercept:</strong> Reads headlines from shipping news feeds.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Filter:</strong> AI removes corporate PR and flags kinetic events.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Impact:</strong> Applies <span class="highlight-red">-10 to +10 penalties</span> to the global score.</div></div>
+        </div>
     </div>
     <div class="p-card">
-        <h3>Synthesized Human Briefings</h3>
-        <ul class="docs-list">
-            <li><strong>Input:</strong> Raw text array of global events</li>
-            <li><strong>Output:</strong> 3-bullet executive "Daily Briefing"</li>
-            <li><strong>Feature:</strong> Generates <span class="highlight-green">live hover summaries</span> for global ports</li>
-        </ul>
+        <h3>Daily Briefings</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Input:</strong> Collects the global event array.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analyze:</strong> Generates a 3-bullet executive summary.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Display:</strong> Shows <span class="highlight-green">live hover summaries</span> over ports on the map.</div></div>
+        </div>
     </div>
 </div>
 
-## Calculus & Algorithmic Weights
+## Scoring Logic
 <p>The underlying Index Score is a mathematically rigid 0-100 gauge. <strong>A score of 100 represents a completely frictionless global logistics network.</strong></p>
 
 | Category | Weight | Primary Data Driver | Function |
@@ -428,25 +433,25 @@ flowchart LR
     <span class="math-caption">The baseline is established by economic fundamentals, and aggressively throttled downward by real-time disruptions.</span>
 </div>
 
-## Infrastructure & Database State
-<p>To survive traffic spikes and maintain permanent historical records, the underlying application architecture avoids standard single-thread bottlenecks.</p>
+## Infrastructure
+<p>The application is designed to handle traffic spikes and maintain permanent historical data.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Threaded Instant Startup</h3>
-        <ul class="docs-list">
-            <li><strong>Mechanism:</strong> Background Python Thread processing</li>
-            <li><strong>Performance:</strong> <span class="highlight-green">Sub-50ms</span> React DOM skeleton renders</li>
-            <li><strong>State:</strong> Provisional JSON cache loaded instantly from disk</li>
-        </ul>
+        <h3>Background Caching</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Update:</strong> Python thread fetches data every 5 minutes.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> Results are saved to a local JSON payload.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> Server <span class="highlight-green">instantly loads</span> the JSON cache for users.</div></div>
+        </div>
     </div>
     <div class="p-card">
-        <h3>Neon PostgreSQL Engine</h3>
-        <ul class="docs-list">
-            <li><strong>Role:</strong> Persistent state & newsletter subscriber array</li>
-            <li><strong>Operation:</strong> Permanently logs <span class="highlight-blue">Daily Score</span> nightly</li>
-            <li><strong>Benefit:</strong> Enables perfectly accurate day-over-day tracking</li>
-        </ul>
+        <h3>PostgreSQL Database</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Save:</strong> Logs the final <span class="highlight-blue">Daily Score</span> at midnight.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Track:</strong> Calculates precise day-over-day tracking arrows.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Email:</strong> Manages subscriber lists for the daily newsletter.</div></div>
+        </div>
     </div>
 </div>
 """
