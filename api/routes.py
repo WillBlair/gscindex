@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify
+import os
+
+from flask import Blueprint, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from scoring import compute_composite_index
@@ -48,3 +50,29 @@ def get_latest_data():
     }
     
     return jsonify(response), 200
+
+
+@api_bp.route('/newsletter-data', methods=['GET'])
+def get_newsletter_data():
+    """Return dashboard snapshot for the newsletter cron job.
+
+    Protected by ADMIN_TOKEN to prevent public access to the full briefing text.
+    The cron job passes ?token=<ADMIN_TOKEN> to authenticate.
+    """
+    token = request.args.get("token", "")
+    expected = os.environ.get("ADMIN_TOKEN", "")
+    if not expected or token != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    from data.cache import get_cached_dashboard
+
+    data = get_cached_dashboard()
+    if not data:
+        return jsonify({"error": "No cached data available"}), 503
+
+    current_scores = data.get("current_scores", {})
+    return jsonify({
+        "current_scores": current_scores,
+        "briefing": data.get("briefing", ""),
+        "composite_index": round(compute_composite_index(current_scores), 1) if current_scores else None,
+    }), 200

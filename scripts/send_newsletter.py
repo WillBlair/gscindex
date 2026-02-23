@@ -21,14 +21,14 @@ import smtplib
 import logging
 from email.message import EmailMessage
 from datetime import datetime
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 # Adjust Python path if script is run directly from the scripts/ folder
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from data.cache import get_cached_dashboard
-from scoring.engine import compute_composite_index, get_health_tier
 from config import COLORS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -41,6 +41,50 @@ def load_environment():
         load_dotenv()
     except ImportError:
         pass
+
+
+def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
+    """Fetch dashboard data from the live web service API.
+
+    The cron job runs as a separate Render service with its own empty
+    filesystem, so it cannot read the web service's disk cache.  Instead
+    we hit the ``/api/v1/newsletter-data`` endpoint which returns
+    ``current_scores``, ``briefing``, and ``composite_index``.
+
+    Falls back to local disk cache for local development / testing.
+    """
+    api_url = f"{website_url.rstrip('/')}/api/v1/newsletter-data?token={admin_token}"
+    logger.info("Fetching dashboard data from %s ...", website_url)
+    try:
+        req = Request(api_url, headers={"User-Agent": "GSCIndex-Newsletter/1.0"})
+        with urlopen(req, timeout=30) as resp:
+            import json
+            data = json.loads(resp.read().decode())
+            if "current_scores" in data:
+                logger.info("Successfully fetched data from live API.")
+                return data
+            logger.warning("API returned unexpected payload: %s", list(data.keys()))
+    except URLError as e:
+        logger.warning("Could not reach live API (%s). Trying local cache...", e)
+    except Exception as e:
+        logger.warning("API fetch failed (%s). Trying local cache...", e)
+
+    # Fallback: local disk cache (works in development)
+    try:
+        from data.cache import get_cached_dashboard
+        from scoring.engine import compute_composite_index
+        local_data = get_cached_dashboard()
+        if local_data:
+            scores = local_data.get("current_scores", {})
+            return {
+                "current_scores": scores,
+                "briefing": local_data.get("briefing", ""),
+                "composite_index": round(compute_composite_index(scores), 1) if scores else None,
+            }
+    except Exception as e:
+        logger.warning("Local cache fallback failed: %s", e)
+
+    return None
 
 def generate_html_email(score: float, tier: dict, briefing: str, website_url: str) -> str:
     """Constructs the HTML body for the newsletter."""
@@ -163,31 +207,35 @@ def main():
     from data.database import init_db
     init_db()
 
-    logger.info("Loading cached dashboard data...")
-    data = get_cached_dashboard()
-    
+    admin_token = os.environ.get("ADMIN_TOKEN", "")
+    data = _fetch_dashboard_data(website_url, admin_token)
+
     if not data:
-        logger.error("No cached dashboard data found. Cannot send newsletter.")
+        logger.error("Could not fetch dashboard data from API or local cache. Cannot send newsletter.")
         return
-        
+
     current_scores = data.get("current_scores", {})
     briefing = data.get("briefing", "")
-    
+
     if not current_scores:
-        logger.error("No current scores found in cache.")
+        logger.error("No current scores found in data.")
         return
-        
+
     # Filter out empty placeholder startup states
     if "loading live supply-chain news analysis" in briefing.lower():
         logger.warning("Briefing is in a placeholder state. The dashboard hasn't fully booted yet. Delaying newsletter.")
         return
 
-    # Calculate overall score and tier
-    score = compute_composite_index(current_scores)
+    # Use pre-computed score from API if available, otherwise compute locally
+    from scoring import get_health_tier
+    score = data.get("composite_index")
+    if score is None:
+        from scoring.engine import compute_composite_index
+        score = compute_composite_index(current_scores)
     tier = get_health_tier(score)
-    
-    logger.info(f"Dashboard score computed: {score:.1f} ({tier.get('label')})")
-    
+
+    logger.info(f"Dashboard score: {score:.1f} ({tier.get('label')})")
+
     html_content = generate_html_email(score, tier, briefing, website_url)
     text_content = generate_text_email(score, tier, briefing, website_url)
     
