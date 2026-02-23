@@ -12,3 +12,8 @@ data/.cache/
 .idea/
 *.swp
 .DS_Store
+
+# Local artifacts
+app_run.log
+data/subscribers.db
+test_*.py
