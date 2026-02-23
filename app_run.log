@@ -1,0 +1,110 @@
+/Users/williamcblair/Desktop/gscindex/data/ai_analyst.py:11: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+21:23:42 [INFO] __main__: INSTANT STARTUP: Loaded persisted dashboard state (cache).
+Dash is running on http://127.0.0.1:8050/
+
+21:23:42 [INFO] dash.dash: Dash is running on http://127.0.0.1:8050/
+
+ * Serving Flask app 'app'
+ * Debug mode: on
+/Users/williamcblair/Desktop/gscindex/data/ai_analyst.py:11: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+21:23:42 [INFO] __main__: INSTANT STARTUP: Loaded persisted dashboard state (cache).
+21:23:42 [INFO] DataUpdater: Initializing background data updater thread...
+21:23:44 [INFO] DataUpdater: Starting background data updater...
+21:23:44 [INFO] DataUpdater: Background data updater thread started.
+21:23:44 [INFO] DataUpdater: Fetching fresh data from all providers...
+21:23:45 [INFO] data.aggregator: Starting parallel data fetch...
+21:23:45 [INFO] data.aggregator: Loaded weather: 85.6
+21:23:45 [INFO] data.aggregator: Loaded supply_chain: 82.2
+21:23:45 [INFO] data.aggregator: Loaded tariffs: 31.3
+21:23:45 [INFO] data.aggregator: Loaded geopolitical: 85.0
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.logisticsmgmt.com/rss/topic/transportation_news: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.logisticsmgmt.com/rss/topic/ocean_freight: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.supplychainbrain.com/rss/topic/296-last-mile-delivery: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.supplychainbrain.com/rss/articles: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://theloadstar.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://gcaptain.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.supplychaindive.com/feeds/news/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.freightwaves.com/feed: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.scmr.com/rss/resources: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.maritime-executive.com/rss/news: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://logisticsviewpoints.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [WARNING] data.rss_fetcher: RSS Parse Warning for https://splash247.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:23:45 [INFO] data.rss_fetcher: Fetched 0 unique articles from RSS feeds.
+21:23:45 [WARNING] data.providers.geopolitical: No RSS articles found! Falling back to NewsAPI.
+21:23:45 [INFO] data.aggregator: Loaded energy: 84.1
+21:23:45 [INFO] data.port_analyst: Using cached port summaries (updated 2026-02-20 17:52)
+21:23:45 [INFO] data.ai_analyst: Sending 18 articles to Gemini for analysis + briefing...
+21:23:45 [INFO] data.aggregator: Loaded trucking: 71.8
+21:24:04 [INFO] data.ai_analyst: Generating full report from 18 articles...
+21:24:20 [INFO] data.providers.geopolitical: AI successfully analyzed 18 articles
+/Users/williamcblair/Desktop/gscindex/data/ai_analyst.py:11: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+21:24:22 [INFO] __main__: INSTANT STARTUP: Loaded persisted dashboard state (cache).
+21:24:22 [INFO] __main__: Cleared stale news cache for fresh report generation.
+21:24:22 [INFO] DataUpdater: Initializing background data updater thread...
+21:24:24 [INFO] DataUpdater: Starting background data updater...
+21:24:24 [INFO] DataUpdater: Background data updater thread started.
+21:24:24 [INFO] DataUpdater: Fetching fresh data from all providers...
+21:24:24 [INFO] data.aggregator: Starting parallel data fetch...
+21:24:24 [INFO] data.aggregator: Loaded weather: 85.6
+21:24:24 [INFO] data.aggregator: Loaded supply_chain: 82.2
+21:24:24 [INFO] data.aggregator: Loaded tariffs: 31.3
+21:24:24 [INFO] data.aggregator: Loaded geopolitical: 85.0
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.logisticsmgmt.com/rss/topic/transportation_news: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.logisticsmgmt.com/rss/topic/ocean_freight: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://theloadstar.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.scmr.com/rss/resources: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.supplychaindive.com/feeds/news/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://gcaptain.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.supplychainbrain.com/rss/articles: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.freightwaves.com/feed: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:24 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.supplychainbrain.com/rss/topic/296-last-mile-delivery: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:25 [WARNING] data.rss_fetcher: RSS Parse Warning for https://logisticsviewpoints.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:25 [WARNING] data.rss_fetcher: RSS Parse Warning for https://splash247.com/feed/: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:25 [WARNING] data.rss_fetcher: RSS Parse Warning for https://www.maritime-executive.com/rss/news: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1018)>
+21:24:25 [INFO] data.rss_fetcher: Fetched 0 unique articles from RSS feeds.
+21:24:25 [WARNING] data.providers.geopolitical: No RSS articles found! Falling back to NewsAPI.
+21:24:25 [INFO] data.aggregator: Loaded energy: 84.1
+21:24:25 [INFO] data.port_analyst: Using cached port summaries (updated 2026-02-20 17:52)
+21:24:25 [INFO] data.ai_analyst: Sending 18 articles to Gemini for analysis + briefing...
+21:24:25 [INFO] data.aggregator: Loaded trucking: 71.8
+21:24:41 [INFO] data.ai_analyst: Generating full report from 18 articles...
+21:24:54 [INFO] data.providers.geopolitical: AI successfully analyzed 18 articles
+21:24:59 [INFO] data.aggregator: Data aggregation complete in 35.08s
+21:24:59 [INFO] data.aggregator: Dashboard state persisted to disk (JSON/Safe).
+21:24:59 [INFO] DataUpdater: Data update complete. Sleeping for 5 minutes.
+/Users/williamcblair/Desktop/gscindex/data/ai_analyst.py:11: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+21:25:53 [INFO] __main__: INSTANT STARTUP: Loaded persisted dashboard state (cache).
+21:25:53 [INFO] __main__: Cleared stale news cache for fresh report generation.
+21:25:53 [INFO] DataUpdater: Initializing background data updater thread...

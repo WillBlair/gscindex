@@ -37,9 +37,9 @@ _DOCS_TEMPLATE = """
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #0a0b0f;
+            background-color: #0f1117;
             color: #c8ccd4;
-            line-height: 1.6;
+            line-height: 1.7;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
@@ -49,18 +49,18 @@ _DOCS_TEMPLATE = """
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(10, 11, 15, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            background: rgba(15, 17, 23, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid rgba(255,255,255,0.06);
-            padding: 16px 32px;
+            padding: 14px 32px;
             display: flex;
             align-items: center;
-            justify-content: flex-start;
+            justify-content: space-between;
         }
         .topbar-back {
-            font-size: 14px;
-            color: #9ca3af;
+            font-size: 13px;
+            color: #8a8f9e;
             text-decoration: none;
             font-weight: 600;
             transition: color 0.2s;
@@ -69,123 +69,136 @@ _DOCS_TEMPLATE = """
             gap: 8px;
         }
         .topbar-back:hover { color: #f3f4f6; }
+        .topbar-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            letter-spacing: 0.04em;
+        }
 
-        /* ── Main Container (Wider for UI Grids) ───────────────── */
+        /* ── Main Container ────────────────────────────────────── */
         .docs-container {
-            max-width: 800px;
+            max-width: 780px;
             margin: 0 auto;
-            padding: 60px 24px 120px;
+            padding: 56px 28px 120px;
         }
 
         /* ── Page Header ───────────────────────────────────────── */
         .docs-header {
-            margin-bottom: 60px;
+            margin-bottom: 56px;
             text-align: center;
         }
-        .docs-kicker {
-            display: inline-block;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            color: #6366f1;
-            margin-bottom: 16px;
-        }
         .docs-title {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #e1e4ea;
-            line-height: 1.1;
-            margin-bottom: 24px;
-            letter-spacing: -0.02em;
-        }
-        .docs-subtitle {
-            font-size: 0.95rem;
-            color: #8a8f9e;
-            font-weight: 400;
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
-        /* ── Markdown Content Styling ──────────────────────────── */
-        .prose h2 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #e1e4ea;
-            margin-top: 60px;
-            margin-bottom: 20px;
-            letter-spacing: -0.02em;
-            border-bottom: 1px solid #2a2d3a;
-            padding-bottom: 12px;
-        }
-
-        .prose h3 {
-            font-size: 1rem;
+            font-size: 1.8rem;
             font-weight: 600;
-            color: #e1e4ea;
-            margin-top: 32px;
+            color: #f3f4f6;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+        }
+
+        /* ── Section Headings ─────────────────────────────────── */
+        .section-heading {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            margin-top: 64px;
             margin-bottom: 12px;
         }
-
-        .prose p {
+        .section-num {
+            color: #4b5563;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .section-heading h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #f3f4f6;
+            letter-spacing: -0.01em;
+            margin: 0;
+        }
+        .section-rule {
+            border: none;
+            height: 1px;
+            background: linear-gradient(90deg, #2a2d3a 0%, transparent 100%);
             margin-bottom: 24px;
-            font-size: 16px;
-            color: #b0b5bf;
-            line-height: 1.7;
         }
 
+        /* ── Prose ─────────────────────────────────────────────── */
+        .prose p {
+            margin-bottom: 24px;
+            font-size: 15px;
+            color: #9ca3af;
+            line-height: 1.75;
+        }
         .prose strong {
-            color: #f3f4f6;
+            color: #e5e7eb;
             font-weight: 600;
         }
 
-        /* ── UI Grids & Cards (Custom HTML inside Markdown) ────── */
+        /* ── Card Grids ───────────────────────────────────────── */
         .grid-3 {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
+            gap: 16px;
             margin-bottom: 40px;
         }
-        
         .grid-2 {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 24px;
+            gap: 16px;
             margin-bottom: 40px;
         }
 
         .p-card {
             background: #1a1d26;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
             padding: 24px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 14px;
         }
         .p-card h3 {
-            font-size: 1.2rem;
+            font-size: 1.05rem;
             font-weight: 700;
-            color: #ffffff;
-            margin-bottom: 2px;
+            color: #f3f4f6;
+            margin-bottom: 0;
             padding-bottom: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
             align-items: center;
             gap: 8px;
             text-transform: none !important;
         }
-        .p-card p {
-            font-size: 14px;
-            color: #b0b5bf;
-            margin-bottom: 0;
-            line-height: 1.6;
+
+        .card-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 600;
+            color: #6b7280;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: auto;
+            white-space: nowrap;
         }
+
+        .p-card p {
+            font-size: 13.5px;
+            color: #9ca3af;
+            margin-bottom: 0;
+            line-height: 1.65;
+        }
+
+        /* ── Step Lists ───────────────────────────────────────── */
         .step-list {
             display: flex;
             flex-direction: column;
-            gap: 16px;
-            margin-top: 8px;
+            gap: 14px;
+            margin-top: 4px;
         }
         .step-item {
             display: flex;
@@ -196,113 +209,172 @@ _DOCS_TEMPLATE = """
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
-            background: #3730a3;
-            color: #e0e7ff;
-            font-size: 11px;
-            font-weight: 700;
+            background: rgba(255, 255, 255, 0.06);
+            color: #6b7280;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 600;
             flex-shrink: 0;
-            margin-top: -1px;
+            margin-top: 2px;
         }
         .step-text {
-            font-size: 14px;
-            color: #b0b5bf;
-            line-height: 1.5;
+            font-size: 13.5px;
+            color: #9ca3af;
+            line-height: 1.55;
         }
         .step-text strong {
-            color: #f3f4f6;
+            color: #e5e7eb;
             font-weight: 600;
         }
-        .highlight-green { color: #4ade80; }
-        .highlight-red { color: #f87171; }
-        .highlight-blue { color: #38bdf8; }
 
-        /* ── Visual Math Block ─────────────────────────────────── */
+        /* ── Highlight Colors ─────────────────────────────────── */
+        .highlight-green  { color: #34d399; }
+        .highlight-red    { color: #f87171; }
+        .highlight-blue   { color: #60a5fa; }
+        .highlight-amber  { color: #fbbf24; }
+        .highlight-purple { color: #a78bfa; }
+
+        /* ── Code Inline ──────────────────────────────────────── */
+        .code-inline {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #a5b4fc;
+            background: rgba(99, 102, 241, 0.1);
+            padding: 2px 7px;
+            border-radius: 4px;
+        }
+
+        /* ── Visual Math Block ────────────────────────────────── */
         .math-block {
-            background: #0f172a; /* Deep slate blue */
+            background: #111827;
             border: 1px solid #1e293b;
-            border-radius: 12px;
+            border-radius: 10px;
             padding: 32px;
             text-align: center;
-            margin: 40px 0;
-            box-shadow: inset 0 2px 20px rgba(0,0,0,0.5);
+            margin: 32px 0 40px;
         }
         .math-block code {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 20px;
+            font-size: 18px;
             color: #818cf8;
             font-weight: 700;
         }
-        .math-block span.operator { color: #c8ccd4; margin: 0 10px; }
-        .math-block span.variable { color: #38bdf8; }
-        .math-block span.penalty { color: #f87171; }
+        .math-block span.operator { color: #c8ccd4; margin: 0 8px; }
+        .math-block span.variable { color: #60a5fa; }
         .math-caption {
             display: block;
             margin-top: 16px;
             font-size: 13px;
-            color: #64748b;
+            color: #6b7280;
+            line-height: 1.5;
         }
 
-        /* ── Mermaid Container ─────────────────────────────────── */
+        /* ── Mermaid Container ────────────────────────────────── */
         .mermaid {
-            background: #11131a;
-            border: 1px solid #1f222e;
-            border-radius: 12px;
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
             padding: 32px;
             margin-bottom: 40px;
             display: flex;
             justify-content: center;
         }
 
-        /* ── Tables ────────────────────────────────────────────── */
+        /* ── Tables ───────────────────────────────────────────── */
         .prose table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 40px;
-            font-size: 15px;
-            background: #11131a;
-            border-radius: 12px;
+            margin-bottom: 32px;
+            font-size: 13.5px;
+            background: #111827;
+            border-radius: 10px;
             overflow: hidden;
-            border: 1px solid #1f222e;
+            border: 1px solid #1e293b;
         }
         .prose th {
             text-align: left;
-            padding: 16px 20px;
-            background: #151821;
-            color: #f3f4f6;
+            padding: 14px 20px;
+            background: #1a1d26;
+            color: #e5e7eb;
             font-weight: 600;
-            border-bottom: 1px solid #1f222e;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid #1e293b;
         }
         .prose td {
             text-align: left;
-            padding: 16px 20px;
-            border-bottom: 1px solid #1f222e;
-            color: #b0b5bf;
+            padding: 14px 20px;
+            border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+            color: #9ca3af;
+        }
+        .prose tr:nth-child(even) td {
+            background: rgba(17, 24, 39, 0.5);
         }
         .prose tr:last-child td { border-bottom: none; }
 
-        /* ── Footer ────────────────────────────────────────────── */
+        /* ── Info Callout ─────────────────────────────────────── */
+        .callout {
+            background: rgba(99, 102, 241, 0.06);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin: 24px 0 40px;
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+        .callout-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .callout p {
+            font-size: 13.5px;
+            color: #a5b4fc;
+            line-height: 1.6;
+            margin-bottom: 0 !important;
+        }
+
+        /* ── Footer ───────────────────────────────────────────── */
         .docs-footer {
             margin-top: 80px;
             padding-top: 32px;
-            border-top: 1px solid #1f222e;
+            border-top: 1px solid #1e293b;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         .docs-footer-text {
-            font-size: 13px;
-            color: #6b7280;
+            font-size: 12px;
+            color: #4b5563;
         }
+        .docs-footer-link {
+            font-size: 13px;
+            font-weight: 600;
+            color: #6366f1;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .docs-footer-link:hover { color: #818cf8; }
         
-        /* ── Responsive ────────────────────────────────────────── */
+        /* ── Responsive ───────────────────────────────────────── */
         @media (max-width: 768px) {
-            .docs-title { font-size: 1.5rem; }
+            .docs-title { font-size: 1.4rem; }
             .grid-3, .grid-2 { grid-template-columns: 1fr; }
-            .docs-container { padding: 40px 16px 80px; }
-            .math-block code { font-size: 14px; }
+            .docs-container { padding: 32px 16px 80px; }
+            .math-block code { font-size: 13px; }
+            .section-heading { margin-top: 48px; }
+            .section-heading h2 { font-size: 1.1rem; }
+        }
+
+        @media (max-width: 480px) {
+            .topbar { padding: 12px 16px; }
+            .topbar-tag { display: none; }
+            .docs-footer { flex-direction: column; gap: 12px; text-align: center; }
         }
     </style>
 </head>
@@ -314,6 +386,7 @@ _DOCS_TEMPLATE = """
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
             Back to Dashboard
         </a>
+        <span class="topbar-tag">v2.0 &middot; Live</span>
     </nav>
 
     <!-- Content -->
@@ -327,6 +400,7 @@ _DOCS_TEMPLATE = """
         </div>
 
         <footer class="docs-footer">
+            <a href="/" class="docs-footer-link">&larr; View Live Dashboard</a>
             <span class="docs-footer-text">&copy; 2026 William Blair &middot; Global Supply Chain Index</span>
         </footer>
     </main>
@@ -336,130 +410,184 @@ _DOCS_TEMPLATE = """
 """
 
 _DOCS_MARKDOWN = """
-## System Architecture
-<p>A background thread manages data ingestion to prevent slow page loads. It fetches raw data, passes it through the Gemini API for analysis, saves the daily state to a Postgres database, and caches the final layout for the frontend.</p>
+<div class="section-heading"><span class="section-num">1.</span><h2>System Architecture</h2></div>
+<hr class="section-rule">
+<p>A daemon thread fetches raw data from 6 providers in parallel every 5 minutes, passes articles through Google's Gemini API for severity analysis, saves the daily composite score to a Neon PostgreSQL database, and caches the final layout as JSON for instant page loads.</p>
 
 <div class="mermaid">
 flowchart LR
-    style A fill:#111,stroke:#333
-    style B fill:#111,stroke:#333
-    style C fill:#111,stroke:#333
-    style D fill:#151821,stroke:#4f46e5,stroke-width:2px,color:#fff
-    style E fill:#1a0b22,stroke:#a78bfa,stroke-width:2px,color:#fff
-    style F fill:#220f11,stroke:#f87171,stroke-width:2px,color:#fff
-    style G fill:#0b1a11,stroke:#4ade80,stroke-width:2px,color:#fff
+    style A fill:#111827,stroke:#374151,color:#9ca3af
+    style B fill:#111827,stroke:#374151,color:#9ca3af
+    style C fill:#111827,stroke:#374151,color:#9ca3af
+    style D fill:#111827,stroke:#374151,color:#9ca3af
+    style E fill:#1a1d26,stroke:#4f46e5,stroke-width:2px,color:#e5e7eb
+    style F fill:#1a1d26,stroke:#a78bfa,stroke-width:2px,color:#e5e7eb
+    style G fill:#1a1d26,stroke:#f87171,stroke-width:2px,color:#e5e7eb
+    style H fill:#1a1d26,stroke:#34d399,stroke-width:2px,color:#e5e7eb
 
-    A[Open-Meteo] --> D
-    B[NewsAPI] --> D
-    C[FRED / Markets] --> D
+    A["FRED API<br>(WEI · EPU · Diesel)"] --> E
+    B["Open-Meteo<br>(14 Shipping Hubs)"] --> E
+    C["Yahoo Finance<br>(CL=F · HO=F)"] --> E
+    D["RSS Feeds<br>(12 Industry Outlets)"] --> E
     
-    D[Background Thread<br>Data Aggregator] --> E[Gemini API<br>Context Engine]
-    E --> F[Neon Postgres DB<br>Daily Scores]
-    E --> G[Dash UI<br>Live Dashboard]
+    E["Background Thread<br>Parallel Aggregator"] --> F["Gemini Flash<br>News Analyzer"]
+    F --> G["Neon Postgres<br>Daily Scores"]
+    E --> H["Dash UI<br>Live Dashboard"]
 </div>
 
-## Data Ingestion
-<p>The background thread polls four primary data categories every 5 minutes to calculate the global supply chain health.</p>
+<div class="section-heading"><span class="section-num">2.</span><h2>Data Providers</h2></div>
+<hr class="section-rule">
+<p>Six specialized providers fetch and normalize data from independent sources. Each produces a 0–100 category score where <strong>100 = healthiest</strong>.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Institutional Macro</h3>
+        <h3>Supply Chain Activity <span class="card-badge">20%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Pulls Federal Reserve Economic Data (FRED).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> GSCPI, Trucking PPI, and Retail Diesel.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Normalize:</strong> Extrapolates against a <span class="highlight-blue">5-year rolling baseline</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> NY Fed Weekly Economic Index (<span class="code-inline">WEI</span>) via FRED.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Composite of 10 high-frequency indicators — rail traffic, fuel sales, steel production, staffing.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Fixed calibration: <span class="highlight-blue">Score = 50 + (WEI × 12.5)</span>, clipped to 0–100.</div></div>
         </div>
     </div>
     <div class="p-card">
-        <h3>Real-Time Markets</h3>
+        <h3>Energy Costs <span class="card-badge">20%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Scrapes live futures markets via yfinance.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> WTI Crude Oil, Natural Gas, CBOE VIX.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Tracks <span class="highlight-red">minute-by-minute</span> operational cost pressure.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Live WTI Crude Oil futures (<span class="code-inline">CL=F</span>) via Yahoo Finance.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Baseline:</strong> FRED series <span class="code-inline">DCOILWTICO</span> provides the 5-year historical range.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse normalization — <span class="highlight-amber">lower price = higher score</span>.</div></div>
         </div>
     </div>
     <div class="p-card">
-        <h3>Satellite Weather</h3>
+        <h3>Geopolitical Risk <span class="card-badge">20%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Queries Open-Meteo API.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> 37 specific lat/long global shipping hubs.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Monitors wind & waves to <span class="highlight-red">throttle port efficiency</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> 12 industry RSS feeds (FreightWaves, gCaptain, Supply Chain Dive, etc.).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analysis:</strong> Gemini Flash scores each article's severity (<span class="highlight-red">-10 to +10</span>). VADER sentiment as fallback.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Starts at 100, deducts cumulative severity. Also generates the <span class="highlight-green">AI Daily Briefing</span>.</div></div>
         </div>
     </div>
     <div class="p-card">
-        <h3>Trade & Tariffs</h3>
+        <h3>Trade & Tariffs <span class="card-badge">15%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Pulls Tariff Volatility Index (TPU) data.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> Legislative anxiety and trade policy shifts.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Measures impact of <span class="highlight-blue">global trade friction</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Baker-Bloom-Davis Economic Policy Uncertainty Index (<span class="code-inline">USEPUINDXD</span>) via FRED.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Measures legislative uncertainty from newspaper coverage of tariffs and trade policy.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse normalization against <span class="highlight-blue">5-year historical range</span>.</div></div>
+        </div>
+    </div>
+    <div class="p-card">
+        <h3>Inland Freight <span class="card-badge">15%</span></h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Heating Oil futures (<span class="code-inline">HO=F</span>) + DOE Weekly Diesel (<span class="code-inline">GASDESW</span>).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Method:</strong> Synthesizes a real-time estimated diesel price by adding the retail distribution spread to live HO futures.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse normalized — <span class="highlight-amber">cheaper diesel = healthier trucking</span>.</div></div>
+        </div>
+    </div>
+    <div class="p-card">
+        <h3>Port Weather <span class="card-badge">10%</span></h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Open-Meteo API (free, no key required).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Coverage:</strong> 14 major shipping hubs — Houston, Shanghai, Rotterdam, Singapore, Busan, and more.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Continuous deductions for <span class="highlight-red">wind, precipitation, temperature extremes, and WMO condition codes</span>.</div></div>
         </div>
     </div>
 </div>
 
-## Gemini API
-<p>Google's Gemini model converts unstructured text from news feeds and our proprietary data into readable summaries and numerical values.</p>
+<div class="section-heading"><span class="section-num">3.</span><h2>Scoring Engine</h2></div>
+<hr class="section-rule">
+<p>The composite index is a <strong>weighted average</strong> of all six category scores, producing a single 0–100 value where 100 represents a completely frictionless global logistics network.</p>
 
-<div class="grid-2">
-    <div class="p-card">
-        <h3>Geopolitical Analysis</h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Intercept:</strong> Reads headlines from shipping news feeds.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Filter:</strong> AI removes corporate PR and flags kinetic events.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Impact:</strong> Applies <span class="highlight-red">-10 to +10 penalties</span> to the global score.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
-        <h3>Daily Briefings</h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Input:</strong> Collects the global event array.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analyze:</strong> Generates a 3-bullet executive summary.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Display:</strong> Shows <span class="highlight-green">live hover summaries</span> over ports on the map.</div></div>
-        </div>
-    </div>
-</div>
-
-## Scoring Logic
-<p>The underlying Index Score is a mathematically rigid 0-100 gauge. <strong>A score of 100 represents a completely frictionless global logistics network.</strong></p>
-
-| Category | Weight | Primary Data Driver | Function |
+| Category | Weight | Primary Source | Normalization |
 |:---|:---|:---|:---|
-| **Supply Chain** | 20% | NY Fed GSCPI | Inverse normalization of global backlogs. |
-| **Energy Costs** | 20% | WTI Crude / NatGas | Direct measurement of transportation fuel overhead. |
-| **Geopolitical** | 20% | AI Sentiment | Subtracts severe event impacts (strikes, conflicts). |
-| **Trade & Tariffs**| 15% | TPU Index | Algorithmic tracking of tariff legislation anxiety. |
-| **Inland Freight** | 15% | US Diesel Spot | Ground-level trucking logistics costs. |
-| **Port Weather** | 10% | Wind & Wave Array | Average operational degradation across 30+ hubs. |
+| **Supply Chain Activity** | 20% | NY Fed WEI (FRED) | Fixed calibration (WEI × 12.5 + 50) |
+| **Energy Costs** | 20% | WTI Crude (CL=F) | Inverse against 5-year FRED range |
+| **Geopolitical Risk** | 20% | RSS + Gemini AI | Severity deductions from baseline |
+| **Trade & Tariffs** | 15% | EPU Index (FRED) | Inverse against 5-year range |
+| **Inland Freight** | 15% | HO=F + GASDESW | Inverse estimated daily diesel |
+| **Port Weather** | 10% | Open-Meteo (14 hubs) | Continuous weather deductions |
 
 <div class="math-block">
     <code>
         <span class="variable">Composite</span>
         <span class="operator">=</span>
-        Σ ( <span class="variable">Category_Score</span> × <span class="variable">Weight</span> )
-        <span class="operator">-</span>
-        <span class="penalty">AI_Disruption_Penalty</span>
+        Σ ( <span class="variable">Category_Score<sub>i</sub></span> × <span class="variable">Weight<sub>i</sub></span> )
     </code>
-    <span class="math-caption">The baseline is established by economic fundamentals, and aggressively throttled downward by real-time disruptions.</span>
+    <span class="math-caption">Weights must sum to 1.0. Each category score is independently clipped to [0, 100] before aggregation.</span>
 </div>
 
-## Infrastructure
-<p>The application is designed to handle traffic spikes and maintain permanent historical data.</p>
+<div class="callout">
+    <span class="callout-icon">💡</span>
+    <p>The geopolitical score already includes AI-derived disruption penalties — there is no separate penalty term in the composite formula. News severity is baked directly into the category score before weighting.</p>
+</div>
+
+<p>The composite score maps to a health tier for display:</p>
+
+| Score Range | Tier | Color |
+|:---|:---|:---|
+| 80 – 100 | **Healthy** | <span class="highlight-green">● Green</span> |
+| 60 – 79 | **Stable** | <span class="highlight-amber">● Amber</span> |
+| 40 – 59 | **Stressed** | <span style="color: #fb923c;">● Orange</span> |
+| 0 – 39 | **Critical** | <span class="highlight-red">● Red</span> |
+
+<div class="section-heading"><span class="section-num">4.</span><h2>AI Intelligence Layer</h2></div>
+<hr class="section-rule">
+<p>Google's Gemini Flash model processes supply chain news in a <strong>single consolidated API call</strong> to minimize usage, producing both article analysis and the executive briefing simultaneously.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Background Caching</h3>
+        <h3>Article Analysis</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Update:</strong> Python thread fetches data every 5 minutes.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> Results are saved to a local JSON payload.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> Server <span class="highlight-green">instantly loads</span> the JSON cache for users.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Ingest:</strong> The aggregator fetches up to 50 articles from <span class="highlight-purple">12 industry RSS feeds</span> in parallel.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Filter:</strong> Irrelevant articles (sports, crypto, fashion, market research spam) are pre-filtered via keyword exclusion.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Gemini assigns each article a severity from <span class="highlight-red">-10</span> (catastrophic) to <span class="highlight-green">+10</span> (miracle).</div></div>
         </div>
     </div>
     <div class="p-card">
-        <h3>PostgreSQL Database</h3>
+        <h3>Generated Outputs</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Save:</strong> Logs the final <span class="highlight-blue">Daily Score</span> at midnight.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Track:</strong> Calculates precise day-over-day tracking arrows.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Email:</strong> Manages subscriber lists for the daily newsletter.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Briefing:</strong> A 3-bullet executive summary shown on the dashboard.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Full Report:</strong> A Chief Strategy Officer-style Markdown intelligence report.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Port Summaries:</strong> AI-generated context for each port's <span class="highlight-green">map tooltip hover</span>.</div></div>
         </div>
+    </div>
+</div>
+
+<div class="section-heading"><span class="section-num">5.</span><h2>Infrastructure</h2></div>
+<hr class="section-rule">
+<p>The application is built with <strong>Plotly Dash</strong>, served by Gunicorn, and deployed on Render. A background thread handles all data fetching so page loads are instant.</p>
+
+<div class="grid-2">
+    <div class="p-card">
+        <h3>Background Data Pipeline</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> A Python daemon thread fetches from <span class="highlight-blue">all 6 providers in parallel</span> every 5 minutes.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> Results are saved to a JSON payload on disk. Cold starts use a committed fallback snapshot.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> Page loads read directly from the in-memory cache — <span class="highlight-green">zero database queries on render</span>.</div></div>
+        </div>
+    </div>
+    <div class="p-card">
+        <h3>Persistence & Distribution</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Database:</strong> Neon PostgreSQL stores <span class="highlight-blue">daily composite scores</span> for historical tracking and day-over-day delta arrows.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Newsletter:</strong> Subscriber emails are managed in Postgres. The daily briefing is emailed each morning.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>API:</strong> A public REST endpoint at <span class="code-inline">GET /api/v1/latest</span> serves the latest index data, rate-limited to 60 req/min.</div></div>
+        </div>
+    </div>
+</div>
+
+<div class="section-heading"><span class="section-num">6.</span><h2>News Sources</h2></div>
+<hr class="section-rule">
+<p>The geopolitical provider ingests articles from curated, high-quality industry feeds — not generic news aggregators. NewsAPI serves only as a fallback if RSS returns no data.</p>
+
+<div class="grid-3">
+    <div class="p-card">
+        <h3>Maritime & Shipping</h3>
+        <p>gCaptain, Splash247, The Loadstar, Maritime Executive</p>
+    </div>
+    <div class="p-card">
+        <h3>Supply Chain & Logistics</h3>
+        <p>Supply Chain Dive, SupplyChainBrain, FreightWaves, Logistics Management</p>
+    </div>
+    <div class="p-card">
+        <h3>Strategic & Analysis</h3>
+        <p>Supply Chain Management Review, Logistics Viewpoints</p>
     </div>
 </div>
 """
