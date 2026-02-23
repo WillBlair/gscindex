@@ -180,6 +180,38 @@ _DOCS_TEMPLATE = """
             margin-bottom: 0;
             line-height: 1.6;
         }
+        .p-card ul.docs-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 4px;
+        }
+        .p-card ul.docs-list li {
+            font-size: 13px;
+            color: #9ca3af;
+            line-height: 1.5;
+            padding-left: 18px;
+            position: relative;
+        }
+        .p-card ul.docs-list li::before {
+            content: "▹";
+            color: #6366f1;
+            position: absolute;
+            left: 0;
+            top: 1px;
+            font-size: 14px;
+            font-weight: 800;
+        }
+        .p-card ul.docs-list li strong {
+            color: #e1e4ea;
+            font-weight: 600;
+        }
+        .highlight-green { color: #4ade80; }
+        .highlight-red { color: #f87171; }
+        .highlight-blue { color: #38bdf8; }
 
         /* ── Visual Math Block ─────────────────────────────────── */
         .math-block {
@@ -326,15 +358,27 @@ flowchart LR
 <div class="grid-3">
     <div class="p-card">
         <h4>Institutional Macro</h4>
-        <p>Polling the Federal Reserve Economic Data (FRED) API for foundational indicators like the Global Supply Chain Pressure Index (GSCPI), absolute Trucking PPI, and Retail Diesel Prices. We normalize this against a 5-year rolling baseline.</p>
+        <ul class="docs-list">
+            <li><strong>Source:</strong> Federal Reserve Economic Data (FRED) API</li>
+            <li><strong>Metrics:</strong> GSCPI, Trucking PPI, Retail Diesel</li>
+            <li><strong>Logic:</strong> Extrapolated against a <span class="highlight-blue">5-year rolling baseline</span></li>
+        </ul>
     </div>
     <div class="p-card">
         <h4>Real-Time Markets</h4>
-        <p>Because physical shipping rates update weekly, we scrape live futures markets via <code>yfinance</code> (WTI Crude Oil, Natural Gas) and volatility indices (CBOE VIX) to measure the immediate, minute-by-minute operational cost pressure.</p>
+        <ul class="docs-list">
+            <li><strong>Source:</strong> Live futures markets (yfinance)</li>
+            <li><strong>Assets:</strong> WTI Crude Oil, Natural Gas, CBOE VIX</li>
+            <li><strong>Logic:</strong> Tracks <span class="highlight-red">minute-by-minute</span> operational cost pressure</li>
+        </ul>
     </div>
     <div class="p-card">
         <h4>Satellite Weather</h4>
-        <p>Executing parallelized API queries to Open-Meteo for 37 distinctly latitude/longitude-mapped global shipping hubs, pulling wind gusts, wave heights, and storm data to dynamically throttle port efficiency logic.</p>
+        <ul class="docs-list">
+            <li><strong>Source:</strong> Open-Meteo parallelized API queries</li>
+            <li><strong>Target:</strong> 37 specific lat/long global shipping hubs</li>
+            <li><strong>Logic:</strong> Monitors wind/waves to <span class="highlight-red">throttle port efficiency</span></li>
+        </ul>
     </div>
 </div>
 
@@ -344,11 +388,19 @@ flowchart LR
 <div class="grid-2">
     <div class="p-card">
         <h4>Geopolitical Severity Engine</h4>
-        <p>Gemini intercepts hundreds of RSS headlines (from <em>Supply Chain Dive, FreightWaves</em>) and filters out corporate PR. It identifies severe kinetic events (canal blockages, piracy, port strikes) and assigns absolute numerical penalties (-10 to +10) that dynamically override the global index score.</p>
+        <ul class="docs-list">
+            <li><strong>Input:</strong> Logistics RSS (Supply Chain Dive, FreightWaves)</li>
+            <li><strong>Process:</strong> Filters out corporate PR, flags kinetic events</li>
+            <li><strong>Action:</strong> Applies <span class="highlight-red">-10 to +10 penalties</span> to global score</li>
+        </ul>
     </div>
     <div class="p-card">
         <h4>Synthesized Human Briefings</h4>
-        <p>Instead of forcing users to read a ticker of raw events, a specialized prompt instructs Gemini to write a 3-bullet executive "Daily Briefing" summarizing the global state, as well as distinct, hoverable contextual summaries for individual ports on the live map.</p>
+        <ul class="docs-list">
+            <li><strong>Input:</strong> Raw text array of global events</li>
+            <li><strong>Output:</strong> 3-bullet executive "Daily Briefing"</li>
+            <li><strong>Feature:</strong> Generates <span class="highlight-green">live hover summaries</span> for global ports</li>
+        </ul>
     </div>
 </div>
 
@@ -381,11 +433,19 @@ flowchart LR
 <div class="grid-2">
     <div class="p-card">
         <h4>Threaded Instant Startup</h4>
-        <p>Live API aggregations take roughly 50 seconds to complete. The Flask server instantly returns a skeleton React DOM to the client, displaying safe, provisional JSON state from the hard disk while the background python thread silently updates global variables.</p>
+        <ul class="docs-list">
+            <li><strong>Mechanism:</strong> Background Python Thread processing</li>
+            <li><strong>Performance:</strong> <span class="highlight-green">Sub-50ms</span> React DOM skeleton renders</li>
+            <li><strong>State:</strong> Provisional JSON cache loaded instantly from disk</li>
+        </ul>
     </div>
     <div class="p-card">
         <h4>Neon PostgreSQL Engine</h4>
-        <p>A live Postgres database maintains the newsletter subscriber array and permanently logs the mathematically absolute <strong>Daily Score</strong> right before midnight. The UI dashboard queries this remote table to compute perfectly accurate day-over-day tracking arrows.</p>
+        <ul class="docs-list">
+            <li><strong>Role:</strong> Persistent state & newsletter subscriber array</li>
+            <li><strong>Operation:</strong> Permanently logs <span class="highlight-blue">Daily Score</span> nightly</li>
+            <li><strong>Benefit:</strong> Enables perfectly accurate day-over-day tracking</li>
+        </ul>
     </div>
 </div>
 """
