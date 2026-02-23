@@ -657,12 +657,16 @@ def create_app() -> dash.Dash:
         Output("newsletter-modal", "is_open"),
         Input("newsletter-btn", "n_clicks"),
         Input("newsletter-modal-close", "n_clicks"),
+        Input("newsletter-toast-inner", "n_clicks"),
         State("newsletter-modal", "is_open"),
         prevent_initial_call=True,
     )
-    def toggle_newsletter_modal(open_click, close_click, is_open):
-        if open_click or close_click:
-            return not is_open
+    def toggle_newsletter_modal(open_click, close_click, toast_click, is_open):
+        ctx_id = ctx.triggered_id
+        if ctx_id == "newsletter-modal-close":
+            return False
+        if ctx_id in ("newsletter-btn", "newsletter-toast-inner"):
+            return True
         return is_open
 
     # ── Newsletter Submit Callback ────────────────────────────────────────────

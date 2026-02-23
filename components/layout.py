@@ -330,35 +330,91 @@ def build_layout(
             # ── Newsletter Modal ──────────────────────────────────────────
             dbc.Modal(
                 [
-                    dbc.ModalHeader(dbc.ModalTitle("Subscribe to the Daily Briefing"), className="modal-header"),
+                    dbc.ModalHeader(
+                        dbc.ModalTitle("Subscribe to the Daily Briefing"),
+                        className="modal-header",
+                        close_button=True,
+                        style={"background": "#13151d", "borderBottom": "1px solid rgba(255,255,255,0.06)", "color": "#f3f4f6"},
+                    ),
                     dbc.ModalBody(
                         children=[
-                            html.P("Get the Global Supply Chain Index and AI-generated daily briefing delivered to your inbox every morning at 8:00 AM UTC."),
-                            dbc.Input(id="newsletter-email", type="email", placeholder="Enter your email address", style={"backgroundColor": "#111", "color": "#e1e4ea", "border": "1px solid #333", "marginBottom": "15px"}),
-                            dbc.Button("Subscribe", id="newsletter-submit", color="primary", className="w-100", style={"backgroundColor": "#6366f1", "border": "none"}),
-                            html.Div(id="newsletter-feedback", style={"marginTop": "15px", "fontSize": "14px"})
-                        ]
+                            html.P(
+                                "Get the Global Supply Chain Index daily briefing delivered to your inbox every morning at 8:00 AM UTC.",
+                                style={"color": "#9ca3af", "fontSize": "14px", "lineHeight": "1.6", "marginBottom": "20px"},
+                            ),
+                            dbc.Input(
+                                id="newsletter-email", type="email",
+                                placeholder="Enter your email address",
+                                style={
+                                    "backgroundColor": "#0f1117", "color": "#e1e4ea",
+                                    "border": "1px solid rgba(255,255,255,0.1)",
+                                    "borderRadius": "8px", "padding": "12px 14px",
+                                    "marginBottom": "14px", "fontSize": "14px",
+                                },
+                            ),
+                            dbc.Button(
+                                "Subscribe", id="newsletter-submit",
+                                className="w-100",
+                                style={
+                                    "backgroundColor": "#6366f1", "border": "none",
+                                    "borderRadius": "8px", "padding": "10px",
+                                    "fontWeight": "600", "fontSize": "14px",
+                                },
+                            ),
+                            html.Div(id="newsletter-feedback", style={"marginTop": "14px", "fontSize": "13px"}),
+                        ],
+                        style={"background": "#13151d", "padding": "24px"},
                     ),
                     dbc.ModalFooter(
-                        dbc.Button("Close", id="newsletter-modal-close", className="ms-auto", n_clicks=0)
+                        dbc.Button(
+                            "Close", id="newsletter-modal-close",
+                            className="ms-auto", n_clicks=0,
+                            style={
+                                "backgroundColor": "transparent", "border": "1px solid rgba(255,255,255,0.1)",
+                                "color": "#9ca3af", "borderRadius": "6px", "fontSize": "13px",
+                            },
+                        ),
+                        style={"background": "#13151d", "borderTop": "1px solid rgba(255,255,255,0.06)", "padding": "12px 24px"},
                     ),
                 ],
                 id="newsletter-modal",
                 is_open=False,
                 size="md",
                 centered=True,
+                style={"--bs-modal-bg": "#13151d", "--bs-modal-border-color": "rgba(255,255,255,0.08)"},
             ),
 
             # ── Newsletter Toast (On Load) ─────────────────────────────────
-            dbc.Toast(
-                [html.P("Get the daily GSC Index briefing sent straight to your inbox!", className="mb-0")],
-                id="newsletter-toast",
-                header="Subscribe to Newsletter",
-                is_open=True,
-                dismissable=True,
-                duration=8000,
-                icon="primary",
-                style={"position": "fixed", "bottom": 20, "right": 20, "width": 350, "zIndex": 1050, "backgroundColor": "#1a1d26", "color": "#e1e4ea", "boxShadow": "0 4px 6px rgba(0, 0, 0, 0.3)"},
+            html.Div(
+                html.Div(
+                    [
+                        html.Div(
+                            html.Span("Subscribe to Newsletter", style={"fontWeight": "600", "color": "#f3f4f6", "fontSize": "14px"}),
+                            style={"marginBottom": "8px"},
+                        ),
+                        html.P(
+                            "Get the daily GSC Index briefing straight to your inbox.",
+                            style={"margin": "0", "fontSize": "13px", "color": "#9ca3af", "lineHeight": "1.5"},
+                        ),
+                        html.Div(
+                            "Click to subscribe",
+                            style={
+                                "marginTop": "10px", "fontSize": "12px", "fontWeight": "500",
+                                "color": "#818cf8", "cursor": "pointer",
+                            },
+                        ),
+                    ],
+                    id="newsletter-toast-inner",
+                    n_clicks=0,
+                    style={
+                        "position": "fixed", "bottom": "24px", "right": "24px", "width": "320px",
+                        "background": "#1a1d26", "border": "1px solid rgba(255,255,255,0.08)",
+                        "borderRadius": "12px", "padding": "16px 20px", "zIndex": 1050,
+                        "boxShadow": "0 8px 32px rgba(0,0,0,0.4)", "cursor": "pointer",
+                        "animation": "toastIn 0.4s ease-out, toastOut 0.4s ease-in 19.6s forwards",
+                    },
+                ),
+                id="newsletter-toast-wrapper",
             ),
         ],
     )
