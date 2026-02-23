@@ -158,21 +158,22 @@ _DOCS_TEMPLATE = """
             background: #1a1d26;
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 6px;
-            padding: 16px;
+            padding: 24px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 12px;
         }
-        .p-card h4 {
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: #8a8f9e;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 4px;
+        .p-card h3 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 2px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             display: flex;
             align-items: center;
             gap: 8px;
+            text-transform: none !important;
         }
         .p-card p {
             font-size: 14px;
@@ -357,7 +358,7 @@ flowchart LR
 
 <div class="grid-3">
     <div class="p-card">
-        <h4>Institutional Macro</h4>
+        <h3>Institutional Macro</h3>
         <ul class="docs-list">
             <li><strong>Source:</strong> Federal Reserve Economic Data (FRED) API</li>
             <li><strong>Metrics:</strong> GSCPI, Trucking PPI, Retail Diesel</li>
@@ -365,7 +366,7 @@ flowchart LR
         </ul>
     </div>
     <div class="p-card">
-        <h4>Real-Time Markets</h4>
+        <h3>Real-Time Markets</h3>
         <ul class="docs-list">
             <li><strong>Source:</strong> Live futures markets (yfinance)</li>
             <li><strong>Assets:</strong> WTI Crude Oil, Natural Gas, CBOE VIX</li>
@@ -373,7 +374,7 @@ flowchart LR
         </ul>
     </div>
     <div class="p-card">
-        <h4>Satellite Weather</h4>
+        <h3>Satellite Weather</h3>
         <ul class="docs-list">
             <li><strong>Source:</strong> Open-Meteo parallelized API queries</li>
             <li><strong>Target:</strong> 37 specific lat/long global shipping hubs</li>
@@ -387,7 +388,7 @@ flowchart LR
 
 <div class="grid-2">
     <div class="p-card">
-        <h4>Geopolitical Severity Engine</h4>
+        <h3>Geopolitical Severity Engine</h3>
         <ul class="docs-list">
             <li><strong>Input:</strong> Logistics RSS (Supply Chain Dive, FreightWaves)</li>
             <li><strong>Process:</strong> Filters out corporate PR, flags kinetic events</li>
@@ -395,7 +396,7 @@ flowchart LR
         </ul>
     </div>
     <div class="p-card">
-        <h4>Synthesized Human Briefings</h4>
+        <h3>Synthesized Human Briefings</h3>
         <ul class="docs-list">
             <li><strong>Input:</strong> Raw text array of global events</li>
             <li><strong>Output:</strong> 3-bullet executive "Daily Briefing"</li>
@@ -432,7 +433,7 @@ flowchart LR
 
 <div class="grid-2">
     <div class="p-card">
-        <h4>Threaded Instant Startup</h4>
+        <h3>Threaded Instant Startup</h3>
         <ul class="docs-list">
             <li><strong>Mechanism:</strong> Background Python Thread processing</li>
             <li><strong>Performance:</strong> <span class="highlight-green">Sub-50ms</span> React DOM skeleton renders</li>
@@ -440,7 +441,7 @@ flowchart LR
         </ul>
     </div>
     <div class="p-card">
-        <h4>Neon PostgreSQL Engine</h4>
+        <h3>Neon PostgreSQL Engine</h3>
         <ul class="docs-list">
             <li><strong>Role:</strong> Persistent state & newsletter subscriber array</li>
             <li><strong>Operation:</strong> Permanently logs <span class="highlight-blue">Daily Score</span> nightly</li>
