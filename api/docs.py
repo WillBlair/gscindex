@@ -142,14 +142,14 @@ _DOCS_TEMPLATE = """
         /* ── UI Grids & Cards (Custom HTML inside Markdown) ────── */
         .grid-3 {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 20px;
             margin-bottom: 40px;
         }
         
         .grid-2 {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 24px;
             margin-bottom: 40px;
         }
@@ -359,9 +359,9 @@ flowchart LR
 </div>
 
 ## Data Ingestion
-<p>The background thread polls three primary data categories every 5 minutes to calculate the global supply chain health.</p>
+<p>The background thread polls four primary data categories every 5 minutes to calculate the global supply chain health.</p>
 
-<div class="grid-3">
+<div class="grid-2">
     <div class="p-card">
         <h3>Institutional Macro</h3>
         <div class="step-list">
@@ -384,6 +384,14 @@ flowchart LR
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Queries Open-Meteo API.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> 37 specific lat/long global shipping hubs.</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Monitors wind & waves to <span class="highlight-red">throttle port efficiency</span>.</div></div>
+        </div>
+    </div>
+    <div class="p-card">
+        <h3>Trade & Tariffs</h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Fetch:</strong> Pulls Tariff Volatility Index (TPU) data.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Target:</strong> Legislative anxiety and trade policy shifts.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Measures impact of <span class="highlight-blue">global trade friction</span>.</div></div>
         </div>
     </div>
 </div>
