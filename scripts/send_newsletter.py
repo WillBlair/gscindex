@@ -239,15 +239,23 @@ def main():
     html_content = generate_html_email(score, tier, briefing, website_url)
     text_content = generate_text_email(score, tier, briefing, website_url)
     
-    from data.database import get_active_subscribers
+    from data.database import get_active_subscribers, get_db_type
     subscribers = get_active_subscribers()
+    logger.info(
+        "Database backend: %s | Active subscribers from DB: %d",
+        get_db_type(),
+        len(subscribers),
+    )
     
     # Always include the hardcoded recipient for testing/admin purposes
     if recipient and recipient not in subscribers:
         subscribers.append(recipient)
         
     if not subscribers:
-        logger.info("No active subscribers found. Exiting.")
+        logger.warning(
+            "No active subscribers found (DB returned 0 and no RECIPIENT_EMAIL set). "
+            "Verify that DATABASE_URL points to Neon and contains subscriber rows."
+        )
         return
     
     if args.dry_run:
