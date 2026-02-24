@@ -20,9 +20,13 @@ import os
 import smtplib
 import logging
 from email.message import EmailMessage
+from email.utils import formataddr, make_msgid
 from datetime import datetime
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+
+# Human-readable sender name shown in inbox previews.
+SENDER_DISPLAY_NAME = "Global Supply Chain Index"
 
 # Adjust Python path if script is run directly from the scripts/ folder
 import sys
@@ -278,13 +282,24 @@ def main():
             successful_sends = 0
             failed_emails = []
             
+            sender_addr = smtp_user or "no-reply@gscindex.com"
+            from_header = formataddr((SENDER_DISPLAY_NAME, sender_addr))
+
             for email in subscribers:
                 try:
                     msg = EmailMessage()
                     msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"
-                    msg["From"] = smtp_user if smtp_user else "no-reply@gscindex.com"
+                    msg["From"] = from_header
                     msg["To"] = email
-                    
+
+                    # ── Deliverability headers ──────────────────────
+                    # Unique ID prevents duplicate-detection filters.
+                    msg["Message-ID"] = make_msgid(domain="gscindex.com")
+                    # Gmail checks for List-Unsubscribe; missing = spam risk.
+                    msg["List-Unsubscribe"] = f"<mailto:{sender_addr}?subject=unsubscribe>"
+                    # Signals legitimate bulk mail to receiving servers.
+                    msg["Precedence"] = "bulk"
+
                     msg.set_content(text_content)
                     msg.add_alternative(html_content, subtype='html')
                     
@@ -300,9 +315,10 @@ def main():
             if recipient:
                 try:
                     admin_msg = EmailMessage()
-                    admin_msg["Subject"] = f"GSC Config: Newsletter Dispatch Summary"
-                    admin_msg["From"] = smtp_user if smtp_user else "no-reply@gscindex.com"
+                    admin_msg["Subject"] = "GSC Config: Newsletter Dispatch Summary"
+                    admin_msg["From"] = from_header
                     admin_msg["To"] = recipient
+                    admin_msg["Message-ID"] = make_msgid(domain="gscindex.com")
                     
                     summary_text = (
                         f"Newsletter Dispatch Summary\n"
