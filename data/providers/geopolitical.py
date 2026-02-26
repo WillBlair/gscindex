@@ -426,13 +426,58 @@ class GeopoliticalProvider(BaseProvider):
                 "updated": "Cached",
             }
 
+        # No cache — compute a quick VADER-based score from live RSS.
+        # This runs in ~2-3s (no AI) and ensures we never show a hardcoded value.
+        try:
+            from data.rss_fetcher import fetch_rss_articles
+
+            rss_articles = fetch_rss_articles(max_items=30)
+            if rss_articles:
+                candidates = [
+                    {
+                        "title": art["title"],
+                        "description": art["description"],
+                        "url": art["url"],
+                        "source": art["source"],
+                        "published": art["published"],
+                    }
+                    for art in rss_articles
+                ]
+                alerts, _ = _build_vader_alerts(candidates)
+                # Only count negative severity (positive news doesn't reduce risk)
+                neg_only = sum(
+                    float(a.get("sentiment", 0))
+                    for a in alerts
+                    if float(a.get("sentiment", 0)) < 0
+                )
+                score = max(0.0, min(100.0, 100.0 + neg_only))
+                high_sev = sum(1 for a in alerts if a.get("severity") == "high")
+                med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
+                return round(score, 1), {
+                    "source": "RSS + VADER (live fallback)",
+                    "raw_value": f"{len(alerts)} articles",
+                    "raw_label": "Analyzed News Volume",
+                    "description": (
+                        f"Live VADER analysis (AI cache unavailable). Found {high_sev} high-severity "
+                        f"and {med_sev} medium-severity risk events."
+                    ),
+                    "calculation": (
+                        "Score = 100 - (sum of negative VADER severity scores). "
+                        "Only negative news reduces the score; positive news does not inflate it."
+                    ),
+                    "updated": "Live (VADER)",
+                }
+        except Exception as exc:
+            logger.warning("VADER fallback in fetch_current failed: %s", exc)
+
+        # Absolute last resort: no RSS, no cache, no nothing.
         neutral = 85.0
         return neutral, {
-            "source": "RSS + Gemini",
+            "source": "Baseline (no data)",
             "raw_value": "0 articles",
             "raw_label": "Analyzed News Volume",
-            "description": "Awaiting live news analysis. Showing neutral baseline temporarily.",
-            "calculation": "Neutral baseline of 85 is used until fresh analysis completes.",
+            "description": "No news feeds available. Showing neutral baseline until data sources come online.",
+            "calculation": "Neutral baseline of 85 — all data sources are offline.",
             "updated": "Initializing",
         }
 
