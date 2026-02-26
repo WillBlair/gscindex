@@ -15,8 +15,9 @@ Score Logic
 1. Fetch 30 recent supply chain articles from NewsAPI
 2. Run VADER on each article's title + description
 3. Classify each article into a supply chain category via keywords
-4. Compute geopolitical score: start at 85, deduct based on VADER
-   negativity of each article (more negative articles = lower score)
+4. Compute geopolitical score: start at 100, deduct based on VADER
+   negativity of each article (only negative articles reduce the score;
+   positive news does not inflate it — 100 means "no risk detected")
 5. Return categorized alerts for the dashboard feed
 
 The score starts at 85 (not 100) because there's ALWAYS some negative
@@ -178,7 +179,8 @@ def _build_vader_alerts(candidates: list[dict]) -> tuple[list[dict], float]:
         compound = float(_VADER.polarity_scores(combined).get("compound", 0.0))
         # Scale VADER [-1, +1] into the existing severity banding used elsewhere.
         severity_score = round(compound * 6.0, 2)
-        severity_sum += severity_score
+        if severity_score < 0:
+            severity_sum += severity_score
 
         alerts.append(
             {
@@ -333,7 +335,8 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
                 continue
                 
             severity = analysis.get("severity_score", 0.0)
-            severity_sum += severity
+            if severity < 0:
+                severity_sum += severity
             
             # Find original
             original = next((c for c in ai_candidates if c["id"] == cid), None)
