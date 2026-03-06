@@ -102,8 +102,6 @@ def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Serie
 
 def get_safe_fallback_data() -> dict:
     """Return a completely safe, neutral dataset to ensure dashboard starts."""
-    from config import CATEGORY_WEIGHTS
-    
     current_scores = {cat: 50.0 for cat in CATEGORY_WEIGHTS}
     
     dates = pd.date_range(
@@ -224,7 +222,7 @@ def _derive_map_markers(
         if cat in CATEGORY_WEIGHTS
     }
     weight_sum = sum(non_weather_weights.values()) or 1.0
-    # Normalize so these 6 categories' weights sum to 1.0
+    # Normalize so these 5 categories' weights sum to 1.0
     normalized_weights = {
         cat: w / weight_sum for cat, w in non_weather_weights.items()
     }
