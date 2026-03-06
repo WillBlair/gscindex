@@ -28,10 +28,7 @@ def get_subscribers():
         
     try:
         cursor = conn.cursor()
-        if DB_TYPE == "postgres":
-            cursor.execute("SELECT id, email, subscribed_at, is_active FROM subscribers ORDER BY subscribed_at DESC")
-        elif DB_TYPE == "sqlite":
-            cursor.execute("SELECT id, email, subscribed_at, is_active FROM subscribers ORDER BY subscribed_at DESC")
+        cursor.execute("SELECT id, email, subscribed_at, is_active FROM subscribers ORDER BY subscribed_at DESC")
             
         rows = cursor.fetchall()
         

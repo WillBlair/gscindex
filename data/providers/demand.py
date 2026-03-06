@@ -34,10 +34,13 @@ Source: Yahoo Finance (HG=F)
 
 from __future__ import annotations
 
+import logging
 import numpy as np
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from config import HISTORY_DAYS
 from data.providers.base import BaseProvider
@@ -88,8 +91,6 @@ class DemandProvider(BaseProvider):
             # Add 50% buffer to max to allow for "high but not crisis" scoring
             max_price = float(hist["Close"].max()) * 1.50
             
-            print(f"DEBUG: Demand - Price {current_price:.2f} | Range {min_price:.2f}-{max_price:.2f} | Vol {vol_30d:.1f}%")
-
             # Normalize Current Price (0.0 to 1.0)
             if max_price > min_price:
                 price_factor = (current_price - min_price) / (max_price - min_price)
@@ -136,7 +137,7 @@ class DemandProvider(BaseProvider):
             }
             
         except Exception as e:
-            print(f"Demand Index Error: {e}")
+            logger.error("Demand Index Error: %s", e)
             return 50.0, {
                 "source": "System Error",
                 "description": "Live copper data unavailable.",
