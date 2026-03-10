@@ -10,12 +10,12 @@ Layout structure:
     ┌─────────────────────────────────────────────┐
     │  Header (title + subtitle + last updated)   │
     ├───────────────┬─────────────────────────────┤
-    │  Gauge        │  90-Day Trend (multi-line)   │
+    │  Gauge        │  Global Supply Chain Map      │
     ├──────┬──────┬─┴────┬──────┬──────┬──────┬───┤
     │ Card │ Card │ Card │ Card │ Card │ Card │Card│
     ├──────────────────┬──────────────────────────┤
-    │ Category Health  │  Global Supply Chain Map   │
-    │ Bars             │  (dots)                    │
+    │ Category Health  │  90-Day Trend (multi-line) │
+    │ Bars             │                            │
     ├──────────────────┴──────────────────────────┤
     │    Alerts Feed       │  Disruptions Table    │
     └──────────────────────┴──────────────────────┘
@@ -190,7 +190,7 @@ def build_layout(
                 ],
             ),
 
-            # ── Hero Row (gauge + trend side-by-side) ───────────────
+            # ── Hero Row (gauge + map side-by-side) ────────────────
             html.Section(
                 className="hero-row",
                 children=[
@@ -208,15 +208,9 @@ def build_layout(
                         className="chart-panel",
                         children=[
                             dcc.Graph(
-                                id="trend-chart",
-                                figure=trend_fig,
-                                # Disable scroll zoom and double-click reset for mobile stability
-                                config={
-                                    "displayModeBar": False, 
-                                    "responsive": True,
-                                    "scrollZoom": False,
-                                    "doubleClick": False
-                                },
+                                id="world-map",
+                                figure=map_fig,
+                                config={"displayModeBar": False, "responsive": True},
                             ),
                         ],
                     ),
@@ -242,7 +236,7 @@ def build_layout(
                 ],
             ),
 
-            # ── Middle Row (health bars + world map) ────────────────
+            # ── Middle Row (health bars + 90-day trend) ─────────────
             html.Section(
                 className="charts-row",
                 children=[
@@ -254,9 +248,14 @@ def build_layout(
                         className="chart-panel chart-wide",
                         children=[
                             dcc.Graph(
-                                id="world-map",
-                                figure=map_fig,
-                                config={"displayModeBar": False, "responsive": True},
+                                id="trend-chart",
+                                figure=trend_fig,
+                                config={
+                                    "displayModeBar": False,
+                                    "responsive": True,
+                                    "scrollZoom": False,
+                                    "doubleClick": False,
+                                },
                             ),
                         ],
                     ),
