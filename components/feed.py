@@ -33,7 +33,9 @@ def _format_time_ago(iso_timestamp: str) -> str:
     except (ValueError, AttributeError):
         return "recently"
 
-    # Strip timezone info so we can subtract from naive datetime.now()
+    # TODO: This strips UTC tzinfo then compares against local datetime.now(),
+    # which gives wrong "X hours ago" if the server isn't in UTC. Should use
+    # datetime.now(timezone.utc) and keep dt as UTC-aware throughout.
     dt = dt.replace(tzinfo=None)
     diff = datetime.now() - dt
     total_seconds = diff.total_seconds()

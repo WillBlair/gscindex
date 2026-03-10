@@ -23,10 +23,13 @@ Frequency: Real-time / Daily
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 import yfinance as yf
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from config import HISTORY_DAYS
 from data.providers.base import BaseProvider
@@ -49,7 +52,8 @@ class TruckingProvider(BaseProvider):
             if live_ho_price is None or live_ho_price == 0:
                  hist = ticker.history(period="5d")
                  live_ho_price = float(hist["Close"].iloc[-1])
-        except Exception:
+        except Exception as e:
+             logger.warning("HO=F fast_info failed, using history: %s", e)
              hist = ticker.history(period="5d")
              live_ho_price = float(hist["Close"].iloc[-1])
 
@@ -85,7 +89,7 @@ class TruckingProvider(BaseProvider):
                 spread = last_retail_price - ref_ho
             else:
                 spread = 1.30 # Fallback
-        except:
+        except Exception:
             spread = 1.30 # Fallback typical spread
 
         # 4. Synthesize Daily Price
@@ -110,7 +114,7 @@ class TruckingProvider(BaseProvider):
             change_ho = live_ho_price - prev_close_ho
             # Assuming spread is constant intraday, the change in Diesel = Change in HO
             change_str = f"{change_ho:+.3f}"
-        except:
+        except Exception:
             change_str = "0.000"
 
         # Context
@@ -176,7 +180,7 @@ class TruckingProvider(BaseProvider):
              if idx_loc != -1:
                  ref_ho = ho_hist.iloc[idx_loc]
                  spread = last_retail_price - ref_ho
-        except:
+        except Exception:
              pass
              
         daily_est = ho_hist + spread

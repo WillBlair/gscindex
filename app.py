@@ -375,6 +375,13 @@ def create_app() -> dash.Dash:
         # - memory still has startup placeholder news
         # - memory timestamp is stale
         # - disk has a strictly newer snapshot
+        # TODO: TOCTOU race condition — between reading _LAST_UPDATE under the first
+        # lock and writing disk_data under the second lock, the background thread may
+        # have already updated _DATA_CACHE with fresher data. The disk_is_newer check
+        # compares against the stale `last_update` read above, not the current
+        # _LAST_UPDATE, so a fresh background-thread result can be clobbered by older
+        # disk data. Fix: re-read _LAST_UPDATE under the write lock and abort if it's
+        # newer than disk_last_update.
         from data.cache import get_cached_dashboard
         try:
             disk_data = get_cached_dashboard()

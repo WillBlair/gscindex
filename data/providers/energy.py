@@ -14,9 +14,11 @@ against its 5-year historical range:
 
 from __future__ import annotations
 
-
+import logging
 from datetime import datetime
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from config import HISTORY_DAYS
 from data.providers.base import BaseProvider
@@ -54,7 +56,7 @@ class EnergyProvider(BaseProvider):
 
         except Exception as e:
             # Fallback to FRED if Yahoo fails
-            print(f"[EnergyProvider] yfinance failed: {e}, falling back to FRED.")
+            logger.warning("yfinance failed, falling back to FRED: %s", e)
             raw = fetch_fred_series(self._SERIES_ID)
             price = float(raw.iloc[-1])
             change_str = ""
@@ -67,8 +69,11 @@ class EnergyProvider(BaseProvider):
         
         # Inverse Normalization: Lower Price = Higher Score
         # 100 at min, 0 at max
-        norm_score = 100 * (1 - (price - min_val) / (max_val - min_val))
-        score = max(0.0, min(100.0, norm_score))
+        if max_val == min_val:
+            score = 50.0  # Degenerate range — neutral fallback
+        else:
+            norm_score = 100 * (1 - (price - min_val) / (max_val - min_val))
+            score = max(0.0, min(100.0, norm_score))
 
         return score, {
             "source": "Live Futures (CL=F)",

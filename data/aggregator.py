@@ -16,7 +16,8 @@ This is the main entry point for data. It:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import math
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -352,6 +353,12 @@ def _fetch_provider_data(provider) -> tuple[str, float, pd.Series | None, dict, 
                 "description": "Provider returned simplistic data format."
             }
             
+        # Guard against NaN/Inf from providers (e.g. division by zero in normalization).
+        # NaN would propagate through the composite calculation and break the gauge.
+        if not math.isfinite(current_score):
+            logger.warning("Provider %s returned non-finite score %.1f; using 50.0", cat, current_score)
+            current_score = 50.0
+
         logger.info("Loaded %s: %.1f", cat, current_score)
     except Exception as exc:
         logger.error("Provider %s failed (current): %s", cat, exc)
@@ -606,7 +613,7 @@ def aggregate_data(status_callback=None) -> dict:
     logger.info("Data aggregation complete in %.2fs", elapsed)
 
     result = {
-        "last_updated_utc": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "last_updated_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "dates": dates,
         "category_history": category_history,
         "current_scores": current_scores,
