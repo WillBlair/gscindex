@@ -24,6 +24,13 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "geopolitical":        0.20,
 }
 
+# Fallback scores when a provider fails — visible and tunable in one place.
+DEFAULT_FALLBACK_SCORES: dict[str, float] = {
+    "weather":      75.0,   # Conservative — assumes minor disruptions
+    "geopolitical": 85.0,   # Optimistic baseline (100 means "no risk at all")
+    "default":      50.0,   # Neutral for everything else
+}
+
 CATEGORY_LABELS: dict[str, str] = {
     "weather":             "Weather Disruptions",
     "supply_chain":        "Supply Chain", # Shortened to fit on one line

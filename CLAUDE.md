@@ -195,11 +195,12 @@ class BaseProvider(ABC):
 **Weather** — Continuous linear deductions (not binary thresholds):
 ```python
 score = 100.0
-score -= _wmo_deduction(wmo_code)      # Up to -60
-score -= _wind_deduction(wind_kmh)     # Linear ramp, max -25
-score -= _precip_deduction(precip_mm)  # Linear ramp, max -90
-score -= _temp_deduction(temp_c)       # Extremes both ends, max -50
+score -= _wmo_deduction(wmo_code)      # Up to -30 (thunderstorm)
+score -= _wind_deduction(wind_kmh)     # Linear ramp 10–80 km/h, max -30
+score -= _precip_deduction(precip_mm)  # Linear ramp 0–50 mm, max -25
+score -= _temp_deduction(temp_c)       # Extremes both ends, max -15
 return max(0.0, min(100.0, score))
+# Max total deduction: 30+30+25+15 = 100
 ```
 
 **Geopolitical** — Three-tier fallback, negative-only scoring:
@@ -285,7 +286,7 @@ This prevents sparklines from showing yesterday's stale value as today.
 
 ### Map Markers
 
-60% local weather score + 40% global macro score per port. 37 ports total with lat/lon, score, description. Generated in `_derive_map_markers()`.
+55% local weather score + 45% regional macro score per port. 37 ports total with lat/lon, score, description, region-specific macro weights, structural vulnerability, and news penalty. Generated in `_derive_map_markers()`.
 
 ### Post-Processing
 
@@ -425,6 +426,6 @@ All tunable values live in `config.py`. Never put magic numbers in provider or c
 
 ## Known Inconsistencies
 
-- Some providers use hardcoded fallback scores (75.0 for weather, 85.0 for geopolitical, 50.0 for others). These should be configurable but aren't yet.
+- ~~Some providers use hardcoded fallback scores~~ — now configurable via `DEFAULT_FALLBACK_SCORES` in `config.py`.
 - `_KEY_MIGRATIONS` in app.py maps legacy category names ("ports"→"supply_chain"). This should live in a migration module.
-- Weather provider has 14 hubs hardcoded in the file. Should be in config.py.
+- ~~Weather provider has 14 hubs hardcoded~~ — now derived from `ports_data.MAJOR_PORTS` (37 ports).

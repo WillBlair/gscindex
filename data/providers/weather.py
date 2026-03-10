@@ -1,8 +1,9 @@
 """
 Weather Disruptions Provider
 ==============================
-Uses the Open-Meteo API to assess weather conditions at major global
-shipping hubs and compute a supply-chain-relevant weather health score.
+Uses the Open-Meteo API to assess weather conditions at ALL major global
+shipping ports (derived from ``ports_data.MAJOR_PORTS``) and compute a
+supply-chain-relevant weather health score.
 
 Open-Meteo is completely free — no API key needed.
 Docs: https://open-meteo.com/en/docs
@@ -15,16 +16,15 @@ Weather affects supply chains in ways that go far beyond hurricanes:
     - Temperature extremes stress infrastructure and workers
     - Fog and poor visibility delay vessel arrivals
 
-For each of the 8 hubs, we compute a score from 0–100 and average them.
+For each port, we compute a score from 0–100 and average them.
 The deductions are CONTINUOUS (not just thresholds), making the score
 vary meaningfully from day to day.
 
-Hub deductions:
-    Wind:        0 at <10 km/h, up to -25 at >80 km/h (linear ramp)
-    Precip:      0 at 0 mm, up to -20 at >25 mm (linear ramp)
-    Temp:        0 in 10–30°C, up to -10 at extremes
-    WMO code:    0 for clear, up to -15 for thunderstorm/hail
-    Visibility:  Not available in free API, derived from WMO fog codes
+Deduction budget (max total = 100, matching the 0–100 scale):
+    Wind:        0 at <10 km/h, up to -30 at ≥80 km/h (linear ramp)
+    Precip:      0 at 0 mm, up to -25 at ≥50 mm (linear ramp)
+    Temp:        0 in 10–30°C, up to -15 at extremes
+    WMO code:    0 for clear, up to -30 for thunderstorm/hail
 """
 
 from __future__ import annotations
@@ -37,26 +37,15 @@ import pandas as pd
 import requests
 
 from data.cache import get_cached, set_cached
+from data.ports_data import MAJOR_PORTS
 from data.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
-# Major global shipping hubs: (name, lat, lon)
+# Derive (name, lat, lon) tuples from the canonical port list.
+# Every port in MAJOR_PORTS gets real weather — no separate hub list.
 _SHIPPING_HUBS: list[tuple[str, float, float]] = [
-    ("Houston",     29.76,  -95.37),
-    ("New York",    40.71,  -74.00),
-    ("Los Angeles", 33.75, -118.27),
-    ("Rotterdam",   51.92,    4.48),
-    ("Hamburg",     53.55,    9.99),
-    ("Shanghai",    31.23,  121.47),
-    ("Singapore",    1.35,  103.82),
-    ("Mumbai",      19.08,   72.88),
-    ("Busan",       35.10,  129.03),
-    ("Dubai",       25.28,   55.30),
-    ("Santos",     -23.96,  -46.33),
-    ("Durban",     -29.86,   31.02),
-    ("Sydney",     -33.86,  151.20),
-    ("Colon",        9.36,  -79.90),
+    (name, lat, lon) for name, lat, lon, _, _ in MAJOR_PORTS
 ]
 
 _CURRENT_URL = "https://api.open-meteo.com/v1/forecast"
@@ -68,38 +57,38 @@ def _wind_deduction(speed_kmh: float) -> float:
 
     0 km/h  →  0 pts
     10      →  0 pts  (calm)
-    20      →  10 pts (light breeze, minor delays)
-    35      →  25 pts (moderate, affects crane ops)
-    50      →  50 pts (strong, crane shutdown likely)
-    65      →  75 pts (storm, port closed)
-    80+     →  100 pts (hurricane)
+    20      →  4 pts  (light breeze, minor delays)
+    35      →  11 pts (moderate, affects crane ops)
+    50      →  17 pts (strong, crane shutdown likely)
+    65      →  24 pts (storm, port closed)
+    80+     →  30 pts (hurricane-force)
     """
     if speed_kmh <= 10:
         return 0.0
-    return min(100.0, (speed_kmh - 10) * 100 / 70)
+    return min(30.0, (speed_kmh - 10) * 30 / 70)
 
 
 def _precip_deduction(mm: float) -> float:
     """Continuous precipitation penalty. Even light rain slows port ops.
 
     0 mm  →  0 pts
-    2 mm  →  10 pts (light drizzle, minor impact)
-    10 mm →  30 pts (steady rain, significant delays)
-    25 mm →  60 pts (heavy rain, operations paused)
-    50+ mm → 90 pts (severe flooding risk)
+    2 mm  →  1 pts  (light drizzle, minor impact)
+    10 mm →  5 pts  (steady rain, moderate delays)
+    25 mm → 13 pts  (heavy rain, operations paused)
+    50+ mm → 25 pts (severe flooding risk)
     """
     if mm <= 0:
         return 0.0
-    return min(90.0, mm * 90 / 50)
+    return min(25.0, mm * 25 / 50)
 
 
 def _temp_deduction(temp_c: float) -> float:
     """Temperature penalty — extremes in either direction are disruptive.
 
-    10–30°C →  0 pts  (comfortable operating range)
-    0°C/35°C → 10 pts (worker productivity drops, icing/heat risk)
-    -10°C/45°C → 30 pts (severe: equipment stress, safety shutdowns)
-    Below -20 or above 50 → 50 pts
+    10–30°C  →  0 pts (comfortable operating range)
+    0°C/35°C →  4 pts (worker productivity drops, icing/heat risk)
+    -10°C/45°C → 11 pts (severe: equipment stress, safety shutdowns)
+    Below -20 or above 50 → 15 pts
     """
     if 10 <= temp_c <= 30:
         return 0.0
@@ -107,30 +96,33 @@ def _temp_deduction(temp_c: float) -> float:
         deviation = 10 - temp_c
     else:
         deviation = temp_c - 30
-    return min(50.0, deviation * 50 / 20)
+    return min(15.0, deviation * 15 / 20)
 
 
 def _wmo_deduction(code: int) -> float:
     """WMO weather code penalty for the condition type itself.
 
     Codes: https://open-meteo.com/en/docs#weathervariables
+
+    Max deduction: 30 pts (severe thunderstorm).
+    Total budget across all four deduction functions: 30+25+15+30 = 100.
     """
     if code in (95, 96, 99):
-        return 60.0   # thunderstorm with hail
+        return 30.0   # thunderstorm with hail — port shutdown
     if code in (65, 67, 75, 77, 86):
-        return 45.0   # heavy rain/snow/freezing rain
+        return 20.0   # heavy rain/snow/freezing rain
     if code in (63, 73, 82, 85):
-        return 30.0   # moderate rain/snow/showers
+        return 12.0   # moderate rain/snow/showers
     if code in (61, 71, 80, 81):
-        return 15.0   # slight rain/snow/showers
+        return 6.0    # slight rain/snow/showers
     if code in (51, 53, 55, 56, 57, 66):
-        return 10.0   # drizzle / light freezing
+        return 4.0    # drizzle / light freezing
     if code in (45, 48):
-        return 25.0   # fog / rime fog (visibility issue)
+        return 15.0   # fog / rime fog (major visibility issue)
     if code == 3:
-        return 5.0    # overcast (minor visibility reduction)
+        return 2.0    # overcast (minor visibility reduction)
     if code == 2:
-        return 2.0    # partly cloudy
+        return 1.0    # partly cloudy
     return 0.0        # clear
 
 
@@ -225,6 +217,8 @@ class WeatherProvider(BaseProvider):
         lats = ",".join(str(lat) for _, lat, _ in ports)
         lons = ",".join(str(lon) for _, _, lon in ports)
 
+        # Open-Meteo can be slow with 37 locations; try batch first, then
+        # fall back to smaller chunks if it times out.
         try:
             resp = requests.get(
                 _CURRENT_URL,
@@ -234,31 +228,61 @@ class WeatherProvider(BaseProvider):
                     "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
                     "timezone": "auto",
                 },
-                timeout=20,
+                timeout=30,
             )
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
-            logger.error("Batch weather fetch failed: %s", exc)
-            # Return neutral fallback for every port
-            fallback: dict[str, dict] = {}
-            for name, _lat, _lon in ports:
-                fallback[name] = {
-                    "score": 75.0,
-                    "summary": "Weather data unavailable",
-                    "temp": None,
-                    "wind": None,
-                    "precip": None,
-                    "wmo_code": None,
-                }
-            return fallback
+            logger.warning("Batch weather fetch failed (%s), retrying in chunks...", exc)
+            # Retry in chunks of 10 to avoid timeout/payload issues
+            data = []
+            chunk_size = 10
+            for ci in range(0, len(ports), chunk_size):
+                chunk = ports[ci:ci + chunk_size]
+                chunk_lats = ",".join(str(lat) for _, lat, _ in chunk)
+                chunk_lons = ",".join(str(lon) for _, _, lon in chunk)
+                try:
+                    resp = requests.get(
+                        _CURRENT_URL,
+                        params={
+                            "latitude": chunk_lats,
+                            "longitude": chunk_lons,
+                            "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
+                            "timezone": "auto",
+                        },
+                        timeout=15,
+                    )
+                    resp.raise_for_status()
+                    chunk_data = resp.json()
+                    if isinstance(chunk_data, list):
+                        data.extend(chunk_data)
+                    else:
+                        data.append(chunk_data)
+                except Exception as chunk_exc:
+                    logger.error("Chunk weather fetch failed for ports %d-%d: %s", ci, ci + len(chunk), chunk_exc)
+                    # Fill this chunk with None so indexing stays aligned
+                    data.extend([None] * len(chunk))
+
+            if not any(d is not None for d in data):
+                logger.error("All weather chunks failed — returning fallback")
+                fallback: dict[str, dict] = {}
+                for name, _lat, _lon in ports:
+                    fallback[name] = {
+                        "score": 75.0,
+                        "summary": "Weather data temporarily unavailable",
+                        "temp": None,
+                        "wind": None,
+                        "precip": None,
+                        "wmo_code": None,
+                    }
+                return fallback
 
         # Open-Meteo returns a list when given multiple locations
         results_list = data if isinstance(data, list) else [data]
 
         result: dict[str, dict] = {}
         for i, (name, _lat, _lon) in enumerate(ports):
-            if i >= len(results_list):
+            if i >= len(results_list) or results_list[i] is None:
                 result[name] = {
                     "score": 75.0, "summary": "No data", "temp": None,
                     "wind": None, "precip": None, "wmo_code": None,
@@ -299,129 +323,91 @@ class WeatherProvider(BaseProvider):
         return result
 
     def fetch_current_hub_data(self) -> list[dict]:
-        """Fetch current weather for all hubs with full details."""
+        """Fetch current weather for all hubs with full details.
+
+        Uses the batched ``fetch_batch_port_weather()`` call under the
+        hood — one HTTP request for all ports, not N serial calls.
+        """
         cache_key = "weather_hubs_detailed"
         cached = get_cached(cache_key, ttl=1800)
         if cached is not None:
             return cached
 
-        results = []
+        # Single batch call for all ports
+        batch = self.fetch_batch_port_weather(_SHIPPING_HUBS)
 
+        results: list[dict] = []
         for name, lat, lon in _SHIPPING_HUBS:
-            try:
-                resp = requests.get(
-                    _CURRENT_URL,
-                    params={
-                        "latitude": lat,
-                        "longitude": lon,
-                        "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
-                        "timezone": "auto",
-                    },
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                current = resp.json().get("current", {})
-                score = _score_hub_current(current)
-                
-                # Construct reason string
-                reasons = []
-                wmo = current.get("weather_code", 0)
-                wind = current.get("wind_speed_10m", 0)
-                precip = current.get("precipitation", 0)
-                temp = current.get("temperature_2m", 0)
-                
-                if _wmo_deduction(wmo) > 0:
-                    reasons.append(f"Condition: Code {wmo}")
-                if _wind_deduction(wind) > 0:
-                    reasons.append(f"Wind: {wind:.0f} km/h")
-                if _precip_deduction(precip) > 0:
-                    reasons.append(f"Precip: {precip} mm")
-                if _temp_deduction(temp) > 0:
-                    reasons.append(f"Temp: {temp:.1f}°C")
-                
-                reason_text = ", ".join(reasons) if reasons else "Clear conditions"
+            wx = batch.get(name, {})
+            score = wx.get("score", 75.0)
 
-                results.append({
-                    "name": name,
-                    "lat": lat,
-                    "lon": lon,
-                    "score": score,
-                    "weather_summary": reason_text
-                })
-            except Exception as exc:
-                logger.warning("Failed to fetch hub weather for %s: %s", name, exc)
-                results.append({
-                    "name": name,
-                    "lat": lat,
-                    "lon": lon,
-                    "score": 75.0,
-                    "weather_summary": "Data unavailable"
-                })
+            # Build human-readable reason string from weather details
+            reasons: list[str] = []
+            wmo = wx.get("wmo_code") or 0
+            wind = wx.get("wind") or 0
+            precip = wx.get("precip") or 0
+            temp = wx.get("temp")
+
+            wmo_desc = _WMO_DESCRIPTIONS.get(wmo, f"Code {wmo}")
+            if _wmo_deduction(wmo) > 0:
+                reasons.append(wmo_desc)
+            if _wind_deduction(wind) > 0:
+                reasons.append(f"Wind {wind:.0f} km/h")
+            if _precip_deduction(precip) > 0:
+                reasons.append(f"Precip {precip:.1f} mm")
+            if temp is not None and _temp_deduction(temp) > 0:
+                reasons.append(f"Temp {temp:.1f}°C")
+
+            reason_text = ", ".join(reasons) if reasons else "Clear conditions"
+
+            results.append({
+                "name": name,
+                "lat": lat,
+                "lon": lon,
+                "score": score,
+                "weather_summary": reason_text,
+            })
 
         set_cached(cache_key, results)
         return results
 
     def fetch_current(self) -> tuple[float, dict]:
-        """Fetch current weather at all hubs and return the average score."""
-        cache_key = "weather_current_v2" # Versioned key to break old float cache
+        """Fetch current weather at all hubs and return the average score.
+
+        Uses the batched ``fetch_batch_port_weather()`` call — one HTTP
+        request instead of N serial calls.
+        """
+        cache_key = "weather_current_v3"  # Bumped after deduction rebalance
         cached = get_cached(cache_key, ttl=1800)  # 30-min cache
         if cached is not None:
-            # Check if it's the new format (tuple-like list or dict with metadata)
-            # stored as dict for safety
             if "metadata" in cached:
                 return cached["score"], cached["metadata"]
-            # Fallback for old cache if any (though key change prevents this)
             return cached["score"], {}
 
-        hub_scores: list[float] = []
+        # Single batch call for all ports
+        batch = self.fetch_batch_port_weather(_SHIPPING_HUBS)
 
-        for name, lat, lon in _SHIPPING_HUBS:
-            try:
-                resp = requests.get(
-                    _CURRENT_URL,
-                    params={
-                        "latitude": lat,
-                        "longitude": lon,
-                        "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
-                        "timezone": "auto",
-                    },
-                    timeout=10,
-                )
-                resp.raise_for_status()
-                current = resp.json().get("current", {})
-                hub_score = _score_hub_current(current)
-                hub_scores.append(hub_score)
-                logger.info(
-                    "Weather at %s: %.1f (WMO=%s wind=%.0f precip=%.1f temp=%.1f)",
-                    name, hub_score,
-                    current.get("weather_code"),
-                    current.get("wind_speed_10m", 0),
-                    current.get("precipitation", 0),
-                    current.get("temperature_2m", 0),
-                )
-            except Exception as exc:
-                logger.warning("Failed to fetch weather for %s: %s", name, exc)
-                hub_scores.append(75.0)
+        hub_scores: list[float] = []
+        for name, _lat, _lon in _SHIPPING_HUBS:
+            wx = batch.get(name, {})
+            hub_scores.append(wx.get("score", 75.0))
 
         avg_score = round(float(np.mean(hub_scores)), 1)
-        
-        # Count bad weather events for the description
+
         bad_weather_count = sum(1 for s in hub_scores if s < 80)
-        
+
         metadata = {
             "source": "Open-Meteo API",
-            "raw_value": f"{len(_SHIPPING_HUBS)} Major Hubs",
+            "raw_value": f"{len(_SHIPPING_HUBS)} Major Ports",
             "raw_label": "Global Port Weather",
             "description": (
-                f"Real-time weather analysis of {len(_SHIPPING_HUBS)} major shipping hubs. "
+                f"Real-time weather analysis of {len(_SHIPPING_HUBS)} major shipping ports. "
                 f"Currently tracking {bad_weather_count} locations with suboptimal operating conditions."
             ),
-            "updated": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
-        
-        # Cache the full result
+
         set_cached(cache_key, {"score": avg_score, "metadata": metadata})
-        
         return avg_score, metadata
 
     def fetch_history(self, days: int) -> pd.Series:

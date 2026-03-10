@@ -29,7 +29,6 @@ from datetime import datetime, timedelta
 import logging
 import os
 import requests
-import numpy as np
 import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 

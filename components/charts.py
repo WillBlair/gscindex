@@ -18,8 +18,6 @@ from config import (
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     COLORS,
-    HEALTH_TIERS,
-    hex_to_rgba,
 )
 from scoring import get_health_tier
 
@@ -198,24 +196,35 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     """
     lats: list[float] = []
     lons: list[float] = []
-    colors: list[str] = []
+    scores: list[float] = []
     sizes: list[float] = []
     hover_texts: list[str] = []
 
     for marker in map_markers:
         score = marker["score"]
-        tier = get_health_tier(score)
 
         lats.append(marker["lat"])
         lons.append(marker["lon"])
-        colors.append(tier["color"])
+        scores.append(score)
 
-        # Risk-based sizing: troubled ports get larger dots (8–18 px).
-        sizes.append(max(8, 18 - score * 0.10))
+        # Risk-based sizing: troubled ports are much larger (7–22 px).
+        sizes.append(max(7, 22 - score * 0.15))
 
         hover_texts.append(
             f"<b>{marker['name']}</b><br>{marker['description']}"
         )
+
+    # Continuous color scale: green → yellow → orange → red
+    # Maps the full 0–100 score range so every port gets a distinct shade.
+    _colorscale = [
+        [0.00, "#e63757"],   # 0   — Critical (red)
+        [0.25, "#fd7e14"],   # 25  — (orange)
+        [0.40, "#fd7e14"],   # 40  — Stressed boundary
+        [0.55, "#f6c343"],   # 55  — (yellow)
+        [0.70, "#f6c343"],   # 70  — Stable boundary
+        [0.80, "#00d97e"],   # 80  — Healthy boundary (green)
+        [1.00, "#00d97e"],   # 100 — Healthy (bright green)
+    ]
 
     fig = go.Figure(
         go.Scattergeo(
@@ -226,9 +235,13 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             mode="markers",
             marker={
                 "size": sizes,
-                "color": colors,
+                "color": scores,
+                "colorscale": _colorscale,
+                "cmin": 0,
+                "cmax": 100,
+                "showscale": False,
                 "line": {"width": 1.5, "color": "rgba(255,255,255,0.6)"},
-                "opacity": 0.92,
+                "opacity": 0.95,
             },
         )
     )

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS, REGIONS
+from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS
 from data.ports_data import MAJOR_PORTS
 
 from data.providers.energy import EnergyProvider
@@ -139,6 +139,145 @@ def get_safe_fallback_data() -> dict:
 _DIRECT_PENALTY:   dict[str, float] = {"high": 15, "medium": 8, "low": 3}
 _REGIONAL_PENALTY: dict[str, float] = {"high": 8,  "medium": 4, "low": 2}
 
+# ---------------------------------------------------------------------------
+# Regional risk profiles — per-port macro sensitivity
+# ---------------------------------------------------------------------------
+# Each region overrides the default equal-weight macro blend with weights that
+# reflect real-world exposure.  This means a tariff spike hurts Chinese ports
+# far more than it hurts Rotterdam, creating genuine per-port differentiation.
+#
+# Keys are category names; values are relative weights (normalised at runtime).
+# "vulnerability" is a fixed 0–15 pt structural penalty for ports in
+# chronically disrupted areas (piracy corridors, congestion, conflict zones).
+
+_REGION_PROFILES: dict[str, dict] = {
+    "us_gulf": {
+        "weights": {"energy": 0.35, "trucking": 0.30, "supply_chain": 0.15, "tariffs": 0.10, "geopolitical": 0.10},
+        "vulnerability": 0,
+    },
+    "us_east": {
+        "weights": {"supply_chain": 0.25, "trucking": 0.25, "energy": 0.20, "tariffs": 0.15, "geopolitical": 0.15},
+        "vulnerability": 0,
+    },
+    "us_west": {
+        "weights": {"tariffs": 0.30, "supply_chain": 0.25, "trucking": 0.20, "energy": 0.15, "geopolitical": 0.10},
+        "vulnerability": 2,  # chronic congestion
+    },
+    "canada": {
+        "weights": {"supply_chain": 0.25, "energy": 0.25, "trucking": 0.20, "tariffs": 0.15, "geopolitical": 0.15},
+        "vulnerability": 0,
+    },
+    "latin_america": {
+        "weights": {"geopolitical": 0.25, "supply_chain": 0.25, "energy": 0.20, "tariffs": 0.15, "trucking": 0.15},
+        "vulnerability": 3,
+    },
+    "panama": {
+        "weights": {"supply_chain": 0.30, "geopolitical": 0.25, "energy": 0.20, "tariffs": 0.15, "trucking": 0.10},
+        "vulnerability": 5,  # drought / capacity constraints
+    },
+    "north_europe": {
+        "weights": {"energy": 0.35, "supply_chain": 0.25, "geopolitical": 0.20, "tariffs": 0.10, "trucking": 0.10},
+        "vulnerability": 0,
+    },
+    "med_europe": {
+        "weights": {"geopolitical": 0.30, "energy": 0.25, "supply_chain": 0.20, "tariffs": 0.15, "trucking": 0.10},
+        "vulnerability": 2,
+    },
+    "uk": {
+        "weights": {"energy": 0.25, "supply_chain": 0.25, "tariffs": 0.20, "geopolitical": 0.15, "trucking": 0.15},
+        "vulnerability": 1,
+    },
+    "east_europe": {
+        "weights": {"geopolitical": 0.40, "energy": 0.25, "supply_chain": 0.15, "tariffs": 0.10, "trucking": 0.10},
+        "vulnerability": 5,  # conflict proximity
+    },
+    "china": {
+        "weights": {"tariffs": 0.35, "geopolitical": 0.25, "supply_chain": 0.20, "energy": 0.10, "trucking": 0.10},
+        "vulnerability": 4,  # tariff / decoupling risk
+    },
+    "taiwan": {
+        "weights": {"geopolitical": 0.40, "tariffs": 0.25, "supply_chain": 0.20, "energy": 0.10, "trucking": 0.05},
+        "vulnerability": 8,  # cross-strait tension
+    },
+    "japan_korea": {
+        "weights": {"supply_chain": 0.25, "tariffs": 0.25, "energy": 0.20, "geopolitical": 0.20, "trucking": 0.10},
+        "vulnerability": 1,
+    },
+    "southeast_asia": {
+        "weights": {"supply_chain": 0.25, "geopolitical": 0.25, "tariffs": 0.20, "energy": 0.15, "trucking": 0.15},
+        "vulnerability": 2,
+    },
+    "south_asia": {
+        "weights": {"geopolitical": 0.25, "supply_chain": 0.25, "energy": 0.20, "tariffs": 0.15, "trucking": 0.15},
+        "vulnerability": 3,
+    },
+    "persian_gulf": {
+        "weights": {"geopolitical": 0.35, "energy": 0.30, "supply_chain": 0.15, "tariffs": 0.10, "trucking": 0.10},
+        "vulnerability": 5,  # strait of Hormuz risk
+    },
+    "red_sea": {
+        "weights": {"geopolitical": 0.45, "energy": 0.20, "supply_chain": 0.15, "tariffs": 0.10, "trucking": 0.10},
+        "vulnerability": 10,  # Houthi attacks / active conflict zone
+    },
+    "east_africa": {
+        "weights": {"geopolitical": 0.35, "supply_chain": 0.25, "energy": 0.15, "tariffs": 0.15, "trucking": 0.10},
+        "vulnerability": 6,  # piracy corridor
+    },
+    "west_africa": {
+        "weights": {"geopolitical": 0.30, "energy": 0.25, "supply_chain": 0.20, "tariffs": 0.15, "trucking": 0.10},
+        "vulnerability": 5,
+    },
+    "south_africa": {
+        "weights": {"supply_chain": 0.25, "energy": 0.25, "geopolitical": 0.20, "tariffs": 0.15, "trucking": 0.15},
+        "vulnerability": 3,
+    },
+    "oceania": {
+        "weights": {"supply_chain": 0.25, "tariffs": 0.20, "energy": 0.20, "geopolitical": 0.15, "trucking": 0.20},
+        "vulnerability": 0,
+    },
+}
+
+# Port name → region key
+_PORT_REGION: dict[str, str] = {
+    "Houston":       "us_gulf",
+    "New York":      "us_east",
+    "Los Angeles":   "us_west",
+    "Savannah":      "us_east",
+    "Vancouver":     "canada",
+    "Colon":         "panama",
+    "Manzanillo":    "latin_america",
+    "Santos":        "latin_america",
+    "Buenos Aires":  "latin_america",
+    "Rotterdam":     "north_europe",
+    "Hamburg":       "north_europe",
+    "Antwerp":       "north_europe",
+    "Felixstowe":    "uk",
+    "Piraeus":       "med_europe",
+    "Algeciras":     "med_europe",
+    "Gdansk":        "east_europe",
+    "Shanghai":      "china",
+    "Hong Kong":     "china",
+    "Qingdao":       "china",
+    "Busan":         "japan_korea",
+    "Tokyo":         "japan_korea",
+    "Kaohsiung":     "taiwan",
+    "Singapore":     "southeast_asia",
+    "Laem Chabang":  "southeast_asia",
+    "Port Klang":    "southeast_asia",
+    "Mumbai":        "south_asia",
+    "Chennai":       "south_asia",
+    "Colombo":       "south_asia",
+    "Dubai":         "persian_gulf",
+    "Jeddah":        "red_sea",
+    "Durban":        "south_africa",
+    "Mombasa":       "east_africa",
+    "Djibouti":      "red_sea",
+    "Lagos":         "west_africa",
+    "Port Said":     "red_sea",
+    "Sydney":        "oceania",
+    "Melbourne":     "oceania",
+}
+
 
 def _sentiment_label(compound: float) -> str:
     """Human-readable description of VADER compound sentiment."""
@@ -196,18 +335,17 @@ def _derive_map_markers(
 ) -> list[dict]:
     """Build a map marker for every major shipping port.
 
-    Each port's score is computed from **real data only** — no fabricated
-    jitter, no made-up risk profiles.  The three score components:
+    Each port's score is computed from **real data only** with four components:
 
-        1. **Local weather** (60% weight) — real-time conditions at the
-           port's exact lat/lon, fetched in one batched Open-Meteo call.
-           This is the primary source of genuine per-port variation.
-        2. **Global macro factors** (40% weight) — weighted average of all
-           non-weather FRED categories (energy, ports, tariffs, shipping,
-           geopolitical, demand).  Same for all ports, and the tooltip is
-           honest about that.
-        3. **News penalty** (0–40 pts deducted) — VADER-scored articles
-           matched via two-tier keywords with garbage pre-filtered.
+        1. **Local weather** (55%) — real-time conditions at the port's
+           exact lat/lon, fetched in one batched Open-Meteo call.
+        2. **Regional macro** (45%) — weighted average of non-weather
+           categories, with weights tuned per-region (e.g. Chinese ports
+           weight tariffs heavily, Red Sea ports weight geopolitical risk).
+        3. **Structural vulnerability** (0–10 pts) — fixed penalty for
+           ports in chronically disrupted zones (piracy, conflict, drought).
+        4. **News penalty** (0–40 pts) — VADER-scored articles matched
+           via two-tier keywords with garbage pre-filtered.
     """
     markers: list[dict] = []
 
@@ -215,22 +353,9 @@ def _derive_map_markers(
     port_coords = [(name, lat, lon) for name, lat, lon, _, _ in MAJOR_PORTS]
     batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
 
-    # ── Global macro baseline (non-weather categories) ───────────
+    # ── Default macro weights (fallback for unmapped ports) ──────
     non_weather_cats = ["energy", "supply_chain", "tariffs", "trucking", "geopolitical"]
-    non_weather_weights = {
-        cat: CATEGORY_WEIGHTS.get(cat, 0)
-        for cat in non_weather_cats
-        if cat in CATEGORY_WEIGHTS
-    }
-    weight_sum = sum(non_weather_weights.values()) or 1.0
-    # Normalize so these 5 categories' weights sum to 1.0
-    normalized_weights = {
-        cat: w / weight_sum for cat, w in non_weather_weights.items()
-    }
-    global_macro = sum(
-        current_scores.get(cat, 50) * w
-        for cat, w in normalized_weights.items()
-    )
+    default_weights = {cat: 0.20 for cat in non_weather_cats}
 
     # ── Match news to ports ──────────────────────────────────────
     port_news = _match_news_to_ports(alerts)
@@ -241,8 +366,22 @@ def _derive_map_markers(
         local_weather = wx.get("score", 75.0)
         weather_summary = wx.get("summary", "Weather data unavailable")
 
-        # ── Composite: 60% local weather + 40% global macro ─────
-        composite = local_weather * 0.60 + global_macro * 0.40
+        # ── Per-port macro score (region-specific weighting) ─────
+        region = _PORT_REGION.get(name)
+        profile = _REGION_PROFILES.get(region, {}) if region else {}
+        macro_weights = profile.get("weights", default_weights)
+        vulnerability = profile.get("vulnerability", 0)
+
+        regional_macro = sum(
+            current_scores.get(cat, 50) * w
+            for cat, w in macro_weights.items()
+        )
+
+        # ── Composite: 55% local weather + 45% regional macro ───
+        composite = local_weather * 0.55 + regional_macro * 0.45
+
+        # ── Structural vulnerability penalty ─────────────────────
+        composite -= vulnerability
 
         # ── News penalty ─────────────────────────────────────────
         matched = port_news.get(name, [])
@@ -276,11 +415,23 @@ def _derive_map_markers(
         tier = get_health_tier(score)
 
         # ── Build hover tooltip (transparent about data sources) ─
+        # Find the top risk factor for this port's region
+        top_risk_cat = min(macro_weights, key=lambda c: current_scores.get(c, 50) * macro_weights[c])
+        top_risk_label = CATEGORY_LABELS.get(top_risk_cat, top_risk_cat.title())
+        top_risk_score = current_scores.get(top_risk_cat, 50)
+
+        region_label = (region or "global").replace("_", " ").title()
+
         lines: list[str] = [
             f"Score: {score:.0f}/100 — <b>{tier['label']}</b>",
             "────────────",
             f"<b>Weather:</b> {weather_summary} (score: {local_weather:.0f})",
+            f"<b>Region:</b> {region_label} (macro: {regional_macro:.0f})",
         ]
+        if vulnerability > 0:
+            lines.append(f"<b>Structural risk:</b> -{vulnerability} pts (zone vulnerability)")
+        if top_risk_score < 60:
+            lines.append(f"<b>Top risk:</b> {top_risk_label} ({top_risk_score:.0f})")
 
         # ── AI-generated port summary ─────────────────────────────
         ai_summary = ""

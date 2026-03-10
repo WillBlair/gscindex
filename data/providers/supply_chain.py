@@ -35,7 +35,7 @@ import pandas as pd
 
 from config import HISTORY_DAYS
 from data.providers.base import BaseProvider
-from data.providers.fred_client import fetch_fred_series, normalize_series_direct
+from data.providers.fred_client import fetch_fred_series
 
 
 class SupplyChainProvider(BaseProvider):

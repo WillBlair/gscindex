@@ -24,7 +24,7 @@ Frequency: Real-time / Daily
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import yfinance as yf
 import pandas as pd
