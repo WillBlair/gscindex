@@ -208,8 +208,8 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         scores.append(score)
 
         # Risk-based sizing: troubled ports are huge, healthy ports are tiny.
-        # Score 100 -> 6px, Score 60 -> 17.2px, Score 20 -> 28.4px
-        sizes.append(max(6, 34 - score * 0.28))
+        # Score 100 -> 4px, Score 80 -> ~8.8px (30% smaller than previous 11.6px)
+        sizes.append(max(4, 28 - score * 0.24))
 
         hover_texts.append(
             f"<b>{marker['name']}</b><br>{marker['description']}"
@@ -218,12 +218,12 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     # Continuous color scale: green → yellow → orange → red
     # Maps the full 0–100 score range so every port gets a distinct shade.
     _colorscale = [
-        [0.00, "#e63757"],   # 0   — Critical (red)
-        [0.25, "#fd7e14"],   # 25  — (orange)
-        [0.40, "#fd7e14"],   # 40  — Stressed boundary
-        [0.60, "#f6c343"],   # 60  — Stable boundary (yellow)
-        [0.80, "#00d97e"],   # 80  — Healthy boundary (green)
-        [1.00, "#00d97e"],   # 100 — Healthy (bright green)
+        [0.00, COLORS["red"]],       # 0   — Critical (red)
+        [0.25, COLORS["orange"]],    # 25  — (orange)
+        [0.40, COLORS["orange"]],    # 40  — Stressed boundary
+        [0.60, COLORS["yellow"]],    # 60  — Stable boundary (yellow)
+        [0.80, COLORS["green"]],     # 80  — Healthy boundary (green)
+        [1.00, COLORS["green"]],     # 100 — Healthy (bright green)
     ]
 
     fig = go.Figure(
@@ -240,8 +240,9 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
                 "cmin": 0,
                 "cmax": 100,
                 "showscale": False,
-                "line": {"width": 1.5, "color": "rgba(255,255,255,0.6)"},
-                "opacity": 0.95,
+                # Use solid dark background color for the border to create a sharp cutout effect
+                "line": {"width": 1.5, "color": COLORS["bg"]},
+                "opacity": 1.0,  # Full opacity for maximum contrast
             },
         )
     )
