@@ -136,8 +136,8 @@ def get_safe_fallback_data() -> dict:
 # News penalty tables + helpers
 # ---------------------------------------------------------------------------
 
-_DIRECT_PENALTY:   dict[str, float] = {"high": 15, "medium": 8, "low": 3}
-_REGIONAL_PENALTY: dict[str, float] = {"high": 8,  "medium": 4, "low": 2}
+_DIRECT_PENALTY:   dict[str, float] = {"high": 30, "medium": 15, "low": 5}
+_REGIONAL_PENALTY: dict[str, float] = {"high": 20, "medium": 10, "low": 3}
 
 # ---------------------------------------------------------------------------
 # Regional risk profiles — per-port macro sensitivity
@@ -377,8 +377,8 @@ def _derive_map_markers(
             for cat, w in macro_weights.items()
         )
 
-        # ── Composite: 55% local weather + 45% regional macro ───
-        composite = local_weather * 0.55 + regional_macro * 0.45
+        # ── Composite: 40% local weather + 60% regional macro ───
+        composite = local_weather * 0.40 + regional_macro * 0.60
 
         # ── Structural vulnerability penalty ─────────────────────
         composite -= vulnerability
@@ -408,7 +408,7 @@ def _derive_map_markers(
                 f"   {label} ({sentiment:+.2f}) · {scope} impact"
             )
 
-        news_penalty = min(news_penalty, 40)
+        news_penalty = min(news_penalty, 60.0)
 
         # ── Final score ──────────────────────────────────────────
         score = round(max(0.0, min(100.0, composite - news_penalty)), 1)
