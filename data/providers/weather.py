@@ -187,16 +187,56 @@ class WeatherProvider(BaseProvider):
 
     category = "weather"
 
+    @staticmethod
+    def _build_open_meteo_url(lats: str, lons: str) -> str:
+        """Build Open-Meteo URL with literal commas (no %2C encoding).
+
+        ``requests.get(params=...)`` URL-encodes commas to ``%2C``.
+        Some proxies / CDN edges between Render and Open-Meteo don't
+        decode them, causing the API to treat the entire string as one
+        (invalid) coordinate.  Building the URL by hand avoids this.
+        """
+        return (
+            f"{_CURRENT_URL}"
+            f"?latitude={lats}"
+            f"&longitude={lons}"
+            f"&current=weather_code,wind_speed_10m,temperature_2m,precipitation"
+            f"&timezone=auto"
+        )
+
+    def _fetch_chunk(
+        self,
+        chunk: list[tuple[str, float, float]],
+        timeout: int = 20,
+    ) -> list[dict | None]:
+        """Fetch weather for a chunk of ports. Returns list aligned with chunk."""
+        lats = ",".join(str(lat) for _, lat, _ in chunk)
+        lons = ",".join(str(lon) for _, _, lon in chunk)
+        url = self._build_open_meteo_url(lats, lons)
+
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Single location → dict; multiple → list
+            if isinstance(data, list):
+                return data
+            return [data]
+        except Exception as exc:
+            logger.warning(
+                "Weather chunk fetch failed (%d ports): %s", len(chunk), exc,
+            )
+            return [None] * len(chunk)
+
     def fetch_batch_port_weather(
         self,
         ports: list[tuple[str, float, float]],
     ) -> dict[str, dict]:
-        """Fetch current weather for an arbitrary list of ports in ONE call.
+        """Fetch current weather for an arbitrary list of ports.
 
-        Open-Meteo accepts comma-separated lat/lon values and returns an
-        array of results — one per location.  This lets us get real,
-        location-specific weather for all 37 map ports with a single HTTP
-        request instead of 37.
+        Uses manually-built URLs (no ``%2C`` comma encoding) and fetches
+        in small parallel chunks for reliability on production hosts.
 
         Parameters
         ----------
@@ -207,89 +247,64 @@ class WeatherProvider(BaseProvider):
         -------
         dict[str, dict]
             Mapping of port name → ``{"score", "summary", "temp", "wind",
-            "precip", "wmo_code"}``.  Cached for 30 minutes.
+            "precip", "wmo_code"}``.  Cached for 4 hours.
         """
-        cache_key = "weather_batch_ports"
-        cached = get_cached(cache_key, ttl=1800)
+        cache_key = "weather_batch_ports_v2"
+        cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             return cached
 
-        lats = ",".join(str(lat) for _, lat, _ in ports)
-        lons = ",".join(str(lon) for _, _, lon in ports)
+        import concurrent.futures
 
-        # Open-Meteo can be slow with 37 locations; try batch first, then
-        # fall back to smaller chunks if it times out.
-        try:
-            resp = requests.get(
-                _CURRENT_URL,
-                params={
-                    "latitude": lats,
-                    "longitude": lons,
-                    "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
-                    "timezone": "auto",
-                },
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as exc:
-            logger.warning("Batch weather fetch failed (%s), retrying in chunks...", exc)
-            # Retry in chunks of 10 to avoid timeout/payload issues
-            data = []
-            chunk_size = 10
-            for ci in range(0, len(ports), chunk_size):
-                chunk = ports[ci:ci + chunk_size]
-                chunk_lats = ",".join(str(lat) for _, lat, _ in chunk)
-                chunk_lons = ",".join(str(lon) for _, _, lon in chunk)
+        # Split into small chunks (8 ports each) and fetch in parallel.
+        # This is more reliable than one giant 37-location request and
+        # avoids serial retry chains that can exceed provider timeouts.
+        chunk_size = 8
+        chunks = [
+            ports[i : i + chunk_size]
+            for i in range(0, len(ports), chunk_size)
+        ]
+
+        all_results: list[dict | None] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(self._fetch_chunk, chunk) for chunk in chunks]
+            for future in concurrent.futures.as_completed(futures, timeout=30):
+                pass  # just ensure they finish
+            # Collect in ORDER (not completion order)
+            for future in futures:
                 try:
-                    resp = requests.get(
-                        _CURRENT_URL,
-                        params={
-                            "latitude": chunk_lats,
-                            "longitude": chunk_lons,
-                            "current": "weather_code,wind_speed_10m,temperature_2m,precipitation",
-                            "timezone": "auto",
-                        },
-                        timeout=15,
-                    )
-                    resp.raise_for_status()
-                    chunk_data = resp.json()
-                    if isinstance(chunk_data, list):
-                        data.extend(chunk_data)
-                    else:
-                        data.append(chunk_data)
-                except Exception as chunk_exc:
-                    logger.error("Chunk weather fetch failed for ports %d-%d: %s", ci, ci + len(chunk), chunk_exc)
-                    # Fill this chunk with None so indexing stays aligned
-                    data.extend([None] * len(chunk))
+                    all_results.extend(future.result(timeout=0))
+                except Exception:
+                    # Chunk failed — fill with None to keep alignment
+                    idx = futures.index(future)
+                    all_results.extend([None] * len(chunks[idx]))
 
-            if not any(d is not None for d in data):
-                logger.error("All weather chunks failed — returning fallback")
-                fallback: dict[str, dict] = {}
-                for name, _lat, _lon in ports:
-                    fallback[name] = {
-                        "score": 75.0,
-                        "summary": "Weather data temporarily unavailable",
-                        "temp": None,
-                        "wind": None,
-                        "precip": None,
-                        "wmo_code": None,
-                    }
-                return fallback
-
-        # Open-Meteo returns a list when given multiple locations
-        results_list = data if isinstance(data, list) else [data]
+        if not any(r is not None for r in all_results):
+            logger.error("All weather chunks failed — returning fallback")
+            fallback: dict[str, dict] = {}
+            for name, _lat, _lon in ports:
+                fallback[name] = {
+                    "score": 75.0,
+                    "summary": "Weather data temporarily unavailable",
+                    "temp": None,
+                    "wind": None,
+                    "precip": None,
+                    "wmo_code": None,
+                }
+            # Cache fallback briefly so we don't hammer a failing API
+            set_cached(cache_key, fallback)
+            return fallback
 
         result: dict[str, dict] = {}
         for i, (name, _lat, _lon) in enumerate(ports):
-            if i >= len(results_list) or results_list[i] is None:
+            if i >= len(all_results) or all_results[i] is None:
                 result[name] = {
                     "score": 75.0, "summary": "No data", "temp": None,
                     "wind": None, "precip": None, "wmo_code": None,
                 }
                 continue
 
-            current = results_list[i].get("current", {})
+            current = all_results[i].get("current", {})
             score = _score_hub_current(current)
 
             wmo = current.get("weather_code", 0) or 0
@@ -329,7 +344,7 @@ class WeatherProvider(BaseProvider):
         hood — one HTTP request for all ports, not N serial calls.
         """
         cache_key = "weather_hubs_detailed"
-        cached = get_cached(cache_key, ttl=1800)
+        cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             return cached
 
@@ -378,7 +393,7 @@ class WeatherProvider(BaseProvider):
         request instead of N serial calls.
         """
         cache_key = "weather_current_v3"  # Bumped after deduction rebalance
-        cached = get_cached(cache_key, ttl=1800)  # 30-min cache
+        cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             if "metadata" in cached:
                 return cached["score"], cached["metadata"]
@@ -413,7 +428,7 @@ class WeatherProvider(BaseProvider):
     def fetch_history(self, days: int) -> pd.Series:
         """Fetch historical weather from Open-Meteo, averaged across all hubs."""
         cache_key = f"weather_history_{days}"
-        cached = get_cached(cache_key, ttl=3600)
+        cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             s = pd.Series(cached["values"], name="weather")
             s.index = pd.DatetimeIndex(cached["dates"])
@@ -422,22 +437,18 @@ class WeatherProvider(BaseProvider):
         end_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
-        all_hub_series: list[pd.Series] = []
-
-        for name, lat, lon in _SHIPPING_HUBS:
+        def _fetch_hub_history(hub: tuple[str, float, float]) -> pd.Series | None:
+            name, lat, lon = hub
             try:
-                resp = requests.get(
-                    _HISTORICAL_URL,
-                    params={
-                        "latitude": lat,
-                        "longitude": lon,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "daily": "weather_code,wind_speed_10m_max,precipitation_sum,temperature_2m_max,temperature_2m_min",
-                        "timezone": "auto",
-                    },
-                    timeout=15,
+                url = (
+                    f"{_HISTORICAL_URL}"
+                    f"?latitude={lat}&longitude={lon}"
+                    f"&start_date={start_date}&end_date={end_date}"
+                    f"&daily=weather_code,wind_speed_10m_max,precipitation_sum,"
+                    f"temperature_2m_max,temperature_2m_min"
+                    f"&timezone=auto"
                 )
+                resp = requests.get(url, timeout=15)
                 resp.raise_for_status()
                 daily = resp.json().get("daily", {})
                 dates = daily.get("time", [])
@@ -453,10 +464,20 @@ class WeatherProvider(BaseProvider):
                     in zip(codes, winds, precips, t_maxes, t_mins)
                 ]
                 s = pd.Series(scores, index=pd.DatetimeIndex(dates))
-                all_hub_series.append(s)
                 logger.info("Weather history for %s: %d days", name, len(scores))
+                return s
             except Exception as exc:
                 logger.warning("Failed to fetch weather history for %s: %s", name, exc)
+                return None
+
+        import concurrent.futures
+
+        all_hub_series: list[pd.Series] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = pool.map(_fetch_hub_history, _SHIPPING_HUBS, timeout=60)
+            for s in results:
+                if s is not None:
+                    all_hub_series.append(s)
 
         if all_hub_series:
             df = pd.concat(all_hub_series, axis=1)

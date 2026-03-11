@@ -354,14 +354,14 @@ def _derive_map_markers(
 
     Each port's score is computed from **real data only** with four components:
 
-        1. **Local weather** (55%) — real-time conditions at the port's
+        1. **Local weather** (40%) — real-time conditions at the port's
            exact lat/lon, fetched in one batched Open-Meteo call.
-        2. **Regional macro** (45%) — weighted average of non-weather
+        2. **Regional macro** (60%) — weighted average of non-weather
            categories, with weights tuned per-region (e.g. Chinese ports
            weight tariffs heavily, Red Sea ports weight geopolitical risk).
         3. **Structural vulnerability** (0–10 pts) — fixed penalty for
            ports in chronically disrupted zones (piracy, conflict, drought).
-        4. **News penalty** (0–40 pts) — VADER-scored articles matched
+        4. **News penalty** (0–60 pts) — VADER-scored articles matched
            via two-tier keywords with garbage pre-filtered.
     """
     markers: list[dict] = []
@@ -432,8 +432,10 @@ def _derive_map_markers(
         tier = get_health_tier(score)
 
         # ── Build hover tooltip (transparent about data sources) ─
-        # Find the top risk factor for this port's region
-        top_risk_cat = min(macro_weights, key=lambda c: current_scores.get(c, 50) * macro_weights[c])
+        # Find the worst-performing category relevant to this port's region.
+        # Only consider categories with meaningful weight (>10%) for this region.
+        relevant_cats = [c for c, w in macro_weights.items() if w >= 0.10]
+        top_risk_cat = min(relevant_cats, key=lambda c: current_scores.get(c, 50))
         top_risk_label = CATEGORY_LABELS.get(top_risk_cat, top_risk_cat.title())
         top_risk_score = current_scores.get(top_risk_cat, 50)
 
