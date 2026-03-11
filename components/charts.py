@@ -216,17 +216,15 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         )
 
     # Continuous color scale: green → yellow → orange → red
-    # Added extra color stops to hold solid colors across their bands,
-    # ensuring severe scores stay starkly red instead of washing into orange.
+    # Uses a smooth gradient, but anchors the deep red and orange
+    # so critical ports don't wash out.
     _colorscale = [
-        [0.00, COLORS["red"]],       # 0   — Critical (solid red)
-        [0.30, COLORS["red"]],       # 30  — Hold solid red
-        [0.40, COLORS["orange"]],    # 40  — Stressed (solid orange begins)
-        [0.50, COLORS["orange"]],    # 50  — Hold solid orange
-        [0.60, COLORS["yellow"]],    # 60  — Stable (solid yellow begins)
-        [0.70, COLORS["yellow"]],    # 70  — Hold solid yellow
-        [0.80, COLORS["green"]],     # 80  — Healthy (solid green begins)
-        [1.00, COLORS["green"]],     # 100 — Hold solid green
+        [0.00, COLORS["red"]],       # 0   — Solid critical red
+        [0.30, COLORS["red"]],       # 30  — Begin transition to orange
+        [0.50, COLORS["orange"]],    # 50  — Solid orange
+        [0.60, COLORS["yellow"]],    # 60  — Solid yellow (Stable boundary)
+        [0.80, COLORS["green"]],     # 80  — Solid green (Healthy boundary)
+        [1.00, COLORS["green"]],     # 100 — Solid green
     ]
 
     fig = go.Figure(
