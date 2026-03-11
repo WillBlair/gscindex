@@ -409,7 +409,7 @@ def build_layout(
                     id="newsletter-toast-inner",
                     n_clicks=0,
                     style={
-                        "position": "fixed", "top": "24px", "right": "24px", "width": "320px",
+                        "position": "fixed", "bottom": "24px", "right": "24px", "width": "320px",
                         "background": "#1a1d26", "border": "1px solid rgba(255,255,255,0.08)",
                         "borderRadius": "12px", "padding": "16px 20px", "zIndex": 1050,
                         "boxShadow": "0 8px 32px rgba(0,0,0,0.4)", "cursor": "pointer",
