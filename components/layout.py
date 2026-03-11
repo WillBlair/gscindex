@@ -89,11 +89,14 @@ def build_layout(
         # Provisional fallback can carry stale history; suppress misleading delta.
         delta = 0.0
     else:
-        previous_score = get_previous_daily_score()
-        if previous_score is not None:
-            delta = round(composite - previous_score, 1)
-        else:
-            # Fallback for the very first day before a previous score exists
+        try:
+            previous_score = get_previous_daily_score()
+            if previous_score is not None:
+                delta = round(composite - previous_score, 1)
+            else:
+                delta = 0.0
+        except Exception:
+            # DB timeout (e.g. Neon cold start) must not block page render
             delta = 0.0
 
     # Build sub-components
