@@ -216,14 +216,17 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         )
 
     # Continuous color scale: green → yellow → orange → red
-    # Maps the full 0–100 score range so every port gets a distinct shade.
+    # Added extra color stops to hold solid colors across their bands,
+    # ensuring severe scores stay starkly red instead of washing into orange.
     _colorscale = [
-        [0.00, COLORS["red"]],       # 0   — Critical (red)
-        [0.25, COLORS["orange"]],    # 25  — (orange)
-        [0.40, COLORS["orange"]],    # 40  — Stressed boundary
-        [0.60, COLORS["yellow"]],    # 60  — Stable boundary (yellow)
-        [0.80, COLORS["green"]],     # 80  — Healthy boundary (green)
-        [1.00, COLORS["green"]],     # 100 — Healthy (bright green)
+        [0.00, COLORS["red"]],       # 0   — Critical (solid red)
+        [0.30, COLORS["red"]],       # 30  — Hold solid red
+        [0.40, COLORS["orange"]],    # 40  — Stressed (solid orange begins)
+        [0.50, COLORS["orange"]],    # 50  — Hold solid orange
+        [0.60, COLORS["yellow"]],    # 60  — Stable (solid yellow begins)
+        [0.70, COLORS["yellow"]],    # 70  — Hold solid yellow
+        [0.80, COLORS["green"]],     # 80  — Healthy (solid green begins)
+        [1.00, COLORS["green"]],     # 100 — Hold solid green
     ]
 
     fig = go.Figure(
