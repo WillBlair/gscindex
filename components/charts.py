@@ -257,8 +257,8 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         },
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin={"t": 40, "b": 10, "l": 0, "r": 0},
-        height=380,
+        margin={"t": 25, "b": 0, "l": 0, "r": 0},
+        height=310,
         hoverlabel={
             "bgcolor": COLORS["card"],
             "bordercolor": COLORS["card_border"],

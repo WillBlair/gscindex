@@ -83,8 +83,8 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"family": "Inter"},
-        margin={"t": 60, "b": 20, "l": 30, "r": 30},
-        height=300,
+        margin={"t": 40, "b": 10, "l": 30, "r": 30},
+        height=250,
     )
 
     return fig
