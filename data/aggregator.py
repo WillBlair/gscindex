@@ -290,6 +290,23 @@ def _sentiment_label(compound: float) -> str:
     return "Slightly negative"
 
 
+def _wrap_text(text: str, max_chars: int = 40) -> str:
+    """Wrap text with <br> tags to prevent Plotly tooltips from overflowing mobile screens."""
+    words = text.split()
+    lines = []
+    current_line = ""
+    for word in words:
+        if len(current_line) + len(word) + 1 <= max_chars:
+            current_line = f"{current_line} {word}".strip()
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+    return "<br>".join(lines)
+
+
 def _match_news_to_ports(
     alerts: list[dict],
 ) -> dict[str, list[tuple[dict, str]]]:
@@ -392,7 +409,7 @@ def _derive_map_markers(
             severity = article.get("severity", "low")
             sentiment = article.get("sentiment", 0)
             title = article.get("title", "Unknown event")
-            short_title = (title[:58] + "...") if len(title) > 58 else title
+            wrapped_title = _wrap_text(title, max_chars=40)
             label = _sentiment_label(sentiment)
 
             penalty_table = (
@@ -404,7 +421,7 @@ def _derive_map_markers(
             scope = "Direct" if match_type == "direct" else "Regional"
             sev_tag = severity.upper()
             news_lines.append(
-                f"<b>[{sev_tag}]</b> {short_title}<br>"
+                f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
                 f"   {label} ({sentiment:+.2f}) · {scope} impact"
             )
 
@@ -439,20 +456,7 @@ def _derive_map_markers(
             ai_summary = port_summaries.get(name, "")
         
         if ai_summary:
-            # Wrap long summaries to ~60 chars per line for tooltip readability
-            words = ai_summary.split()
-            wrapped_lines = []
-            current_line = ""
-            for word in words:
-                if len(current_line) + len(word) + 1 <= 60:
-                    current_line = f"{current_line} {word}".strip()
-                else:
-                    if current_line:
-                        wrapped_lines.append(current_line)
-                    current_line = word
-            if current_line:
-                wrapped_lines.append(current_line)
-            wrapped_summary = "<br>".join(wrapped_lines)
+            wrapped_summary = _wrap_text(ai_summary, max_chars=45)
             lines.append(f"<b>Status:</b> {wrapped_summary}")
         else:
             # Fallback to old global context if no AI summary
