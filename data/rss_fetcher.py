@@ -120,34 +120,6 @@ def fetch_rss_articles(max_items: int = 60) -> list[dict]:
     seen_urls = set()
     unique_articles = []
     
-    # NEW: Ingest internal intelligence reports first
-    intel_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "intelligence")
-    if os.path.exists(intel_dir):
-        for filepath in glob.glob(os.path.join(intel_dir, "*.txt")):
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                if content:
-                    filename = os.path.basename(filepath)
-                    # Split intelligence reports by paragraphs/bullets so Gemini doesn't group 
-                    # the entire world's problems into a single analysis block.
-                    blocks = [b.strip() for b in content.split('\n\n') if b.strip()]
-                    
-                    for i, block in enumerate(blocks):
-                        intel_article = {
-                            "title": f"INTELLIGENCE REPORT: {filename} (Part {i+1})",
-                            "description": block,
-                            "url": f"internal://{filename}#part{i+1}",
-                            "source": "Global Supply Chain Command",
-                            "published": datetime.now().isoformat(),
-                            "is_rss": True
-                        }
-                        unique_articles.append(intel_article)
-                        seen_urls.add(intel_article["url"])
-                    logger.info(f"Ingested internal intelligence report {filename} as {len(blocks)} blocks")
-            except Exception as e:
-                logger.error(f"Failed to read intelligence file {filepath}: {e}")
-
     # Process standard web articles
     for art in all_articles:
         if art["url"] not in seen_urls:
@@ -155,12 +127,7 @@ def fetch_rss_articles(max_items: int = 60) -> list[dict]:
             seen_urls.add(art["url"])
             
     # Mix them up so we don't get 10 articles from the same source in a row
-    # (But keep internal intelligence at the top if possible, or let the AI see them regardless)
-    web_articles = [a for a in unique_articles if not a["url"].startswith("internal://")]
-    intel_articles = [a for a in unique_articles if a["url"].startswith("internal://")]
-    
-    random.shuffle(web_articles)
-    unique_articles = intel_articles + web_articles
+    random.shuffle(unique_articles)
     
     # Try to sort by date if possible, but date formats vary wildly. 
     # Reliability of 'published' string vary.

@@ -63,14 +63,14 @@ Return a JSON object with port names as exact keys matching the input list.
 
 
 
-def generate_port_summaries() -> dict[str, str]:
+def generate_port_summaries() -> dict[str, dict]:
     """Generate AI-powered summaries for all major ports.
     
     Returns
     -------
-    dict[str, str]
-        Mapping of port name → AI-generated summary.
-        Falls back to generic message if API fails.
+    dict[str, dict]
+        Mapping of port name → {"summary": str, "disruption_penalty": float}
+        Falls back to empty dict if API fails.
     """
     # Check cache first
     cached = get_cached(CACHE_KEY, ttl=CACHE_TTL)
@@ -80,25 +80,60 @@ def generate_port_summaries() -> dict[str, str]:
     
     if not api_key:
         logger.warning("GEMINI_API_KEY not set. Using fallback summaries.")
-        return _get_fallback_summaries()
+        return {}
     
-    # Build port list
-    port_names = [name for name, _, _, _, _ in MAJOR_PORTS]
+    # 1. Gather context: get top 100 recent news articles (grounding AI in reality)
+    from data.rss_fetcher import fetch_rss_articles
+    recent_news = fetch_rss_articles(max_items=100)
     
-    logger.info("Generating AI summaries for %d ports...", len(port_names))
+    news_context = "RECENT SUPPLY CHAIN NEWS:\n\n"
+    for art in recent_news:
+        news_context += f"- {art.get('title', '')}: {art.get('description', '')[:200]}\n"
+    
+    # 2. Build port list
+    # FIX: MAJOR_PORTS contains 4 elements per tuple: name, lat, lon, keywords
+    port_names = [name for name, _, _, _ in MAJOR_PORTS]
+    
+    logger.info("Generating AI summaries for %d ports based on live news...", len(port_names))
+    
+    SYSTEM_PROMPT = """You are a senior supply chain intelligence analyst providing LIVE OPERATIONAL CONTEXT for major global shipping ports.
+
+You will be provided with a list of recent supply chain news headlines and snippets.
+Using this news context AND your expert knowledge of current global events, evaluate the status of the requested ports.
+
+CRITICAL REQUIREMENTS:
+1. EVERY port MUST have a UNIQUE evaluation - no duplicate responses allowed.
+2. For each port, provide a 'summary' (2-3 sentences max) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, or normal operations).
+3. For each port, provide a 'disruption_penalty' value from 0.0 to 50.0.
+   - 0.0 means the port is operating normally or perfectly.
+   - 10.0-20.0 means moderate delays or friction.
+   - 30.0-40.0 means severe disruption (major strikes, heavy congestion).
+   - 50.0 means catastrophic closure or complete blockade (e.g., trapped ships, war zone, complete port strike).
+   
+Return a JSON object where the keys are the EXACT port names provided, and the values are objects containing the 'summary' and 'disruption_penalty'.
+
+Example Output Format:
+{
+    "Rotterdam": {"summary": "Operating at 94% capacity with minor 6-hour berth wait times. Inland rail is clear.", "disruption_penalty": 5.0},
+    "Dubai": {"summary": "Severe congestion as ships redirect due to Red Sea attacks. Yard saturation resulting in 4-day delays.", "disruption_penalty": 25.5}
+}
+"""
     
     try:
+        # Grounding with massive news context since SDK search is unavailable
         model = genai.GenerativeModel(
             model_name="gemini-3-flash-preview",
             generation_config=GENERATION_CONFIG,
             system_instruction=SYSTEM_PROMPT
         )
         
-        prompt = f"""Analyze the current supply chain status for these major shipping ports:
+        prompt = f"""{news_context}
+
+Analyze the current supply chain status for these 37 major shipping ports:
 
 {chr(10).join(f"- {name}" for name in port_names)}
 
-Provide a status summary for each port."""
+Provide the JSON status summary and disruption_penalty for each port."""
 
         response = model.generate_content(prompt)
         summaries = json.loads(response.text)
@@ -109,14 +144,9 @@ Provide a status summary for each port."""
             "_updated": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
         
-        logger.info("Successfully generated and cached %d port summaries", len(summaries))
+        logger.info("Successfully generated and cached %d dynamic port summaries", len(summaries))
         return summaries
         
     except Exception as e:
-        logger.error("Gemini port analysis failed: %s", e)
-        return _get_fallback_summaries()
-
-
-def _get_fallback_summaries() -> dict[str, str]:
-    """Return empty dict to trigger fallback to global context display."""
-    return {}
+        logger.error("Gemini dynamic port analysis failed: %s", e)
+        return {}

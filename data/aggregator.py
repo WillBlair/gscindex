@@ -408,17 +408,32 @@ def _derive_map_markers(
             severity = article.get("severity", "low")
             sentiment = article.get("sentiment", 0)
             title = article.get("title", "Unknown event")
+            description = article.get("body", "")
+            
             wrapped_title = _wrap_text(title, max_chars=40)
+            
+            # Show a brief snippet of the description so users see WHY it's red
+            short_desc = description[:100] + "..." if len(description) > 100 else description
+            wrapped_desc = _wrap_text(short_desc, max_chars=45) if short_desc else ""
+            
             label = _sentiment_label(sentiment)
 
             penalty = _DIRECT_PENALTY.get(severity, 2)
             raw_penalties.append(penalty)
 
             sev_tag = severity.upper()
-            news_lines.append(
-                f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
-                f"   {label} ({sentiment:+.2f}) · Direct impact"
-            )
+            
+            if wrapped_desc:
+                news_lines.append(
+                    f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
+                    f"<i>{wrapped_desc}</i><br>"
+                    f"   {label} ({sentiment:+.2f}) · Direct impact"
+                )
+            else:
+                news_lines.append(
+                    f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
+                    f"   {label} ({sentiment:+.2f}) · Direct impact"
+                )
 
         # Diminishing returns penalty calculation to prevent excessive stacking
         if raw_penalties:
@@ -431,8 +446,16 @@ def _derive_map_markers(
 
         news_penalty = min(news_penalty, 50.0)
 
+        # ── AI-generated port summary & dynamic penalty ────────────────
+        ai_data = port_summaries.get(name, {}) if port_summaries else {}
+        ai_summary = ai_data.get("summary", "")
+        ai_penalty = ai_data.get("disruption_penalty", 0.0)
+        
+        # Override the news penalty if the AI analyst gives a specific high penalty
+        final_penalty = max(news_penalty, ai_penalty)
+
         # ── Final score ──────────────────────────────────────────
-        score = round(max(0.0, min(100.0, composite - news_penalty)), 1)
+        score = round(max(0.0, min(100.0, composite - final_penalty)), 1)
         tier = get_health_tier(score)
 
         # ── Build hover tooltip (transparent about data sources) ─
@@ -455,14 +478,11 @@ def _derive_map_markers(
         if top_risk_score < 60:
             lines.append(f"<b>Top risk:</b> {top_risk_label} ({top_risk_score:.0f})")
 
-        # ── AI-generated port summary ─────────────────────────────
-        ai_summary = ""
-        if port_summaries:
-            ai_summary = port_summaries.get(name, "")
-        
         if ai_summary:
             wrapped_summary = _wrap_text(ai_summary, max_chars=45)
-            lines.append(f"<b>Status:</b> {wrapped_summary}")
+            lines.append(f"<b>AI Status:</b> <i>{wrapped_summary}</i>")
+            if ai_penalty > 0:
+                lines.append(f"<b>AI Penalty:</b> -{ai_penalty:.1f} pts")
         else:
             # Fallback to old global context if no AI summary
             critical = [k for k, v in current_scores.items() if k != "weather" and v < 40]
