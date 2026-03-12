@@ -200,8 +200,13 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     sizes: list[float] = []
     hover_texts: list[str] = []
 
-    for marker in map_markers:
-        score = marker["score"]
+    # Sort markers so healthiest (score ~ 100) are drawn first and most critical
+    # (score ~ 0, largest) are drawn last. This ensures the large red dots
+    # sit on top of the DOM and catch hover events even if they overlap.
+    sorted_markers = sorted(map_markers, key=lambda m: m.get("score", 100), reverse=True)
+
+    for marker in sorted_markers:
+        score = marker.get("score", 100)
 
         lats.append(marker["lat"])
         lons.append(marker["lon"])
