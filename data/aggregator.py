@@ -444,7 +444,6 @@ def _derive_map_markers(
         lines: list[str] = [
             f"Score: {score:.0f}/100 — <b>{tier['label']}</b>",
             "────────────",
-            f"<b>Weather:</b> {weather_summary} (score: {local_weather:.0f})",
             f"<b>Region:</b> {region_label} (macro: {regional_macro:.0f})",
         ]
         if vulnerability > 0:
