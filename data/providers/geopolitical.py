@@ -310,8 +310,9 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
         except Exception as e:
             logger.error(f"NewsAPI Fallback failed: {e}")
 
-    # Limit to top 20 for AI analysis (RSS quality is higher, so we can process more)
-    ai_candidates = candidates[:20]
+    # Limit to top 25 for AI analysis (RSS quality is higher, so we can process more)
+    # Ensure internal intelligence is always included by prioritizing items with 'is_rss' = True
+    ai_candidates = candidates[:25]
     
     # 3. Analyze with Gemini
     ai_results, ai_briefing = analyze_news_batch(ai_candidates)

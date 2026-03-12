@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Derive (name, lat, lon) tuples from the canonical port list.
 # Every port in MAJOR_PORTS gets real weather — no separate hub list.
 _SHIPPING_HUBS: list[tuple[str, float, float]] = [
-    (name, lat, lon) for name, lat, lon, _, _ in MAJOR_PORTS
+    (name, lat, lon) for name, lat, lon, _ in MAJOR_PORTS
 ]
 
 _CURRENT_URL = "https://api.open-meteo.com/v1/forecast"

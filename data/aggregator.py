@@ -309,8 +309,8 @@ def _wrap_text(text: str, max_chars: int = 40) -> str:
 
 def _match_news_to_ports(
     alerts: list[dict],
-) -> dict[str, list[tuple[dict, str]]]:
-    """Match negative news alerts to ports via two-tier keyword scanning.
+) -> dict[str, list[dict]]:
+    """Match negative news alerts to ports via keyword scanning.
 
     Articles that are clearly irrelevant (sports, lifestyle, exam prep,
     crypto, entertainment) are filtered out before matching, preventing
@@ -318,10 +318,10 @@ def _match_news_to_ports(
 
     Returns
     -------
-    dict[str, list[tuple[dict, str]]]
-        port name → [(alert, "direct" | "regional"), ...]
+    dict[str, list[dict]]
+        port name → [alert, ...]
     """
-    port_news: dict[str, list[tuple[dict, str]]] = {}
+    port_news: dict[str, list[dict]] = {}
 
     for alert in alerts:
         # For Port Risk Scoring, ONLY consider negative news.
@@ -335,11 +335,9 @@ def _match_news_to_ports(
             logger.debug("Skipping irrelevant article: %s", alert.get("title", ""))
             continue
 
-        for name, _lat, _lon, direct_kw, regional_kw in MAJOR_PORTS:
+        for name, _lat, _lon, direct_kw in MAJOR_PORTS:
             if any(kw in text for kw in direct_kw):
-                port_news.setdefault(name, []).append((alert, "direct"))
-            elif any(kw in text for kw in regional_kw):
-                port_news.setdefault(name, []).append((alert, "regional"))
+                port_news.setdefault(name, []).append(alert)
 
     return port_news
 
@@ -367,7 +365,7 @@ def _derive_map_markers(
     markers: list[dict] = []
 
     # ── Batch-fetch real weather for all 37 ports (1 HTTP call) ──
-    port_coords = [(name, lat, lon) for name, lat, lon, _, _ in MAJOR_PORTS]
+    port_coords = [(name, lat, lon) for name, lat, lon, _ in MAJOR_PORTS]
     batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
 
     # ── Default macro weights (fallback for unmapped ports) ──────
@@ -377,7 +375,7 @@ def _derive_map_markers(
     # ── Match news to ports ──────────────────────────────────────
     port_news = _match_news_to_ports(alerts)
 
-    for name, lat, lon, _direct_kw, _regional_kw in MAJOR_PORTS:
+    for name, lat, lon, _direct_kw in MAJOR_PORTS:
         # ── Local weather score (real, unique per port) ──────────
         wx = batch_weather.get(name, {})
         local_weather = wx.get("score", 75.0)
@@ -402,30 +400,36 @@ def _derive_map_markers(
 
         # ── News penalty ─────────────────────────────────────────
         matched = port_news.get(name, [])
-        news_penalty = 0.0
+        
+        raw_penalties = []
         news_lines: list[str] = []
 
-        for article, match_type in matched:
+        for article in matched:
             severity = article.get("severity", "low")
             sentiment = article.get("sentiment", 0)
             title = article.get("title", "Unknown event")
             wrapped_title = _wrap_text(title, max_chars=40)
             label = _sentiment_label(sentiment)
 
-            penalty_table = (
-                _DIRECT_PENALTY if match_type == "direct"
-                else _REGIONAL_PENALTY
-            )
-            news_penalty += penalty_table.get(severity, 2)
+            penalty = _DIRECT_PENALTY.get(severity, 2)
+            raw_penalties.append(penalty)
 
-            scope = "Direct" if match_type == "direct" else "Regional"
             sev_tag = severity.upper()
             news_lines.append(
                 f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
-                f"   {label} ({sentiment:+.2f}) · {scope} impact"
+                f"   {label} ({sentiment:+.2f}) · Direct impact"
             )
 
-        news_penalty = min(news_penalty, 60.0)
+        # Diminishing returns penalty calculation to prevent excessive stacking
+        if raw_penalties:
+            raw_penalties.sort(reverse=True)
+            max_penalty = raw_penalties[0]
+            additional_penalty = sum(raw_penalties[1:]) * 0.20
+            news_penalty = max_penalty + additional_penalty
+        else:
+            news_penalty = 0.0
+
+        news_penalty = min(news_penalty, 50.0)
 
         # ── Final score ──────────────────────────────────────────
         score = round(max(0.0, min(100.0, composite - news_penalty)), 1)

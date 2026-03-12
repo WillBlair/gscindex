@@ -1,0 +1,28 @@
+Global Supply Chain Hotspots (March 2026)
+
+1. The Middle East: The "Dead Zone"
+The most critical disruption is the effective closure of the Strait of Hormuz.
+- Persian Gulf Ports: Jebel Ali, Khalifa Port, and Hamad Port are currently listed as "inaccessible" or "closed" by major carriers. Over 100 container ships are estimated to be trapped inside the Gulf or waiting just outside the chokepoint.
+- Alternative Hubs: The Port of Salalah (Oman) and Jeddah (Saudi Arabia) have become massive hotspots as "fallback" ports where cargo is being dumped for eventual feeder service, leading to rapid yard saturation.
+
+2. Africa: The Congestion Outliers
+African ports currently represent the most persistent operational hotspots on the map, driven by equipment shortages and weather.
+- East/South Africa: Beira (Mozambique) is a major hotspot with average vessel waits exceeding 12 days. Mombasa (Kenya) and Cape Town (South Africa) remain in "Critical" status due to vessel bunching.
+- West Africa: Conakry (Guinea) is seeing double-digit wait times, while Casablanca (Morocco) is averaging over 8 days of delay.
+
+3. The Americas: Tactical Bottlenecks
+- Panama: While the canal itself is managing water levels better than in 2024, the ports of Balboa and Cristobal are currently "hot" due to a rocky operational transition and acceptance constraints.
+- U.S. East Coast: New York/New Jersey is experiencing a hangover from recent winter storms, with average vessel waits around 2.11 days and high terminal density. Boston remains a watchpoint following weather-related closures.
+
+4. Asia: Yard Density vs. Anchorage Wait
+- China: Most ports have normalized after Lunar New Year, but Shekou remains a hotspot with yard occupancy hitting 97%, meaning that while ships can dock, moving containers out of the terminal is slow.
+- Singapore: High yard utilization (85–90%) is creating "connection volatility" for transshipments, particularly for westbound loaders being prioritized to clear the backlog.
+
+Summary of Waiting Times (7-Day Average)
+Region    Port    Status    Typical Wait
+Middle East    Jebel Ali / Hamad    Closed / Disrupted    N/A (Locked)
+Africa    Beira, Mozambique    Critical    12.6 Days
+Africa    Conakry, Guinea    Critical    12.0 Days
+North America    New York, USA    Disrupted    2.1 Days
+Asia    Dalian, China    Elevated    4.9 Days
+Europe    Hamburg, Germany    Stable    1.4 Days
