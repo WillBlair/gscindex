@@ -20,12 +20,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pickle
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
-
 import numpy as np
 import pandas as pd
 
@@ -57,16 +54,6 @@ def _write_text_atomic(path: Path, content: str) -> None:
         temp_name = tmp.name
     os.replace(temp_name, path)
 
-
-def _write_pickle_atomic(path: Path, data: Any) -> None:
-    """Atomically write pickle file to avoid torn writes."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("wb", dir=path.parent, delete=False) as tmp:
-        pickle.dump(data, tmp)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        temp_name = tmp.name
-    os.replace(temp_name, path)
 
 
 def get_cached(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> dict | list | None:
@@ -119,36 +106,6 @@ def clear_cache() -> None:
     if _CACHE_DIR.exists():
         for f in _CACHE_DIR.glob("*"):
             f.unlink()
-
-
-# ── Pickle Support for Complex Objects (DataFrames, etc.) ──────────────────
-
-def get_cached_pickle(key: str, ttl: int = 3600) -> Any | None:
-    """Retrieve a pickled object from cache if it exists and is fresh."""
-    filename = _get_cache_path(key, ext=".pkl")
-    if not filename.exists():
-        return None
-        
-    try:
-        mod_time = filename.stat().st_mtime
-        if (time.time() - mod_time) > ttl:
-            return None
-            
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-    except Exception as e:
-        logger.warning(f"Cache miss (pickle error) for {key}: {e}")
-        return None
-
-
-def set_cached_pickle(key: str, data: Any) -> None:
-    """Save an object to cache using pickle."""
-    filename = _get_cache_path(key, ext=".pkl")
-    try:
-        _write_pickle_atomic(filename, data)
-    except Exception as e:
-        logger.warning(f"Failed to write cache (pickle) {key}: {e}")
-
 
 def set_cached_dashboard(data: dict) -> None:
     """Save the full dashboard state as JSON (safe serialization).
