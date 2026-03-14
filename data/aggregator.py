@@ -448,8 +448,12 @@ def _derive_map_markers(
 
         # ── AI-generated port summary & dynamic penalty ────────────────
         ai_data = port_summaries.get(name, {}) if port_summaries else {}
+        if isinstance(ai_data, str):
+            ai_data = {"summary": ai_data, "disruption_penalty": 0.0}
+        elif not isinstance(ai_data, dict):
+            ai_data = {}
         ai_summary = ai_data.get("summary", "")
-        ai_penalty = ai_data.get("disruption_penalty", 0.0)
+        ai_penalty = float(ai_data.get("disruption_penalty", 0.0))
         
         # Override the news penalty if the AI analyst gives a specific high penalty
         final_penalty = max(news_penalty, ai_penalty)

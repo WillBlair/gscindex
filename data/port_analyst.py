@@ -27,7 +27,7 @@ if api_key:
 
 # Cache TTL: 24 hours = 86400 seconds (reduced API usage)
 CACHE_TTL = 86400
-CACHE_KEY = "ai_port_summaries_v2"
+CACHE_KEY = "ai_port_summaries_v3"
 
 GENERATION_CONFIG = {
     "temperature": 0.7,  # Higher for more varied, specific responses
@@ -63,9 +63,59 @@ Return a JSON object with port names as exact keys matching the input list.
 
 
 
+def _normalize_summaries(raw: dict, port_names: list[str]) -> dict[str, dict]:
+    """Reconcile Gemini's response keys with our canonical port names.
+
+    Handles three common failure modes:
+      1. Gemini returns a *string* instead of ``{"summary": ..., "disruption_penalty": ...}``
+      2. Gemini uses slightly different casing, accents, or whitespace in key names
+      3. Gemini omits some ports entirely
+    """
+    # Build a lookup: lowered/stripped → canonical name
+    canonical = {name.lower().strip(): name for name in port_names}
+
+    normalized: dict[str, dict] = {}
+    for key, value in raw.items():
+        # Match the returned key to our canonical port name
+        match = canonical.get(key.lower().strip())
+        if not match:
+            # Try removing accents / special chars (e.g. "Colón" → "colon")
+            import unicodedata
+            folded = unicodedata.normalize("NFKD", key).encode("ascii", "ignore").decode().lower().strip()
+            match = canonical.get(folded)
+        if not match:
+            logger.debug("Gemini returned unknown port key %r — skipping", key)
+            continue
+
+        # Handle plain-string values (Gemini sometimes skips the dict wrapper)
+        if isinstance(value, str):
+            value = {"summary": value, "disruption_penalty": 0.0}
+        elif not isinstance(value, dict):
+            continue
+
+        # Ensure required keys exist with correct types
+        value.setdefault("summary", "")
+        value.setdefault("disruption_penalty", 0.0)
+        try:
+            value["disruption_penalty"] = float(value["disruption_penalty"])
+        except (TypeError, ValueError):
+            value["disruption_penalty"] = 0.0
+
+        normalized[match] = value
+
+    missing = set(port_names) - set(normalized)
+    if missing:
+        logger.warning(
+            "Gemini did not return summaries for %d/%d ports: %s",
+            len(missing), len(port_names), ", ".join(sorted(missing)),
+        )
+
+    return normalized
+
+
 def generate_port_summaries() -> dict[str, dict]:
     """Generate AI-powered summaries for all major ports.
-    
+
     Returns
     -------
     dict[str, dict]
@@ -77,76 +127,81 @@ def generate_port_summaries() -> dict[str, dict]:
     if cached:
         logger.info("Using cached port summaries (updated %s)", cached.get("_updated", "unknown"))
         return cached.get("summaries", {})
-    
+
     if not api_key:
         logger.warning("GEMINI_API_KEY not set. Using fallback summaries.")
         return {}
-    
+
     # 1. Gather context: get top 100 recent news articles (grounding AI in reality)
     from data.rss_fetcher import fetch_rss_articles
     recent_news = fetch_rss_articles(max_items=100)
-    
+
     news_context = "RECENT SUPPLY CHAIN NEWS:\n\n"
     for art in recent_news:
         news_context += f"- {art.get('title', '')}: {art.get('description', '')[:200]}\n"
-    
+
     # 2. Build port list
-    # FIX: MAJOR_PORTS contains 4 elements per tuple: name, lat, lon, keywords
     port_names = [name for name, _, _, _ in MAJOR_PORTS]
-    
+
     logger.info("Generating AI summaries for %d ports based on live news...", len(port_names))
-    
-    SYSTEM_PROMPT = """You are a senior supply chain intelligence analyst providing LIVE OPERATIONAL CONTEXT for major global shipping ports.
+
+    SYSTEM_PROMPT = f"""You are a senior supply chain intelligence analyst providing LIVE OPERATIONAL CONTEXT for major global shipping ports.
 
 You will be provided with a list of recent supply chain news headlines and snippets.
 Using this news context AND your expert knowledge of current global events, evaluate the status of the requested ports.
 
 CRITICAL REQUIREMENTS:
-1. EVERY port MUST have a UNIQUE evaluation - no duplicate responses allowed.
-2. For each port, provide a 'summary' (3-4 sentences) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, trade lane volumes, or capacity utilization). Include specific metrics or percentages where possible.
-3. For each port, provide a 'disruption_penalty' value from 0.0 to 50.0.
+1. You MUST return an entry for ALL {len(port_names)} ports. Do NOT skip any.
+2. EVERY port MUST have a UNIQUE evaluation - no duplicate responses allowed.
+3. For each port, provide a 'summary' (3-4 sentences) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, trade lane volumes, or capacity utilization). Include specific metrics or percentages where possible.
+4. For each port, provide a 'disruption_penalty' value from 0.0 to 50.0.
    - 0.0 means the port is operating normally or perfectly.
    - 10.0-20.0 means moderate delays or friction.
    - 30.0-40.0 means severe disruption (major strikes, heavy congestion).
    - 50.0 means catastrophic closure or complete blockade (e.g., trapped ships, war zone, complete port strike).
-   
+5. Use the EXACT port names provided as JSON keys. Do not rename or rephrase them.
+
 Return a JSON object where the keys are the EXACT port names provided, and the values are objects containing the 'summary' and 'disruption_penalty'.
 
 Example Output Format:
-{
-    "Rotterdam": {"summary": "Operating at 94% capacity with minor 6-hour berth wait times. Inland rail is clear.", "disruption_penalty": 5.0},
-    "Dubai": {"summary": "Severe congestion as ships redirect due to Red Sea attacks. Yard saturation resulting in 4-day delays.", "disruption_penalty": 25.5}
-}
+{{
+    "Rotterdam": {{"summary": "Operating at 94% capacity with minor 6-hour berth wait times. Inland rail is clear.", "disruption_penalty": 5.0}},
+    "Dubai": {{"summary": "Severe congestion as ships redirect due to Red Sea attacks. Yard saturation resulting in 4-day delays.", "disruption_penalty": 25.5}}
+}}
 """
-    
+
     try:
-        # Grounding with massive news context since SDK search is unavailable
         model = genai.GenerativeModel(
             model_name="gemini-3-flash-preview",
             generation_config=GENERATION_CONFIG,
             system_instruction=SYSTEM_PROMPT
         )
-        
+
         prompt = f"""{news_context}
 
-Analyze the current supply chain status for these 37 major shipping ports:
+Analyze the current supply chain status for these {len(port_names)} major shipping ports:
 
 {chr(10).join(f"- {name}" for name in port_names)}
 
+You MUST return a JSON entry for EVERY port listed above ({len(port_names)} total).
 Provide the JSON status summary and disruption_penalty for each port."""
 
         response = model.generate_content(prompt)
-        summaries = json.loads(response.text)
-        
+        raw_summaries = json.loads(response.text)
+        summaries = _normalize_summaries(raw_summaries, port_names)
+
         # Cache the result
         set_cached(CACHE_KEY, {
             "summaries": summaries,
             "_updated": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
-        
-        logger.info("Successfully generated and cached %d dynamic port summaries", len(summaries))
+
+        logger.info(
+            "Generated and cached %d/%d port summaries",
+            len(summaries), len(port_names),
+        )
         return summaries
-        
+
     except Exception as e:
         logger.error("Gemini dynamic port analysis failed: %s", e)
         return {}
