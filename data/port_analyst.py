@@ -27,7 +27,7 @@ if api_key:
 
 # Cache TTL: 24 hours = 86400 seconds (reduced API usage)
 CACHE_TTL = 86400
-CACHE_KEY = "ai_port_summaries"
+CACHE_KEY = "ai_port_summaries_v2"
 
 GENERATION_CONFIG = {
     "temperature": 0.7,  # Higher for more varied, specific responses
@@ -103,7 +103,7 @@ Using this news context AND your expert knowledge of current global events, eval
 
 CRITICAL REQUIREMENTS:
 1. EVERY port MUST have a UNIQUE evaluation - no duplicate responses allowed.
-2. For each port, provide a 'summary' (2-3 sentences max) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, or normal operations).
+2. For each port, provide a 'summary' (3-4 sentences) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, trade lane volumes, or capacity utilization). Include specific metrics or percentages where possible.
 3. For each port, provide a 'disruption_penalty' value from 0.0 to 50.0.
    - 0.0 means the port is operating normally or perfectly.
    - 10.0-20.0 means moderate delays or friction.
