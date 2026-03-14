@@ -7,9 +7,17 @@ to persist user emails.
 
 import os
 import logging
-from datetime import datetime
+import threading
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache to avoid hammering Neon on every page load / background cycle.
+# previous_score is fetched once per calendar day; daily_score is written once per day.
+_score_cache_lock = threading.Lock()
+_cached_previous_score: float | None = None
+_cached_previous_date: date | None = None       # The date we fetched it for
+_daily_score_written_date: date | None = None    # The date we last wrote a score
 
 # Path for local SQLite fallback (development only).
 SQLITE_PATH = os.path.join(os.path.dirname(__file__), "subscribers.db")
@@ -191,7 +199,18 @@ def unsubscribe_user(email: str) -> bool:
         conn.close()
 
 def record_daily_score(score: float) -> bool:
-    """Record today's score into the database."""
+    """Record today's score into the database.
+
+    Only writes once per calendar day to avoid burning Neon compute on
+    the repeated upserts from the 5-minute background cycle.
+    """
+    global _daily_score_written_date
+
+    today = date.today()
+    with _score_cache_lock:
+        if _daily_score_written_date == today:
+            return True  # Already persisted today
+
     conn = get_connection()
     if not conn:
         return False
@@ -204,16 +223,18 @@ def record_daily_score(score: float) -> bool:
                 cursor.execute("""
                     INSERT INTO daily_scores (date, score)
                     VALUES (CURRENT_DATE, %s)
-                    ON CONFLICT (date) DO UPDATE 
+                    ON CONFLICT (date) DO UPDATE
                     SET score = EXCLUDED.score
                 """, (score,))
             elif db_type == "sqlite":
                 cursor.execute("""
                     INSERT INTO daily_scores (date, score)
                     VALUES (DATE('now'), ?)
-                    ON CONFLICT(date) DO UPDATE 
+                    ON CONFLICT(date) DO UPDATE
                     SET score = excluded.score
                 """, (score,))
+        with _score_cache_lock:
+            _daily_score_written_date = today
         return True
     except Exception as e:
         logger.error(f"Failed to record daily score: {e}")
@@ -222,7 +243,18 @@ def record_daily_score(score: float) -> bool:
         conn.close()
 
 def get_previous_daily_score() -> float | None:
-    """Fetch the most recent daily score strictly prior to today."""
+    """Fetch the most recent daily score strictly prior to today.
+
+    Cached in memory for the current calendar day so that repeated page
+    loads don't each open a Neon connection.
+    """
+    global _cached_previous_score, _cached_previous_date
+
+    today = date.today()
+    with _score_cache_lock:
+        if _cached_previous_date == today:
+            return _cached_previous_score
+
     conn = get_connection()
     if not conn:
         return None
@@ -236,7 +268,11 @@ def get_previous_daily_score() -> float | None:
             cursor.execute("SELECT score FROM daily_scores WHERE date < DATE('now') ORDER BY date DESC LIMIT 1")
 
         row = cursor.fetchone()
-        return float(row[0]) if row else None
+        score = float(row[0]) if row else None
+        with _score_cache_lock:
+            _cached_previous_score = score
+            _cached_previous_date = today
+        return score
     except Exception as e:
         logger.error(f"Failed to fetch previous daily score: {e}")
         return None
