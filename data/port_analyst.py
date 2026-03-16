@@ -25,8 +25,8 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# Cache TTL: 24 hours = 86400 seconds (reduced API usage)
-CACHE_TTL = 86400
+# Cache TTL: 6 hours — refreshes ~4x per day so summaries stay current
+CACHE_TTL = 21600
 CACHE_KEY = "ai_port_summaries_v3"
 
 GENERATION_CONFIG = {
@@ -145,7 +145,9 @@ def generate_port_summaries() -> dict[str, dict]:
 
     logger.info("Generating AI summaries for %d ports based on live news...", len(port_names))
 
-    SYSTEM_PROMPT = f"""You are a senior supply chain intelligence analyst providing LIVE OPERATIONAL CONTEXT for major global shipping ports.
+    today_str = datetime.now().strftime("%B %d, %Y")
+
+    SYSTEM_PROMPT = f"""You are a senior supply chain intelligence analyst providing LIVE OPERATIONAL CONTEXT for major global shipping ports. Today's date is {today_str}.
 
 You will be provided with a list of recent supply chain news headlines and snippets.
 Using this news context AND your expert knowledge of current global events, evaluate the status of the requested ports.

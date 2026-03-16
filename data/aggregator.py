@@ -813,13 +813,38 @@ def aggregate_data(status_callback=None) -> dict:
     }
 
     # Persist the full dashboard state to disk for instant startup
-    from data.cache import set_cached_dashboard
+    from data.cache import set_cached_dashboard, _write_text_atomic
     from data.status import set_status
     from data.database import record_daily_score
+    import json as _json
+    from pathlib import Path as _Path
     try:
         record_daily_score(composite)
         set_cached_dashboard(result)
         logger.info("Dashboard state persisted to disk (JSON/Safe).")
+
+        # Auto-refresh the committed fallback snapshot if it's older than 7 days.
+        # This keeps cold-start users from seeing weeks-old data.
+        _fallback_path = _Path(__file__).parent / "fallback_snapshot_safe.json"
+        _fallback_age = (
+            datetime.now(timezone.utc).timestamp() - _fallback_path.stat().st_mtime
+            if _fallback_path.exists() else float("inf")
+        )
+        if _fallback_age > 7 * 86400:
+            from data.cache import set_cached_dashboard as _scd  # noqa: F811
+            # Re-use the same safe serialisation logic that set_cached_dashboard uses
+            import copy as _copy
+            safe = _copy.deepcopy(result)
+            if "dates" in safe and hasattr(safe["dates"], "strftime"):
+                safe["dates"] = safe["dates"].strftime("%Y-%m-%d").tolist()
+            if "category_history" in safe:
+                safe["category_history"] = {
+                    cat: (s.replace({np.nan: None}).tolist() if hasattr(s, "tolist") else s)
+                    for cat, s in safe["category_history"].items()
+                }
+            _write_text_atomic(_fallback_path, _json.dumps(safe, default=str))
+            logger.info("Refreshed fallback_snapshot_safe.json (was %.1f days old).", _fallback_age / 86400)
+
         if status_callback: status_callback("Data ready! Launching...")
         set_status("Data ready!")
     except Exception as e:
