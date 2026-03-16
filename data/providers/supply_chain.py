@@ -98,6 +98,7 @@ class SupplyChainProvider(BaseProvider):
         scores = 50 + (raw * 12.5)
         scores = scores.clip(lower=0.0, upper=100.0)
         
-        # Weekly data — forward-fill to daily for smooth charts
-        daily = scores.resample("D").ffill()
+        # Weekly data — interpolate to daily for smooth sparklines.
+        # ffill creates flat 7-day steps; interpolation smooths transitions.
+        daily = scores.resample("D").interpolate(method="linear")
         return daily.tail(days).rename("supply_chain")

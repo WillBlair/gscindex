@@ -195,8 +195,9 @@ class TruckingProvider(BaseProvider):
         max_val = hist_retail.tail(365*5).max()
 
         scores = 100 * (max_val - daily_est) / (max_val - min_val)
-        
+        scores = scores.clip(lower=0.0, upper=100.0)
+
         # Remove timezone
         scores.index = scores.index.tz_localize(None)
-        
+
         return scores.tail(days).rename("trucking")
