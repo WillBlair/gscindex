@@ -25,8 +25,8 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# Cache TTL: 6 hours — refreshes ~4x per day so summaries stay current
-CACHE_TTL = 21600
+# Cache TTL: 24 hours = 86400 seconds
+CACHE_TTL = 86400
 CACHE_KEY = "ai_port_summaries_v3"
 
 GENERATION_CONFIG = {
