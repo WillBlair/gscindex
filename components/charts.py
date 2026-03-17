@@ -118,6 +118,7 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
         score = current_scores[cat]
         tier = get_health_tier(score)
         label = CATEGORY_LABELS[cat]
+        cat_color = CATEGORY_COLORS.get(cat, COLORS["accent"])
 
         bar = html.Div(
             className="health-bar-item",
@@ -149,7 +150,7 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
                             className="health-bar-fill",
                             style={
                                 "width": f"{score}%",
-                                "backgroundColor": tier["color"],
+                                "backgroundColor": cat_color,
                             },
                         ),
                     ],
