@@ -32,6 +32,7 @@ CACHE_KEY = "ai_port_summaries_v3"
 GENERATION_CONFIG = {
     "temperature": 0.7,  # Higher for more varied, specific responses
     "top_p": 0.9,
+    "max_output_tokens": 16384,  # Prevent truncated JSON for 37 ports
     "response_mime_type": "application/json",
 }
 
