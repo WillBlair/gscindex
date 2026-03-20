@@ -32,7 +32,6 @@ CACHE_KEY = "ai_port_summaries_v3"
 GENERATION_CONFIG = {
     "temperature": 0.7,  # Higher for more varied, specific responses
     "top_p": 0.9,
-    "max_output_tokens": 16384,  # Prevent truncated JSON for 37 ports
     "response_mime_type": "application/json",
 }
 
@@ -156,7 +155,7 @@ Using this news context AND your expert knowledge of current global events, eval
 CRITICAL REQUIREMENTS:
 1. You MUST return an entry for ALL {len(port_names)} ports. Do NOT skip any.
 2. EVERY port MUST have a UNIQUE evaluation - no duplicate responses allowed.
-3. For each port, provide a 'summary' (3-4 sentences) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, trade lane volumes, or capacity utilization). Include specific metrics or percentages where possible.
+3. For each port, provide a 'summary' (1-2 very concise sentences) detailing exactly what is currently happening there (e.g., vessel queues, specific delays, strike impacts, trade lane volumes, or capacity utilization). Include specific metrics or percentages where possible.
 4. For each port, provide a 'disruption_penalty' value from 0.0 to 50.0.
    - 0.0 means the port is operating normally or perfectly.
    - 10.0-20.0 means moderate delays or friction.
