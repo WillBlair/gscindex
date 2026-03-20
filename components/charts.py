@@ -215,7 +215,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
 
         # Risk-based sizing: troubled ports are huge, healthy ports are tiny.
         # Score 100 -> 4px, Score 80 -> ~8.8px (30% smaller than previous 11.6px)
-        sizes.append(max(4, 28 - score * 0.24))
+        sizes.append(max(3, 21 - score * 0.18))
 
         hover_texts.append(
             f"<b>{marker['name']}</b><br>{marker['description']}"
