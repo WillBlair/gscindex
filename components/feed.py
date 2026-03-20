@@ -8,7 +8,7 @@ Bottom section of the dashboard showing:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from dash import html, dcc
 
@@ -22,7 +22,7 @@ _SEVERITY_STYLES: dict[str, dict] = {
 }
 
 
-def _format_time_ago(iso_timestamp: str) -> str:
+def _format_time_ago(iso_timestamp: str, *, now: datetime | None = None) -> str:
     """Convert an ISO timestamp to a human-readable 'X hours ago' string.
 
     Handles both timezone-aware (NewsAPI sends ``Z`` suffix) and
@@ -33,11 +33,14 @@ def _format_time_ago(iso_timestamp: str) -> str:
     except (ValueError, AttributeError):
         return "recently"
 
-    # TODO: This strips UTC tzinfo then compares against local datetime.now(),
-    # which gives wrong "X hours ago" if the server isn't in UTC. Should use
-    # datetime.now(timezone.utc) and keep dt as UTC-aware throughout.
-    dt = dt.replace(tzinfo=None)
-    diff = datetime.now() - dt
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    current_time = now if now is not None else datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+
+    diff = current_time.astimezone(timezone.utc) - dt.astimezone(timezone.utc)
     total_seconds = diff.total_seconds()
 
     if total_seconds < 0:
