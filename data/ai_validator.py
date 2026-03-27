@@ -15,9 +15,13 @@ import json
 import logging
 import os
 import google.generativeai as genai
-from datetime import datetime
+
+from config import GEMINI_CACHE_TTL_SECONDS
+from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
+
+_AI_VALIDATION_CACHE_KEY = "gemini_ai_validation_v1"
 
 # Fallback response if AI fails
 FALLBACK_VALIDATION = {
@@ -52,6 +56,10 @@ def validate_score(
             "adjustment": float (e.g. -2.5 or 0.0)
         }
     """
+    cached = get_cached(_AI_VALIDATION_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
+    if cached is not None and isinstance(cached, dict) and "status" in cached:
+        return cached
+
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         logger.warning("GEMINI_API_KEY not set. Skipping AI validation.")
@@ -109,7 +117,7 @@ def validate_score(
         
         # Clamp adjustment to avoid AI hallucinations wrecking the dashboard
         result["adjustment"] = max(-5.0, min(5.0, float(result["adjustment"])))
-        
+        set_cached(_AI_VALIDATION_CACHE_KEY, result)
         return result
 
     except Exception as e:

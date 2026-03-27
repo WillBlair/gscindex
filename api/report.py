@@ -7,8 +7,10 @@ standalone HTML page at /report.
 from flask import Blueprint, render_template_string
 import html
 import re
-from data.cache import get_cached
 import markdown
+
+from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
+from data.cache import get_cached
 
 report_bp = Blueprint("report", __name__)
 
@@ -233,7 +235,7 @@ def serve_report():
     from markupsafe import Markup
     from zoneinfo import ZoneInfo
 
-    cached = get_cached("newsapi_briefing_v14")
+    cached = get_cached(NEWS_BRIEFING_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
     report_md = ""
     report_generated = None
     

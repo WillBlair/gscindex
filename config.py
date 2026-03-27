@@ -7,6 +7,22 @@ All tunable parameters, category weights, thresholds, and display settings
 live here so you never have to hunt through component code to change behavior.
 """
 
+from __future__ import annotations
+
+import os
+
+# ---------------------------------------------------------------------------
+# Gemini API — refresh budget (file-backed cache, per server)
+# ---------------------------------------------------------------------------
+# Background work still runs every few minutes, but each Gemini-powered
+# component consults its own cache and only calls the API when this TTL
+# expires (~once per day by default). Set GEMINI_CACHE_TTL_SECONDS=43200
+# for roughly twice daily.
+GEMINI_CACHE_TTL_SECONDS: int = int(os.environ.get("GEMINI_CACHE_TTL_SECONDS", "86400"))
+
+# Shared disk cache key for RSS/Gemini news payload (alerts, briefing, report).
+NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v15"
+
 # ---------------------------------------------------------------------------
 # Category Definitions
 # ---------------------------------------------------------------------------

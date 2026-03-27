@@ -2,7 +2,7 @@
 Port Analyst Module
 ====================
 Uses Gemini AI to generate supply chain status summaries for each major port.
-Cached for 12 hours (twice-daily updates) to minimize API costs.
+Cached with ``config.GEMINI_CACHE_TTL_SECONDS`` (default ~24h) to cap API usage.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from datetime import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
 
+from config import GEMINI_CACHE_TTL_SECONDS
 from data.cache import get_cached, set_cached
 from data.ports_data import MAJOR_PORTS
 
@@ -25,9 +26,8 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# Cache TTL: 24 hours = 86400 seconds
-CACHE_TTL = 86400
-CACHE_KEY = "ai_port_summaries_v3"
+CACHE_TTL = GEMINI_CACHE_TTL_SECONDS
+CACHE_KEY = "ai_port_summaries_v4"
 
 GENERATION_CONFIG = {
     "temperature": 0.7,  # Higher for more varied, specific responses

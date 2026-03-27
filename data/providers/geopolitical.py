@@ -32,6 +32,7 @@ import requests
 import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
 from data.cache import get_cached, set_cached
 from data.providers.base import BaseProvider
 from data.ai_analyst import analyze_news_batch
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 _NEWSAPI_URL = "https://newsapi.org/v2/everything"
 _VADER = SentimentIntensityAnalyzer()
-_NEWS_CACHE_KEY = "newsapi_briefing_v14"
+_NEWS_CACHE_KEY = NEWS_BRIEFING_CACHE_KEY
 
 # ---------------------------------------------------------------------------
 # Category classification keywords
@@ -205,7 +206,7 @@ def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
     This is intentionally fast and non-blocking so provider calls never trigger
     long AI/RSS fetches. Fresh news fetch runs in the aggregator job.
     """
-    cached = get_cached(_NEWS_CACHE_KEY, ttl=14400)
+    cached = get_cached(_NEWS_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
     if not cached:
         return None
     return (
@@ -225,7 +226,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
         (score, alerts, briefing_text, full_report_md)
     """
     cache_key = _NEWS_CACHE_KEY
-    cached = get_cached(cache_key, ttl=14400)  # 4-hour cache (reduced API usage)
+    cached = get_cached(cache_key, ttl=GEMINI_CACHE_TTL_SECONDS)
     if cached is not None:
         cached_alerts = cached.get("alerts", []) or []
         cached_briefing = (cached.get("briefing", "") or "").strip()

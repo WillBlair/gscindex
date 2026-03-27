@@ -190,8 +190,9 @@ if startup_data and _LAST_UPDATE:
 # so the background thread regenerates the report with the latest code.
 # Without this, old cached reports survive for 4 hours after a deploy.
 try:
+    from config import NEWS_BRIEFING_CACHE_KEY
     from data.cache import _CACHE_DIR
-    _news_cache = _CACHE_DIR / "newsapi_briefing_v14.json"
+    _news_cache = _CACHE_DIR / f"{NEWS_BRIEFING_CACHE_KEY}.json"
     if _news_cache.exists():
         _news_cache.unlink()
         logging.getLogger(__name__).info("Cleared stale news cache for fresh report generation.")
