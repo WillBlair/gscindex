@@ -24,7 +24,6 @@ Layout structure:
 from __future__ import annotations
 
 from datetime import datetime
-import random
 from zoneinfo import ZoneInfo
 import dash_bootstrap_components as dbc
 from dash import dcc, html
@@ -77,9 +76,19 @@ def build_layout(
     market_data = data.get("market_data", {})
     display_last_updated = last_updated.astimezone(ZoneInfo("America/Denver")) if last_updated else None
 
-    # Simulate dynamic latency to give the "live" feel
-    latency_ms = random.randint(14, 38)
-    
+    # Compute data age for display
+    if last_updated:
+        age_seconds = (datetime.now(last_updated.tzinfo) - last_updated).total_seconds()
+        age_minutes = int(age_seconds // 60)
+        if age_minutes < 1:
+            data_age_str = "Data: <1m ago"
+        elif age_minutes < 60:
+            data_age_str = f"Data: {age_minutes}m ago"
+        else:
+            data_age_str = f"Data: {age_minutes // 60}h {age_minutes % 60}m ago"
+    else:
+        data_age_str = "Data: loading..."
+
     # Compute composite index and day-over-day delta
     composite = compute_composite_index(current_scores)
     
@@ -151,7 +160,7 @@ def build_layout(
                             ),
                             
                             html.Span(
-                                f" {latency_ms}ms • 12% API",
+                                data_age_str,
                                 className="system-stats",
                             ),
                             
