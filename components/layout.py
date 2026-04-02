@@ -32,7 +32,7 @@ from components.cards import build_category_cards
 from components.charts import build_category_panel, build_history_chart, build_world_map
 from components.feed import build_briefing_panel, build_news_panel
 from components.gauge import build_gauge_figure
-from config import APP_SUBTITLE, APP_TITLE
+from config import APP_TITLE
 from scoring import compute_composite_index
 
 from components.market_costs import build_market_costs_panel
@@ -141,7 +141,17 @@ def build_layout(
                 children=[
                     html.Div([
                         html.H1(APP_TITLE, className="app-title"),
-                        html.P(APP_SUBTITLE, className="app-subtitle"),
+                        html.P([
+                            "by ",
+                            html.A(
+                                "William Blair",
+                                href="https://williamcblair.com",
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                className="app-subtitle",
+                                style={"color": "inherit", "textDecoration": "none"},
+                            ),
+                        ], className="app-subtitle"),
                     ]),
                     html.Div(
                         className="header-meta",
