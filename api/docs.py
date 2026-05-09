@@ -401,7 +401,7 @@ _DOCS_TEMPLATE = """
 
         <footer class="docs-footer">
             <a href="/" class="docs-footer-link">&larr; View Live Dashboard</a>
-            <span class="docs-footer-text">&copy; 2026 William Blair &middot; Global Supply Chain Index</span>
+            <span class="docs-footer-text">&copy; 2026 William Christopher Blair &middot; Global Supply Chain Index</span>
         </footer>
     </main>
 
