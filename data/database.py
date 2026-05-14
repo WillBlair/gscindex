@@ -63,9 +63,17 @@ def get_connection():
     db_type, url = _resolve_db_config()
     if db_type == "postgres":
         import psycopg2
+        import time
         # Timeout prevents Neon serverless cold starts from blocking Gunicorn
-        # threads indefinitely, which would kill the health endpoint too.
-        return psycopg2.connect(url, connect_timeout=5)
+        # threads indefinitely, but we retry to allow for cold starts.
+        for attempt in range(3):
+            try:
+                return psycopg2.connect(url, connect_timeout=10)
+            except psycopg2.OperationalError as e:
+                if attempt == 2:
+                    raise
+                logger.warning(f"Database connection timeout, retrying... ({e})")
+                time.sleep(2)
     elif db_type == "sqlite":
         import sqlite3
         # check_same_thread=False is needed because Dash runs in threads

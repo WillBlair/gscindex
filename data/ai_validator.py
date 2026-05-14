@@ -14,7 +14,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import google.generativeai as genai
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=FutureWarning)
+    import google.generativeai as genai
 
 from config import GEMINI_CACHE_TTL_SECONDS
 from data.cache import get_cached, set_cached

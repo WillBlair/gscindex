@@ -11,7 +11,10 @@ import logging
 import os
 from datetime import datetime
 
-import google.generativeai as genai
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=FutureWarning)
+    import google.generativeai as genai
 from dotenv import load_dotenv
 
 from config import GEMINI_CACHE_TTL_SECONDS

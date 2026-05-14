@@ -8,7 +8,10 @@ import json
 import logging
 import os
 from datetime import datetime
-import google.generativeai as genai
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=FutureWarning)
+    import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
