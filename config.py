@@ -43,6 +43,10 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "geopolitical":        0.20,
 }
 
+# Supply chain category: blend high-frequency WEI with NY Fed GSCPI (must sum to 1.0).
+SUPPLY_CHAIN_WEI_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_WEI_WEIGHT", "0.6"))
+SUPPLY_CHAIN_GSCPI_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_GSCPI_WEIGHT", "0.4"))
+
 # Fallback scores when a provider fails — visible and tunable in one place.
 DEFAULT_FALLBACK_SCORES: dict[str, float] = {
     "weather":      75.0,   # Conservative — assumes minor disruptions

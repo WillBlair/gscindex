@@ -1,104 +1,139 @@
 """
 Supply Chain Pressure Provider
 ================================
-Uses the NY Fed Weekly Economic Index (FRED: ``WEI``) as a high-frequency
-measure of real economic activity and supply chain throughput.
+Blends two NY Fed indicators:
 
-The WEI is a composite of 10 daily and weekly indicators, including:
-    - Railroad traffic (AAR)
-    - Staffing index (ASA)
-    - Fuel sales (Booth Financial)
-    - Steel production (AISI)
-    - Electricity output (EEI)
-
-Unlike monthly indices (like PMI or TSI), the WEI provides a real-time
-signal of the physical economy. A rising WEI indicates expanding economic
-activity, implying robust supply chain volume.
+* **WEI** (Weekly Economic Index, FRED) — high-frequency macro activity
+  (rail, fuel, steel, electricity, staffing).
+* **GSCPI** (Global Supply Chain Pressure Index) — monthly supply-chain-specific
+  pressure index (transport costs + PMI delivery/backlog components).
 
 Score Logic
 -----------
-Higher WEI = More activity = Healthier flow of goods (Higher Score).
-Lower WEI = Contracting activity = Supply chain slowdown (Lower Score).
+Each series is mapped to 0–100 (100 = healthiest), then combined:
 
-The raw index is normalized directly against its 5-year historical range.
+    score = WEI_WEIGHT × wei_score + GSCPI_WEIGHT × gscpi_score
 
-Source: https://fred.stlouisfed.org/series/WEI
-Published by: Federal Reserve Bank of New York based on data from multiple sources.
-Frequency: Weekly (Thursdays/Saturdays)
+WEI uses a fixed scale (robust to COVID outliers). GSCPI is inverted from its
+z-score (0 = average pressure; positive = elevated pressure).
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
 
 import pandas as pd
 
-from config import HISTORY_DAYS
+from config import (
+    HISTORY_DAYS,
+    SUPPLY_CHAIN_GSCPI_WEIGHT,
+    SUPPLY_CHAIN_WEI_WEIGHT,
+)
+from data.gscpi_client import (
+    fetch_gscpi_series,
+    gscpi_to_score,
+    latest_published_gscpi,
+)
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 
+logger = logging.getLogger(__name__)
+
+
+def _wei_to_score(wei: float) -> float:
+    """Fixed calibration: WEI ≈ +2 healthy, 0 stagnant, -2 contracting."""
+    return float(max(0.0, min(100.0, 50.0 + wei * 12.5)))
+
+
+def _blend_scores(wei_score: float, gscpi_score: float) -> float:
+    w_wei = SUPPLY_CHAIN_WEI_WEIGHT
+    w_gscpi = SUPPLY_CHAIN_GSCPI_WEIGHT
+    total = w_wei + w_gscpi
+    if total <= 0:
+        return wei_score
+    return float(max(0.0, min(100.0, (w_wei * wei_score + w_gscpi * gscpi_score) / total)))
+
 
 class SupplyChainProvider(BaseProvider):
-    """Supply Chain Activity — derived from NY Fed Weekly Economic Index (WEI)."""
+    """Supply Chain Activity — WEI (weekly) + GSCPI (monthly) blend."""
 
     category = "supply_chain"
-    _SERIES_ID = "WEI"
+    _WEI_SERIES_ID = "WEI"
 
     def fetch_current(self) -> tuple[float, dict]:
-        raw = fetch_fred_series(self._SERIES_ID)
-        latest_value = float(raw.iloc[-1])
-        latest_date = str(raw.index[-1].date())
+        wei_raw = fetch_fred_series(self._WEI_SERIES_ID)
+        wei_value = float(wei_raw.iloc[-1])
+        wei_date = str(wei_raw.index[-1].date())
+        wei_score = _wei_to_score(wei_value)
 
-        # Calibrated scoring: WEI is scaled to GDP growth.
-        # Normal range is roughly -2.0 to +4.0.
-        # Outliers in 2020/2021 skewed min/max normalization (-11 to +12).
-        # We use a fixed scale to ensure recent data is scored meaningfully:
-        #   WEI = 4.0  -> Score 100
-        #   WEI = 2.0  -> Score 75
-        #   WEI = 0.0  -> Score 50 (Stagnation)
-        #   WEI = -2.0 -> Score 25 (Contraction)
-        #   WEI = -4.0 -> Score 0
-        
-        # Formula: Score = 50 + (WEI * 12.5)
-        score = 50 + (latest_value * 12.5)
-        score = max(0.0, min(100.0, score))
+        gscpi_score = 50.0
+        gscpi_value = 0.0
+        gscpi_date = "unavailable"
+        try:
+            gscpi_series = fetch_gscpi_series()
+            gscpi_value, gscpi_dt = latest_published_gscpi(gscpi_series)
+            gscpi_score = gscpi_to_score(gscpi_value)
+            gscpi_date = str(gscpi_dt.date())
+        except Exception as exc:
+            logger.warning("GSCPI fetch failed, using WEI only: %s", exc)
+            gscpi_score = wei_score
 
-        # Context
-        if latest_value > 3.0:
-            condition = "Economic activity is surging — high supply chain throughput"
-        elif latest_value > 1.5:
-            condition = "Economic activity is solid — healthy flow of goods"
-        elif latest_value > 0.0:
-            condition = "Economic activity is strictly positive but slow"
-        elif latest_value > -2.0:
-            condition = "Economic activity is contracting slightly"
+        score = _blend_scores(wei_score, gscpi_score)
+
+        if wei_value > 3.0:
+            wei_condition = "economic activity is surging"
+        elif wei_value > 1.5:
+            wei_condition = "activity is solid"
+        elif wei_value > 0.0:
+            wei_condition = "activity is positive but slow"
+        elif wei_value > -2.0:
+            wei_condition = "activity is contracting slightly"
         else:
-            condition = "Deep contraction in physical economic activity"
+            wei_condition = "deep contraction in physical activity"
+
+        if gscpi_value > 1.0:
+            gscpi_condition = "supply chain pressures are well above normal"
+        elif gscpi_value > 0.25:
+            gscpi_condition = "pressures are elevated"
+        elif gscpi_value > -0.25:
+            gscpi_condition = "pressures are near historical average"
+        else:
+            gscpi_condition = "pressures are below average (favorable)"
 
         return score, {
-            "source": "NY Fed via FRED (WEI - Weekly)",
-            "raw_value": f"{latest_value:+.2f}",
-            "raw_label": "Weekly Economic Index",
+            "source": "NY Fed WEI (FRED) + GSCPI",
+            "raw_value": f"WEI {wei_value:+.2f} | GSCPI {gscpi_value:+.2f}",
+            "raw_label": "Weekly Activity + Supply Chain Pressure",
             "description": (
-                f"The Weekly Economic Index is at {latest_value:+.2f}. {condition}. "
-                "The WEI aggregates 10 high-frequency indicators including rail traffic, "
-                "fuel sales, and steel production to measure real-time supply chain velocity."
+                f"WEI at {wei_value:+.2f} ({wei_condition}); "
+                f"GSCPI at {gscpi_value:+.2f} ({gscpi_condition}). "
+                f"Blended score weights throughput ({int(SUPPLY_CHAIN_WEI_WEIGHT * 100)}%) "
+                f"and supply-chain-specific pressure ({int(SUPPLY_CHAIN_GSCPI_WEIGHT * 100)}%)."
             ),
             "calculation": (
-                "Score = 50 + (WEI * 12.5). "
-                "We use a fixed scale where WEI > 2.0 is Healthy (75+) and "
-                "WEI < 0 is Slow (50-). Outliers from 2020-2021 are clipped."
+                f"Score = {SUPPLY_CHAIN_WEI_WEIGHT:.0%} × (50 + WEI×12.5) + "
+                f"{SUPPLY_CHAIN_GSCPI_WEIGHT:.0%} × (50 − GSCPI×25), clipped 0–100."
             ),
-            "updated": latest_date,
+            "updated": f"WEI {wei_date}, GSCPI {gscpi_date}",
         }
 
     def fetch_history(self, days: int = HISTORY_DAYS) -> pd.Series:
-        raw = fetch_fred_series(self._SERIES_ID)
-        # Apply the same fixed scaling to history
-        scores = 50 + (raw * 12.5)
-        scores = scores.clip(lower=0.0, upper=100.0)
-        
-        # Weekly data — interpolate to daily for smooth sparklines.
-        # ffill creates flat 7-day steps; interpolation smooths transitions.
-        daily = scores.resample("D").interpolate(method="linear")
-        return daily.tail(days).rename("supply_chain")
+        wei_raw = fetch_fred_series(self._WEI_SERIES_ID)
+        wei_scores = (50 + wei_raw * 12.5).clip(0.0, 100.0)
+        wei_daily = wei_scores.resample("D").interpolate(method="linear")
+
+        try:
+            gscpi_raw = fetch_gscpi_series()
+            gscpi_scores = gscpi_raw.apply(gscpi_to_score)
+            gscpi_daily = gscpi_scores.resample("D").ffill()
+        except Exception as exc:
+            logger.warning("GSCPI history unavailable: %s", exc)
+            gscpi_daily = wei_daily.copy()
+
+        combined = pd.DataFrame({"wei": wei_daily, "gscpi": gscpi_daily}).sort_index()
+        combined = combined.ffill().bfill()
+        blended = combined["wei"] * SUPPLY_CHAIN_WEI_WEIGHT + combined["gscpi"] * SUPPLY_CHAIN_GSCPI_WEIGHT
+        total = SUPPLY_CHAIN_WEI_WEIGHT + SUPPLY_CHAIN_GSCPI_WEIGHT
+        if total > 0:
+            blended = blended / total
+        return blended.clip(0.0, 100.0).tail(days).rename("supply_chain")
