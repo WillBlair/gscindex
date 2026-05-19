@@ -31,9 +31,14 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-from config import HISTORY_DAYS
+from config import FRED_SCORE_LOOKBACK_DAYS, HISTORY_DAYS
 from data.providers.base import BaseProvider
-from data.providers.fred_client import fetch_fred_series
+from data.providers.fred_client import (
+    fetch_fred_series,
+    inverse_normalize_value,
+    normalization_bounds,
+    normalize_series_inverse,
+)
 
 
 class TruckingProvider(BaseProvider):
@@ -95,18 +100,10 @@ class TruckingProvider(BaseProvider):
         # 4. Synthesize Daily Price
         est_daily_price = live_ho_price + spread
         
-        # 5. Score Calculation
-        # Normalize inversely against historical range of Retail Prices
-        # We'll use the FRED history for context as it's the "Retail" history.
-        hist_retail = retail_series
-        min_val = hist_retail.tail(365*5).min() # 5 year min
-        max_val = hist_retail.tail(365*5).max() # 5 year max
-        
-        # Clip
+        # 5. Score Calculation — trailing window on retail diesel (not full 5yr)
+        min_val, max_val = normalization_bounds(retail_series)
         clipped_price = max(min_val, min(max_val, est_daily_price))
-        
-        # Score = 100 * (Max - Current) / (Max - Min)
-        score = 100 * (max_val - clipped_price) / (max_val - min_val)
+        score = inverse_normalize_value(clipped_price, min_val, max_val)
         
         # Calculate daily change
         try:
@@ -139,9 +136,9 @@ class TruckingProvider(BaseProvider):
                 f"(${spread:.2f}) to live Heating Oil futures market data."
             ),
             "calculation": (
-                "Score = Inverse Normalized Price. "
-                f"Est. Daily Price = Live Heating Oil (${live_ho_price:.3f}) + Retail Spread (${spread:.2f}). "
-                "The spread is derived from the latest DOE Weekly report."
+                "Score = inverse normalized est. diesel price. "
+                f"Est. daily = live heating oil (${live_ho_price:.3f}) + spread (${spread:.2f}). "
+                f"Normalized against the trailing {FRED_SCORE_LOOKBACK_DAYS}-day DOE retail range."
             ),
             "updated": latest_date,
         }
@@ -184,20 +181,7 @@ class TruckingProvider(BaseProvider):
              pass
              
         daily_est = ho_hist + spread
-        
-        # Normalize
-        min_val = daily_est.min()
-        max_val = daily_est.max() # Or use historical max from FRED (~$5.80) to be consistent
-        
-        # Better: Use same min/max as fetch_current (FRED 5y)
-        hist_retail = retail_series
-        min_val = hist_retail.tail(365*5).min()
-        max_val = hist_retail.tail(365*5).max()
-
-        scores = 100 * (max_val - daily_est) / (max_val - min_val)
-        scores = scores.clip(lower=0.0, upper=100.0)
-
-        # Remove timezone
-        scores.index = scores.index.tz_localize(None)
+        daily_est.index = daily_est.index.tz_localize(None)
+        scores = normalize_series_inverse(daily_est)
 
         return scores.tail(days).rename("trucking")

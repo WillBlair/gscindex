@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 
+from config import FRED_SCORE_LOOKBACK_DAYS
 from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -116,51 +117,91 @@ def fetch_fred_series(
     return series
 
 
-def normalize_series_inverse(series: pd.Series) -> pd.Series:
+def _score_window(series: pd.Series, lookback_days: int | None = None) -> pd.Series:
+    """Return the trailing slice used for min/max scoring bounds."""
+    if series.empty:
+        return series
+    days = lookback_days if lookback_days is not None else FRED_SCORE_LOOKBACK_DAYS
+    end = series.index.max()
+    start = end - pd.Timedelta(days=days)
+    windowed = series[series.index >= start]
+    return windowed if len(windowed) >= 2 else series
+
+
+def normalization_bounds(
+    series: pd.Series,
+    lookback_days: int | None = None,
+) -> tuple[float, float]:
+    """Min/max over the trailing lookback window (default: 2 years)."""
+    window = _score_window(series, lookback_days)
+    return float(window.min()), float(window.max())
+
+
+def inverse_normalize_value(value: float, min_val: float, max_val: float) -> float:
+    """Map a raw value to a 0–100 score (lower raw → higher score)."""
+    if max_val == min_val:
+        return 50.0
+    return float(max(0.0, min(100.0, 100 * (1 - (value - min_val) / (max_val - min_val)))))
+
+
+def normalize_series_inverse(
+    series: pd.Series,
+    lookback_days: int | None = None,
+) -> pd.Series:
     """Normalize a series where LOWER raw values = HIGHER health score.
 
-    Used for metrics where a lower value is better for the supply chain
-    (e.g., oil prices, uncertainty indices, supply chain pressure).
-
-    Maps the historical min → 100 (best) and historical max → 0 (worst).
+    Uses a trailing time window at each date (default 2 years) so COVID-era
+    spikes do not dominate the scale.
 
     Parameters
     ----------
     series : pd.Series
-        Raw FRED data.
+        Raw FRED data with a DatetimeIndex.
+    lookback_days : int | None
+        Trailing window in days. Defaults to ``FRED_SCORE_LOOKBACK_DAYS``.
 
     Returns
     -------
     pd.Series
         Scores in [0, 100], same index as input.
     """
-    min_val = series.min()
-    max_val = series.max()
-    if max_val == min_val:
-        return pd.Series(50.0, index=series.index)
-    return ((1 - (series - min_val) / (max_val - min_val)) * 100).round(1)
+    if series.empty:
+        return series
+    days = lookback_days if lookback_days is not None else FRED_SCORE_LOOKBACK_DAYS
+    roll_min = series.rolling(f"{days}D", min_periods=30).min()
+    roll_max = series.rolling(f"{days}D", min_periods=30).max()
+    span = roll_max - roll_min
+    scores = (1 - (series - roll_min) / span) * 100
+    scores = scores.where(span > 0, 50.0)
+    return scores.round(1).clip(0.0, 100.0)
 
 
-def normalize_series_direct(series: pd.Series) -> pd.Series:
+def normalize_series_direct(
+    series: pd.Series,
+    lookback_days: int | None = None,
+) -> pd.Series:
     """Normalize a series where HIGHER raw values = HIGHER health score.
 
-    Used for metrics where a higher value is better for the supply chain
-    (e.g., freight volume, manufacturing PMI).
-
-    Maps the historical min → 0 (worst) and historical max → 100 (best).
+    Uses a trailing time window at each date (default 2 years).
 
     Parameters
     ----------
     series : pd.Series
-        Raw FRED data.
+        Raw FRED data with a DatetimeIndex.
+    lookback_days : int | None
+        Trailing window in days. Defaults to ``FRED_SCORE_LOOKBACK_DAYS``.
 
     Returns
     -------
     pd.Series
         Scores in [0, 100], same index as input.
     """
-    min_val = series.min()
-    max_val = series.max()
-    if max_val == min_val:
-        return pd.Series(50.0, index=series.index)
-    return (((series - min_val) / (max_val - min_val)) * 100).round(1)
+    if series.empty:
+        return series
+    days = lookback_days if lookback_days is not None else FRED_SCORE_LOOKBACK_DAYS
+    roll_min = series.rolling(f"{days}D", min_periods=30).min()
+    roll_max = series.rolling(f"{days}D", min_periods=30).max()
+    span = roll_max - roll_min
+    scores = ((series - roll_min) / span) * 100
+    scores = scores.where(span > 0, 50.0)
+    return scores.round(1).clip(0.0, 100.0)

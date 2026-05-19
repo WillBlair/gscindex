@@ -6,9 +6,10 @@ as a proxy for trade and tariff disruption risk.
 
 Score Logic
 -----------
-Higher policy uncertainty = worse for supply chains. Inverted normalization:
-    - At the 5-year LOW  → score = 100 (stable policy environment)
-    - At the 5-year HIGH → score = 0   (maximum uncertainty)
+Higher policy uncertainty = worse for supply chains. Inverted normalization
+over a trailing 2-year window:
+    - At the window LOW  → score = 100 (stable policy environment)
+    - At the window HIGH → score = 0   (maximum uncertainty)
 
 Source: https://fred.stlouisfed.org/series/USEPUINDXD
 Based on: Baker, Bloom, and Davis Economic Policy Uncertainty Index
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config import HISTORY_DAYS
+from config import FRED_SCORE_LOOKBACK_DAYS, HISTORY_DAYS
 from data.providers.base import BaseProvider
 from data.providers.fred_client import (
     fetch_fred_series,
@@ -49,8 +50,8 @@ class TariffsProvider(BaseProvider):
             "calculation": (
                 "Score = 100 - (Normalized Uncertainty). "
                 "We track the Economic Policy Uncertainty Index. "
-                "We normalize the current value against its 5-year range. "
-                "Higher uncertainty = Lower Supply Chain Health Score."
+                f"We normalize against the trailing {FRED_SCORE_LOOKBACK_DAYS}-day range. "
+                "Higher uncertainty = lower supply chain health score."
             ),
             "updated": str(raw.index[-1].date())
         }

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "node /Users/williamcblair/Desktop/gscindex/.cursor/hooks/jamcoder-before.js"
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "node /Users/williamcblair/Desktop/gscindex/.cursor/hooks/jamcoder-after.js"
+      }
+    ]
+  }
+}

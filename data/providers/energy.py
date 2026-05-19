@@ -7,9 +7,9 @@ the energy category.
 Score Logic
 -----------
 Lower oil prices = healthier supply chain. The raw price is normalized
-against its 5-year historical range:
-    - At the 5-year LOW  → score = 100 (cheapest energy in 5 years)
-    - At the 5-year HIGH → score = 0   (most expensive in 5 years)
+against its trailing 2-year historical range:
+    - At the 2-year LOW  → score = 100 (cheapest energy in that window)
+    - At the 2-year HIGH → score = 0   (most expensive in that window)
 """
 
 from __future__ import annotations
@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 
 from config import HISTORY_DAYS
 from data.providers.base import BaseProvider
+from config import FRED_SCORE_LOOKBACK_DAYS
 from data.providers.fred_client import (
     fetch_fred_series,
+    inverse_normalize_value,
+    normalization_bounds,
     normalize_series_inverse,
 )
 
@@ -61,19 +64,10 @@ class EnergyProvider(BaseProvider):
             price = float(raw.iloc[-1])
             change_str = ""
 
-        # 2. Normalize against FRED History (to keep baseline consistent)
-        # We still use the FRED 5-year history to define what is "High" vs "Low"
+        # 2. Normalize against trailing FRED window (2yr default, not full 5yr)
         fred_hist = fetch_fred_series(self._SERIES_ID)
-        min_val = fred_hist.min()
-        max_val = fred_hist.max()
-        
-        # Inverse Normalization: Lower Price = Higher Score
-        # 100 at min, 0 at max
-        if max_val == min_val:
-            score = 50.0  # Degenerate range — neutral fallback
-        else:
-            norm_score = 100 * (1 - (price - min_val) / (max_val - min_val))
-            score = max(0.0, min(100.0, norm_score))
+        min_val, max_val = normalization_bounds(fred_hist)
+        score = inverse_normalize_value(float(price), min_val, max_val)
 
         return score, {
             "source": "Live Futures (CL=F)",
@@ -85,9 +79,8 @@ class EnergyProvider(BaseProvider):
             ),
             "calculation": (
                 "Score = 100 - (Normalized Price). "
-                "We baseline the LIVE price against the 5-year historical range. "
-                "Current price is positioned within the 5-year min-max range, "
-                "then inverted (Higher Price = Lower Score)."
+                f"We baseline the LIVE price against the trailing {FRED_SCORE_LOOKBACK_DAYS}-day "
+                "FRED range, then invert (higher price = lower score)."
             ),
             "updated": datetime.now().strftime("%H:%M:%S Live")
         }

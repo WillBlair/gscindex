@@ -26,6 +26,10 @@ NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "
 # Shared disk cache key for RSS/Gemini news payload (alerts, briefing, report).
 NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v15"
 
+# FRED inverse/direct scoring uses a trailing window (not full 5yr history).
+# Avoids COVID-era spikes from pinning "normal" prices in the middle of the scale.
+FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "730"))
+
 # ---------------------------------------------------------------------------
 # Category Definitions
 # ---------------------------------------------------------------------------
