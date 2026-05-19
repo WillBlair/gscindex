@@ -296,7 +296,7 @@ def build_layout(
                 className="dash-footer",
                 children=[
                     html.P(
-                        "Global Supply Chain Index — Built by William Christopher Blair  |  "
+                        "Global Supply Chain Index — Built by William Blair  |  "
                         "Data: FRED, Open-Meteo, NewsAPI + VADER Sentiment",
                         className="footer-text",
                     ),

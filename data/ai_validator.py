@@ -11,6 +11,7 @@ This adds a layer of "AI Intelligence" to the dashboard, providing:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -24,7 +25,14 @@ from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
-_AI_VALIDATION_CACHE_KEY = "gemini_ai_validation_v1"
+_AI_VALIDATION_CACHE_VERSION = "v2"
+
+
+def _validation_cache_key(composite: float, current_categories: dict[str, float]) -> str:
+    """Cache key tied to the current score snapshot so validation stays in sync."""
+    payload = json.dumps(current_categories, sort_keys=True, default=str)
+    fingerprint = hashlib.sha256(payload.encode()).hexdigest()[:12]
+    return f"gemini_ai_validation_{_AI_VALIDATION_CACHE_VERSION}_{round(composite)}_{fingerprint}"
 
 # Fallback response if AI fails
 FALLBACK_VALIDATION = {
@@ -59,7 +67,8 @@ def validate_score(
             "adjustment": float (e.g. -2.5 or 0.0)
         }
     """
-    cached = get_cached(_AI_VALIDATION_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
+    cache_key = _validation_cache_key(current_score, current_categories)
+    cached = get_cached(cache_key, ttl=GEMINI_CACHE_TTL_SECONDS)
     if cached is not None and isinstance(cached, dict) and "status" in cached:
         return cached
 
@@ -120,7 +129,7 @@ def validate_score(
         
         # Clamp adjustment to avoid AI hallucinations wrecking the dashboard
         result["adjustment"] = max(-5.0, min(5.0, float(result["adjustment"])))
-        set_cached(_AI_VALIDATION_CACHE_KEY, result)
+        set_cached(cache_key, result)
         return result
 
     except Exception as e:

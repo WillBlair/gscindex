@@ -32,8 +32,8 @@ import requests
 import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
-from data.cache import get_cached, set_cached
+from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY, NEWS_RSS_REFRESH_SECONDS
+from data.cache import get_cache_age_seconds, get_cached, set_cached
 from data.providers.base import BaseProvider
 from data.ai_analyst import analyze_news_batch
 
@@ -201,6 +201,36 @@ def _build_vader_alerts(candidates: list[dict]) -> tuple[list[dict], float]:
     return alerts, severity_sum
 
 
+def _refresh_cached_news_from_rss(cached: dict) -> dict | None:
+    """Re-fetch RSS and re-score with VADER while keeping Gemini briefing/report."""
+    from data.rss_fetcher import fetch_rss_articles
+
+    rss_articles = fetch_rss_articles(max_items=50)
+    if not rss_articles:
+        return None
+
+    candidates = [
+        {
+            "title": art["title"],
+            "description": art["description"],
+            "url": art["url"],
+            "source": art["source"],
+            "published": art["published"],
+        }
+        for art in rss_articles
+    ]
+    alerts, severity_sum = _build_vader_alerts(candidates[:30])
+    if not alerts:
+        return None
+
+    refreshed = dict(cached)
+    refreshed["score"] = round(max(0.0, min(100.0, 100.0 + severity_sum)), 1)
+    refreshed["alerts"] = alerts
+    if not (refreshed.get("briefing") or "").strip():
+        refreshed["briefing"] = _build_fallback_briefing(alerts)
+    return refreshed
+
+
 def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
     """Return cached news analysis tuple if available, else None.
 
@@ -229,6 +259,20 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     cache_key = _NEWS_CACHE_KEY
     cached = get_cached(cache_key, ttl=GEMINI_CACHE_TTL_SECONDS)
     if cached is not None:
+        cache_age = get_cache_age_seconds(cache_key)
+        if cache_age is not None and cache_age > NEWS_RSS_REFRESH_SECONDS:
+            try:
+                refreshed = _refresh_cached_news_from_rss(cached)
+                if refreshed:
+                    set_cached(cache_key, refreshed)
+                    cached = refreshed
+                    logger.info(
+                        "Refreshed news score/alerts from RSS (cache age %.0fs)",
+                        cache_age,
+                    )
+            except Exception as exc:
+                logger.warning("RSS refresh of cached news failed: %s", exc)
+
         cached_alerts = cached.get("alerts", []) or []
         cached_briefing = (cached.get("briefing", "") or "").strip()
         cached_report = (cached.get("full_report", "") or "").strip()

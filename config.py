@@ -20,6 +20,9 @@ import os
 # for roughly twice daily.
 GEMINI_CACHE_TTL_SECONDS: int = int(os.environ.get("GEMINI_CACHE_TTL_SECONDS", "86400"))
 
+# Re-score geopolitical alerts from live RSS between full Gemini runs (no API cost).
+NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
+
 # Shared disk cache key for RSS/Gemini news payload (alerts, briefing, report).
 NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v15"
 
@@ -76,7 +79,7 @@ HEALTH_TIERS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 APP_TITLE = "Global Supply Chain Index"
-APP_SUBTITLE = "by William Christopher Blair"
+APP_SUBTITLE = "by William Blair"
 APP_AUTHOR_URL = "https://williamcblair.com"
 HISTORY_DAYS = 90            # how many days of history to show in charts
 REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh

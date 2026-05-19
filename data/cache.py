@@ -86,6 +86,14 @@ def get_cached(key: str, ttl: int = DEFAULT_TTL_SECONDS) -> dict | list | None:
         return None
 
 
+def get_cache_age_seconds(key: str, ext: str = ".json") -> float | None:
+    """Return cache file age in seconds, or None if the entry does not exist."""
+    path = _get_cache_path(key, ext=ext)
+    if not path.exists():
+        return None
+    return time.time() - path.stat().st_mtime
+
+
 def set_cached(key: str, data: dict | list) -> None:
     """Write data to the cache.
 
