@@ -36,7 +36,7 @@ def _validation_cache_key(composite: float, current_categories: dict[str, float]
 
 # Fallback response if AI fails
 FALLBACK_VALIDATION = {
-    "status": "Verified",
+    "status": "CONFIRMED",
     "reasoning": "Score is consistent with current weighted metrics.",
     "adjustment": 0.0
 }
@@ -117,7 +117,7 @@ def validate_score(
         # Clean response (remove markdown fences if any)
         text = response.text.strip()
         if text.startswith("```json"):
-            text = text[7:]
+            text = text[7:].strip()
         if text.endswith("```"):
             text = text[:-3]
             
