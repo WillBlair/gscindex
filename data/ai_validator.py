@@ -119,7 +119,7 @@ def validate_score(
         if text.startswith("```json"):
             text = text[7:].strip()
         if text.endswith("```"):
-            text = text[:-3]
+            text = text[:-3].strip()
             
         result = json.loads(text)
         
