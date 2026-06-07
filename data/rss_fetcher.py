@@ -1,144 +1,91 @@
 
-"""
-RSS Fetcher Module
-==================
-Fetches supply chain news from specific high-quality industry RSS feeds.
-"""
-import feedparser
+"""RSS fetcher for public supply-chain intelligence feeds."""
+from __future__ import annotations
+
 import logging
-from datetime import datetime
-import os
-import glob
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+
+import feedparser
+
+from data.news_selection import dedupe_articles, is_low_signal_article, parse_article_datetime
+from data.news_sources import NEWS_SOURCES, NewsSource
 
 logger = logging.getLogger(__name__)
 
-# List of high-quality industry feeds provided by user
-FEED_URLS = [
-    # Supply Chain Dive
-    "https://www.supplychaindive.com/feeds/news/",
-    
-    # FreightWaves
-    "https://www.freightwaves.com/feed",
-    
-    # SupplyChainBrain
-    "https://www.supplychainbrain.com/rss/articles",
-    "https://www.supplychainbrain.com/rss/topic/296-last-mile-delivery",
-    
-    # Logistics Management
-    "https://www.logisticsmgmt.com/rss/topic/transportation_news",
-    "https://www.logisticsmgmt.com/rss/topic/ocean_freight",
-    
-    # Maritime & Shipping (High Volume)
-    "https://gcaptain.com/feed/",
-    "https://splash247.com/feed/",
-    "https://theloadstar.com/feed/",
-    
-    # Strategic & Global
-    "https://www.scmr.com/rss/resources", # Supply Chain Management Review
-    "https://logisticsviewpoints.com/feed/",
-    "https://www.maritime-executive.com/rss/news",
-]
+# Compatibility for any older diagnostics importing the raw URL list.
+FEED_URLS = [source["url"] for source in NEWS_SOURCES]
+
 
 def parse_pub_date(entry) -> str:
     """Robustly extract and normalize publication date."""
-    # 1. Try parsed struct_time first (most reliable)
     if hasattr(entry, "published_parsed") and entry.published_parsed:
-        return datetime(*entry.published_parsed[:6]).isoformat()
-        
-    # 2. Try raw strings
+        return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc).isoformat()
+
     raw_date = entry.get("published", "") or entry.get("updated", "") or entry.get("pubDate", "")
-    
     if not raw_date:
-        return datetime.now().isoformat()
-        
+        return datetime.now(timezone.utc).isoformat()
     return str(raw_date)
 
-def fetch_single_feed(url: str) -> list[dict]:
-    """Fetch and parse a single RSS feed."""
-    articles = []
+
+def fetch_single_feed(source: NewsSource) -> list[dict]:
+    """Fetch and normalize a single RSS feed."""
+    articles: list[dict] = []
     try:
-        # feedparser handles basic HTTP caching/etags automatically if we wanted,
-        # but for now just basic fetch.
-        feed = feedparser.parse(url)
-        
+        feed = feedparser.parse(source["url"])
         if feed.bozo:
-             logger.warning(f"RSS Parse Warning for {url}: {feed.bozo_exception}")
-             # often bozo is just encoding error, usually entries still usable
-        
-        source_name = feed.feed.get("title", "Industry News")
-        
-        # Take top 15 to ensure we get enough recent ones even if some are irrelevant
-        for entry in feed.entries[:15]: 
-            # Normalize fields
-            title = entry.get("title", "No Title")
-            link = entry.get("link", "#")
-            
-            # Description can be in summary, description, or content
-            description = entry.get("summary", "") or entry.get("description", "")
-            
-            # Published date
-            pub_date = parse_pub_date(entry)
-            
-            articles.append({
-                "title": title,
-                "description": description[:800], # Truncate massive contents
-                "url": link,
-                "source": source_name,
-                "published": pub_date,
-                "is_rss": True # Flag to prioritize in analysis
-            })
-            
-    except Exception as e:
-        logger.error(f"Failed to fetch RSS {url}: {e}")
-        
+            logger.warning("RSS parse warning for %s: %s", source["url"], feed.bozo_exception)
+
+        for entry in feed.entries[: source["max_items"]]:
+            title = str(entry.get("title", "No Title")).strip()
+            link = str(entry.get("link", "#")).strip()
+            description = str(entry.get("summary", "") or entry.get("description", "")).strip()
+            articles.append(
+                {
+                    "title": title,
+                    "description": description[:800],
+                    "url": link,
+                    "source": source["name"],
+                    "source_group": source["group"],
+                    "published": parse_pub_date(entry),
+                    "is_rss": True,
+                }
+            )
+    except Exception as exc:
+        logger.error("Failed to fetch RSS %s: %s", source["url"], exc)
+
     return articles
 
+
+def _sort_key(article: dict) -> datetime:
+    parsed = parse_article_datetime(article.get("published"))
+    return parsed or datetime.min.replace(tzinfo=timezone.utc)
+
+
 def fetch_rss_articles(max_items: int = 60) -> list[dict]:
-    """
-    Fetch from all RSS feeds in parallel and return distinct articles.
-    
-    Returns
-    -------
-    list[dict]
-        List of normalized article dicts sorted by date (if possible) or just shuffled.
-    """
-    import random
-    all_articles = []
-    
+    """Fetch configured RSS feeds and return deduped, newest-first articles."""
+    all_articles: list[dict] = []
+
     with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_url = {executor.submit(fetch_single_feed, url): url for url in FEED_URLS}
-        
-        for future in as_completed(future_to_url):
+        future_to_source = {executor.submit(fetch_single_feed, source): source for source in NEWS_SOURCES}
+        for future in as_completed(future_to_source):
+            source = future_to_source[future]
             try:
-                data = future.result()
-                all_articles.extend(data)
-            except Exception as e:
-                logger.error(f"RSS worker failed: {e}")
-    
-    # Deduplicate by URL
-    seen_urls = set()
-    unique_articles = []
-    
-    # Process standard web articles
-    for art in all_articles:
-        if art["url"] not in seen_urls:
-            unique_articles.append(art)
-            seen_urls.add(art["url"])
-            
-    # Mix them up so we don't get 10 articles from the same source in a row
-    random.shuffle(unique_articles)
-    
-    # Try to sort by date if possible, but date formats vary wildly. 
-    # Reliability of 'published' string vary.
-    # For now, shuffling is better than sorted-by-source.
-    
-    logger.info(f"Fetched {len(unique_articles)} unique articles from RSS feeds.")
+                all_articles.extend(future.result())
+            except Exception as exc:
+                logger.error("RSS worker failed for %s: %s", source["name"], exc)
+
+    signal_articles = [article for article in all_articles if not is_low_signal_article(article)]
+    unique_articles = dedupe_articles(signal_articles)
+    unique_articles.sort(key=_sort_key, reverse=True)
+
+    logger.info("Fetched %d unique articles from RSS feeds.", len(unique_articles))
     return unique_articles[:max_items]
 
+
 if __name__ == "__main__":
-    # Test run
     logging.basicConfig(level=logging.INFO)
     items = fetch_rss_articles()
     for item in items[:5]:
-        print(f"- [{item['source']}] {item['title']}")
+        group = item.get("source_group", "news").replace("_", " ")
+        print(f"- [{item['source']} | {group}] {item['title']}")

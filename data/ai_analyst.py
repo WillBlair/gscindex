@@ -168,6 +168,73 @@ def generate_briefing(articles: list[dict]) -> str:
         return "Global supply chain outlook is stable. No major disruptions reported at this time."
 
 
+def _newsletter_no_fresh_articles_fallback(score: float, tier_label: str) -> str:
+    return (
+        "• No fresh public-source supply chain articles cleared the relevance filter this morning; "
+        f"the index is {score:.1f}/100 ({tier_label}) based on current market, weather, freight, and policy signals."
+    )
+
+
+def generate_newsletter_briefing(
+    articles: list[dict],
+    *,
+    score: float,
+    tier_label: str,
+    score_delta: float | None,
+) -> str:
+    """Generate a morning newsletter briefing from selected fresh articles."""
+    if not articles:
+        return _newsletter_no_fresh_articles_fallback(score, tier_label)
+
+    if not api_key:
+        bullets = []
+        for article in articles[:4]:
+            source_group = str(article.get("source_group", "news")).replace("_", " ")
+            bullets.append(
+                "• "
+                f"{article.get('title', 'Supply chain update')} "
+                f"({article.get('source', 'public source')}, {source_group})."
+            )
+        return "\n".join(bullets)
+
+    delta_text = "unchanged from the previous recorded score"
+    if score_delta is not None:
+        sign = "+" if score_delta >= 0 else ""
+        delta_text = f"{sign}{score_delta:.1f} points versus the previous recorded score"
+
+    model = genai.GenerativeModel(
+        model_name="gemini-3-flash-preview",
+        generation_config=BRIEFING_CONFIG,
+    )
+
+    prompt_lines = [
+        "You are writing the morning email for the Global Supply Chain Index.",
+        f"Current score: {score:.1f}/100 ({tier_label}); movement: {delta_text}.",
+        "Use ONLY the public-source articles below.",
+        "Write 4 bullets, each one sentence, plain text, each starting with '•'.",
+        "The bullets must cover: what changed overnight, top logistics risk, market/policy signal, and why the score is credible.",
+        "Mention source names naturally when useful. Do not invent facts, numbers, or disruptions.",
+        "Avoid generic phrases like 'monitoring remains active' unless there is no fresh signal.",
+        "",
+        "Fresh articles:",
+    ]
+    for article in articles[:20]:
+        prompt_lines.append(
+            "- "
+            f"[{article.get('source_group', 'news')}] "
+            f"{article.get('title', 'Untitled')} "
+            f"({article.get('source', 'public source')}, {article.get('published', 'unknown date')}): "
+            f"{str(article.get('description', ''))[:220]}"
+        )
+
+    try:
+        response = model.generate_content("\n".join(prompt_lines))
+        return response.text.strip()
+    except Exception as exc:
+        logger.error("Newsletter briefing generation failed: %s", exc)
+        return _newsletter_no_fresh_articles_fallback(score, tier_label)
+
+
 REPORT_PROMPT = """
 You are the Chief Strategy Officer for a global logistics firm.
 Write a comprehensive "Daily Supply Chain Intelligence Report" based on the provided news headlines.

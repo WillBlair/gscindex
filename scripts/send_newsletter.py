@@ -19,9 +19,10 @@ Configuration via Environment Variables:
 import os
 import smtplib
 import logging
+import html as html_utils
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
@@ -34,6 +35,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import COLORS
+from data.ai_analyst import generate_newsletter_briefing
+from data.cache import get_cached, set_cached
+from data.news_selection import select_fresh_articles
+from data.rss_fetcher import fetch_rss_articles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("Newsletter")
@@ -90,6 +95,66 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
 
     return None
 
+def _daily_newsletter_cache_key(today: datetime) -> str:
+    """Cache key scoped to one newsletter date so SMTP retries reuse the same text."""
+    run_date = today
+    if run_date.tzinfo is None:
+        run_date = run_date.replace(tzinfo=timezone.utc)
+    return f"newsletter_briefing_{run_date.astimezone(timezone.utc).strftime('%Y_%m_%d')}"
+
+
+def _build_daily_newsletter_briefing(
+    *,
+    current_scores: dict,
+    score: float,
+    tier: dict,
+    fallback_briefing: str,
+    today: datetime | None = None,
+) -> str:
+    """Build a fresh morning briefing from public sources, with same-day retry cache."""
+    _ = current_scores  # Reserved for score-delta context once daily score history is exposed here.
+    run_date = today or datetime.now(timezone.utc)
+    if run_date.tzinfo is None:
+        run_date = run_date.replace(tzinfo=timezone.utc)
+    run_date = run_date.astimezone(timezone.utc)
+
+    cache_key = _daily_newsletter_cache_key(run_date)
+    cached = get_cached(cache_key, ttl=36 * 3600)
+    if cached and cached.get("briefing"):
+        logger.info("Using cached daily newsletter briefing: %s", cache_key)
+        return str(cached["briefing"])
+
+    try:
+        articles = fetch_rss_articles(max_items=80)
+        selected = select_fresh_articles(
+            articles,
+            now=run_date,
+            max_items=24,
+            fresh_hours=36,
+            fallback_hours=72,
+        )
+        briefing = generate_newsletter_briefing(
+            selected,
+            score=score,
+            tier_label=str(tier.get("label", "Unknown")),
+            score_delta=None,
+        )
+        set_cached(
+            cache_key,
+            {
+                "briefing": briefing,
+                "article_count": len(selected),
+                "article_fingerprints": [article.get("fingerprint") for article in selected],
+                "source_groups": sorted({str(article.get("source_group", "unknown")) for article in selected}),
+            },
+        )
+        logger.info("Generated fresh daily newsletter briefing from %d articles.", len(selected))
+        return briefing
+    except Exception as exc:
+        logger.warning("Fresh newsletter briefing failed; using dashboard briefing: %s", exc)
+        return fallback_briefing
+
+
 def generate_html_email(score: float, tier: dict, briefing: str, website_url: str) -> str:
     """Constructs the HTML body for the newsletter."""
     color = tier.get("color", "#ffffff")
@@ -103,6 +168,7 @@ def generate_html_email(score: float, tier: dict, briefing: str, website_url: st
         if line:
             # Strip markdown/unicode bullet characters so we can use real HTML bullets safely
             line = line.lstrip(" -*•").strip()
+            line = html_utils.escape(line)
             bullet_points += f"<li style='margin-bottom: 12px; line-height: 1.6;'>{line}</li>"
 
     if not bullet_points:
@@ -171,20 +237,20 @@ def generate_text_email(score: float, tier: dict, briefing: str, website_url: st
     """Constructs the plain text fallback version."""
     label = tier.get("label", "Unknown")
     
-    text = f"GLOBAL SUPPLY CHAIN INDEX - DAILY BRIEFING\\n"
-    text += f"Date: {datetime.now().strftime('%B %d, %Y')}\\n"
-    text += f"=========================================\\n\\n"
+    text = "GLOBAL SUPPLY CHAIN INDEX - DAILY BRIEFING\n"
+    text += f"Date: {datetime.now().strftime('%B %d, %Y')}\n"
+    text += "=========================================\n\n"
     
-    text += f"Overall Health Score: {score:.1f}/100 ({label})\\n\\n"
+    text += f"Overall Health Score: {score:.1f}/100 ({label})\n\n"
     
-    text += "TODAY'S KEY DEVELOPMENTS:\\n"
+    text += "TODAY'S KEY DEVELOPMENTS:\n"
     for line in briefing.strip().split("\n"):
         line = line.strip()
         if line:
             line = line.lstrip(" -*•").strip()
-            text += f"- {line}\\n"
+            text += f"- {line}\n"
                 
-    text += f"\\nView the full interactive dashboard here: {website_url}\\n"
+    text += f"\nView the full interactive dashboard here: {website_url}\n"
     return text
 
 def main():
@@ -239,6 +305,12 @@ def main():
     tier = get_health_tier(score)
 
     logger.info(f"Dashboard score: {score:.1f} ({tier.get('label')})")
+    briefing = _build_daily_newsletter_briefing(
+        current_scores=current_scores,
+        score=float(score),
+        tier=tier,
+        fallback_briefing=briefing,
+    )
 
     html_content = generate_html_email(score, tier, briefing, website_url)
     text_content = generate_text_email(score, tier, briefing, website_url)
