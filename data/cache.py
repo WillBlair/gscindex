@@ -37,6 +37,10 @@ else:
 # Default TTL: 1 hour. Override per call if needed.
 DEFAULT_TTL_SECONDS = 3600
 
+# Versioned snapshot key — bump when the snapshot schema changes so old
+# cached payloads are never deserialized into new code.
+_DASHBOARD_SNAPSHOT_KEY = "dashboard_snapshot_safe_v2"
+
 
 def _get_cache_path(key: str, ext: str = ".json") -> Path:
     """Return cache path for a key and extension."""
@@ -139,7 +143,7 @@ def set_cached_dashboard(data: dict) -> None:
                 safe_history[cat] = series
         safe_data["category_history"] = safe_history
 
-    set_cached("dashboard_snapshot_safe", safe_data)
+    set_cached(_DASHBOARD_SNAPSHOT_KEY, safe_data)
 
 
 def reconstruct_dashboard_state(data: dict) -> dict:
@@ -172,7 +176,7 @@ def get_cached_dashboard() -> dict | None:
     Returns the reconstructed dashboard dict (with Pandas types restored),
     or ``None`` if there is no cached snapshot or it has expired.
     """
-    data = get_cached("dashboard_snapshot_safe", ttl=86400)
+    data = get_cached(_DASHBOARD_SNAPSHOT_KEY, ttl=86400)
     if not data:
         return None
     return reconstruct_dashboard_state(data)

@@ -15,11 +15,13 @@ The index is a weighted average of six category scores (0–100, where **100 = h
 | Category | Weight | Data Source |
 |----------|--------|-------------|
 | Weather Disruptions | 10% | [Open-Meteo](https://open-meteo.com/) at 37 major ports (no API key) |
-| Supply Chain | 20% | NY Fed WEI + Global Supply Chain Pressure Index via [FRED](https://fred.stlouisfed.org/) |
-| Energy Costs | 20% | Live WTI futures (yfinance) normalized against FRED trailing range |
-| Trade & Tariffs | 15% | US Economic Policy Uncertainty Index (`USEPUINDXD`) via FRED |
-| Inland Freight | 15% | Estimated daily diesel (Heating Oil futures + DOE weekly baseline) |
-| Geopolitical Risk | 20% | [NewsAPI](https://newsapi.org/) + VADER sentiment, with optional Gemini AI analysis |
+| Supply Chain | 20% | NY Fed Global Supply Chain Pressure Index (GSCPI), monthly |
+| Energy Costs | 20% | Live WTI futures (yfinance), percentile vs trailing 2-year FRED range |
+| Trade & Tariffs | 15% | Trade Policy Uncertainty categorical index (`EPUTRADE`) via [FRED](https://fred.stlouisfed.org/), monthly |
+| Inland Freight | 15% | DOE weekly retail diesel, with a live Heating Oil futures nowcast for today |
+| Geopolitical Risk | 20% | RSS/[NewsAPI](https://newsapi.org/) + VADER severity, with optional Gemini AI analysis |
+
+Energy and Inland Freight are cost-pressure gauges (price percentile within a trailing 2-year window). Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (UI badge, `/api/v1/latest`, and `/health`).
 
 Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–59), **Critical** (0–39).
 
@@ -27,7 +29,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
 - **Composite gauge** — semi-circle visualization of the overall index
 - **Category cards** — score, 30-day sparkline, delta, and clickable detail modal per category
-- **World map** — 37 ports colored by blended local weather (55%) + regional macro (45%)
+- **World map** — 37 ports colored by blended local weather (40%) + regional macro (60%)
 - **90-day trend chart** — multi-line history for all six categories
 - **News alerts** — supply-chain articles scored by VADER negativity
 - **AI briefing** — Gemini-generated summary (optional; cached ~24h)
@@ -51,7 +53,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 - **Visualizations:** Plotly
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 8 gthreads)
-- **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers only
+- **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers + daily score history
 - **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Google Generative AI
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes (1-hour default TTL)
@@ -101,9 +103,9 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `FRED_API_KEY` | Yes | Powers supply chain, energy, tariffs, and trucking categories |
+| `FRED_API_KEY` | Yes | Powers energy, tariffs, and trucking categories (GSCPI comes from the NY Fed directly) |
 | `NEWSAPI_KEY` | Yes | Geopolitical scoring, news alerts, and briefing input |
-| `GEMINI_API_KEY` | No | AI briefing, daily report, and score validation |
+| `GEMINI_API_KEY` | No | AI briefing, daily report, and news analysis |
 | `DATABASE_URL` | No | PostgreSQL for newsletter subscribers (omit for SQLite fallback) |
 | `ADMIN_TOKEN` | No | Protects `/api/v1/newsletter-data` and admin endpoints |
 | `PORT` | No | Server port (default `10000` in prod, `8050` in dev) |

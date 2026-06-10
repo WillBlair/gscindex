@@ -33,7 +33,24 @@ def _sparkline(series: pd.Series, color: str) -> go.Figure:
     go.Figure
         A minimal Plotly figure with no axes, suitable for inline display.
     """
-    recent = series.tail(30)
+    # Drop NaN: history may legitimately be short (real measurements only
+    # accumulate day by day), and NaN breaks the manual fill polygon.
+    recent = series.tail(30).dropna()
+
+    fig = go.Figure()
+
+    if recent.empty:
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin={"t": 0, "b": 0, "l": 0, "r": 0},
+            height=40,
+            xaxis={"visible": False, "fixedrange": True},
+            yaxis={"visible": False, "fixedrange": True},
+            showlegend=False,
+            autosize=False,
+        )
+        return fig
 
     # Tight y-range around actual data so the fill doesn't create a huge
     # rectangle below the line (scores typically cluster 60–100).
@@ -48,8 +65,6 @@ def _sparkline(series: pd.Series, color: str) -> go.Figure:
     x_vals = list(range(len(recent)))
     y_vals = list(recent.values)
 
-    fig = go.Figure()
-
     # Filled area: draw the line, then return along the baseline at y_lo
     fig.add_trace(
         go.Scatter(
@@ -63,13 +78,14 @@ def _sparkline(series: pd.Series, color: str) -> go.Figure:
         )
     )
 
-    # Actual sparkline on top
+    # Actual sparkline on top (markers when too short to draw a line)
     fig.add_trace(
         go.Scatter(
             x=x_vals,
             y=y_vals,
-            mode="lines",
+            mode="lines" if len(recent) > 1 else "markers",
             line={"color": color, "width": 2},
+            marker={"color": color, "size": 5},
             hoverinfo="skip",
             showlegend=False,
         )
@@ -128,8 +144,9 @@ def build_category_cards(
         if len(raw_label) > 25:
             raw_label = raw_label[:23] + ".."
 
-        # 30-day stats
-        recent = history.tail(30)
+        # 30-day stats (NaN-safe: history may be short while real
+        # measurements are still accumulating)
+        recent = history.tail(30).dropna()
         
         # FAIL-SAFE: Explicitly include the CURRENT score in the min/max calculation.
         # This prevents the UI from ever showing a Current Score that is outside the Lo/Hi range,
@@ -137,9 +154,10 @@ def build_category_cards(
         min_val = min(float(recent.min()), score) if not recent.empty else score
         max_val = max(float(recent.max()), score) if not recent.empty else score
 
-        # Daily change
-        if len(history) >= 2:
-            delta = round(float(history.iloc[-1] - history.iloc[-2]), 1)
+        # Daily change from the last two real observations
+        valid_history = history.dropna()
+        if len(valid_history) >= 2:
+            delta = round(float(valid_history.iloc[-1] - valid_history.iloc[-2]), 1)
         else:
             delta = 0.0
 
@@ -148,6 +166,27 @@ def build_category_cards(
         sparkline_color = delta_color  # Match sparkline to trend
 
         weight_pct = int(CATEGORY_WEIGHTS[cat] * 100)
+
+        # Visible flag when the score is an injected fallback, not a measurement
+        is_fallback = bool(meta.get("is_fallback"))
+        fallback_badge = (
+            html.Span(
+                "FALLBACK",
+                title="Provider failed — showing a neutral default, not a measured value",
+                style={
+                    "color": COLORS["orange"],
+                    "border": f"1px solid {COLORS['orange']}",
+                    "borderRadius": "3px",
+                    "padding": "0 4px",
+                    "fontSize": "9px",
+                    "fontWeight": "700",
+                    "marginRight": "6px",
+                    "letterSpacing": "0.5px",
+                },
+            )
+            if is_fallback
+            else None
+        )
 
         # Technical HUD Card
         card = html.Div(
@@ -170,7 +209,10 @@ def build_category_cards(
                                 "fontSize": "11px", "color": "#6b7280", "marginTop": "2px"
                             }) if raw_label else None
                         ]),
-                        html.Span(f"W:{weight_pct:02d}%", className="tech-weight"),
+                        html.Div([
+                            fallback_badge,
+                            html.Span(f"W:{weight_pct:02d}%", className="tech-weight"),
+                        ], style={"display": "flex", "alignItems": "center"}),
                     ],
                 ),
 

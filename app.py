@@ -319,6 +319,9 @@ def create_app() -> dash.Dash:
             fetch_status = _LAST_FETCH_STATUS
             fetch_error = _LAST_FETCH_ERROR
             fetch_duration = _LAST_FETCH_DURATION_SECONDS
+            fallback_categories = (
+                list(_DATA_CACHE.get("fallback_categories", [])) if _DATA_CACHE else []
+            )
 
         age_seconds = round((now_utc - last_update).total_seconds(), 1) if last_update else None
         try:
@@ -352,6 +355,7 @@ def create_app() -> dash.Dash:
             "last_fetch_status": fetch_status,
             "last_fetch_error": fetch_error,
             "last_fetch_duration_seconds": fetch_duration,
+            "fallback_categories": fallback_categories,
             "status_message": status_message,
             "update_interval_seconds": 300,
         }

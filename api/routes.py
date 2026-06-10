@@ -43,6 +43,10 @@ def get_latest_data():
         "timestamp": str(data.get("dates", [])[-1]) if data.get("dates") is not None and len(data.get("dates", [])) > 0 else None,
         "composite_index": round(compute_composite_index(current_scores), 1) if current_scores else None,
         "categories": current_scores,
+        # Degradation flags: categories listed here are serving a neutral
+        # fallback value (provider failure), not a measurement.
+        "degraded": bool(data.get("degraded", False)),
+        "fallback_categories": data.get("fallback_categories", []),
         "disruptions": data.get("disruptions", []),
         "map_markers": data.get("map_markers", []),
         "meta": {

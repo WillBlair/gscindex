@@ -128,20 +128,23 @@ def _score_window(series: pd.Series, lookback_days: int | None = None) -> pd.Ser
     return windowed if len(windowed) >= 2 else series
 
 
-def normalization_bounds(
+def inverse_percentile_value(
+    value: float,
     series: pd.Series,
     lookback_days: int | None = None,
-) -> tuple[float, float]:
-    """Min/max over the trailing lookback window (default: 2 years)."""
+) -> float:
+    """Score a single value by its percentile within the trailing window.
+
+    Lower raw value → higher score. Percentile rank (rather than min/max)
+    keeps a single outlier print from dominating the scale: the score
+    reflects where the value sits in the distribution, not its distance
+    from the most extreme observation.
+    """
     window = _score_window(series, lookback_days)
-    return float(window.min()), float(window.max())
-
-
-def inverse_normalize_value(value: float, min_val: float, max_val: float) -> float:
-    """Map a raw value to a 0–100 score (lower raw → higher score)."""
-    if max_val == min_val:
+    if window.empty:
         return 50.0
-    return float(max(0.0, min(100.0, 100 * (1 - (value - min_val) / (max_val - min_val)))))
+    pct = float((window <= value).mean())
+    return round(max(0.0, min(100.0, (1 - pct) * 100)), 1)
 
 
 def normalize_series_inverse(
@@ -150,8 +153,10 @@ def normalize_series_inverse(
 ) -> pd.Series:
     """Normalize a series where LOWER raw values = HIGHER health score.
 
-    Uses a trailing time window at each date (default 2 years) so COVID-era
-    spikes do not dominate the scale.
+    Each point is scored by its percentile rank within a trailing time
+    window (default 2 years). Percentile rank is robust to single outlier
+    observations, and the trailing window keeps COVID-era extremes from
+    pinning the scale years later.
 
     Parameters
     ----------
@@ -168,40 +173,9 @@ def normalize_series_inverse(
     if series.empty:
         return series
     days = lookback_days if lookback_days is not None else FRED_SCORE_LOOKBACK_DAYS
-    roll_min = series.rolling(f"{days}D", min_periods=30).min()
-    roll_max = series.rolling(f"{days}D", min_periods=30).max()
-    span = roll_max - roll_min
-    scores = (1 - (series - roll_min) / span) * 100
-    scores = scores.where(span > 0, 50.0)
-    return scores.round(1).clip(0.0, 100.0)
-
-
-def normalize_series_direct(
-    series: pd.Series,
-    lookback_days: int | None = None,
-) -> pd.Series:
-    """Normalize a series where HIGHER raw values = HIGHER health score.
-
-    Uses a trailing time window at each date (default 2 years).
-
-    Parameters
-    ----------
-    series : pd.Series
-        Raw FRED data with a DatetimeIndex.
-    lookback_days : int | None
-        Trailing window in days. Defaults to ``FRED_SCORE_LOOKBACK_DAYS``.
-
-    Returns
-    -------
-    pd.Series
-        Scores in [0, 100], same index as input.
-    """
-    if series.empty:
-        return series
-    days = lookback_days if lookback_days is not None else FRED_SCORE_LOOKBACK_DAYS
-    roll_min = series.rolling(f"{days}D", min_periods=30).min()
-    roll_max = series.rolling(f"{days}D", min_periods=30).max()
-    span = roll_max - roll_min
-    scores = ((series - roll_min) / span) * 100
-    scores = scores.where(span > 0, 50.0)
-    return scores.round(1).clip(0.0, 100.0)
+    # min_periods=12 (not 30) so monthly series like EPUTRADE still get a
+    # full year of observations inside a 2-year window. Daily series have
+    # hundreds of points in-window, so this floor only affects the first
+    # weeks of a series, which the 90-day display tail never reaches.
+    pct = series.rolling(f"{days}D", min_periods=12).rank(pct=True)
+    return ((1 - pct) * 100).round(1).clip(0.0, 100.0)

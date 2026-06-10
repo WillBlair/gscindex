@@ -1,8 +1,13 @@
 """
-Database Module for Newsletter Subscribers
-==========================================
-Handles connections to PostgreSQL (for production) or SQLite (for local fallback)
-to persist user emails.
+Database Module
+===============
+Handles connections to PostgreSQL (for production) or SQLite (for local fallback).
+
+Tables:
+    subscribers           — newsletter emails
+    daily_scores          — one composite score per calendar day
+    daily_category_scores — one score per category per calendar day
+                            (the real measurement history behind trend charts)
 """
 
 import os
@@ -13,11 +18,12 @@ from datetime import date, datetime
 logger = logging.getLogger(__name__)
 
 # In-memory cache to avoid hammering Neon on every page load / background cycle.
-# previous_score is fetched once per calendar day; daily_score is written once per day.
+# previous_score is fetched once per calendar day; daily scores are written at
+# most once per hour (upsert, so the stored row converges to the day's last value).
 _score_cache_lock = threading.Lock()
 _cached_previous_score: float | None = None
 _cached_previous_date: date | None = None       # The date we fetched it for
-_daily_score_written_date: date | None = None    # The date we last wrote a score
+_daily_scores_written_hour: datetime | None = None  # Hour of the last daily-score write
 
 # Path for local SQLite fallback (development only).
 SQLITE_PATH = os.path.join(os.path.dirname(__file__), "subscribers.db")
@@ -105,6 +111,14 @@ def init_db():
                         score REAL NOT NULL
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_category_scores (
+                        date DATE NOT NULL,
+                        category VARCHAR(64) NOT NULL,
+                        score REAL NOT NULL,
+                        PRIMARY KEY (date, category)
+                    )
+                """)
             elif db_type == "sqlite":
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS subscribers (
@@ -118,6 +132,14 @@ def init_db():
                     CREATE TABLE IF NOT EXISTS daily_scores (
                         date DATE PRIMARY KEY,
                         score REAL NOT NULL
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_category_scores (
+                        date DATE NOT NULL,
+                        category TEXT NOT NULL,
+                        score REAL NOT NULL,
+                        PRIMARY KEY (date, category)
                     )
                 """)
         logger.info("Database initialized (%s).", db_type)
@@ -206,18 +228,19 @@ def unsubscribe_user(email: str) -> bool:
     finally:
         conn.close()
 
-def record_daily_score(score: float) -> bool:
-    """Record today's score into the database.
+def record_daily_scores(composite: float, category_scores: dict[str, float]) -> bool:
+    """Upsert today's composite and per-category scores.
 
-    Only writes once per calendar day to avoid burning Neon compute on
-    the repeated upserts from the 5-minute background cycle.
+    Writes at most once per hour (the 5-minute background cycle would
+    otherwise burn Neon compute). Upserts mean the stored row converges
+    to the day's last reading rather than freezing the first one.
     """
-    global _daily_score_written_date
+    global _daily_scores_written_hour
 
-    today = date.today()
+    now_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
     with _score_cache_lock:
-        if _daily_score_written_date == today:
-            return True  # Already persisted today
+        if _daily_scores_written_hour == now_hour:
+            return True  # Already persisted this hour
 
     conn = get_connection()
     if not conn:
@@ -233,20 +256,75 @@ def record_daily_score(score: float) -> bool:
                     VALUES (CURRENT_DATE, %s)
                     ON CONFLICT (date) DO UPDATE
                     SET score = EXCLUDED.score
-                """, (score,))
+                """, (composite,))
+                for category, score in category_scores.items():
+                    cursor.execute("""
+                        INSERT INTO daily_category_scores (date, category, score)
+                        VALUES (CURRENT_DATE, %s, %s)
+                        ON CONFLICT (date, category) DO UPDATE
+                        SET score = EXCLUDED.score
+                    """, (category, float(score)))
             elif db_type == "sqlite":
                 cursor.execute("""
                     INSERT INTO daily_scores (date, score)
                     VALUES (DATE('now'), ?)
                     ON CONFLICT(date) DO UPDATE
                     SET score = excluded.score
-                """, (score,))
+                """, (composite,))
+                for category, score in category_scores.items():
+                    cursor.execute("""
+                        INSERT INTO daily_category_scores (date, category, score)
+                        VALUES (DATE('now'), ?, ?)
+                        ON CONFLICT(date, category) DO UPDATE
+                        SET score = excluded.score
+                    """, (category, float(score)))
         with _score_cache_lock:
-            _daily_score_written_date = today
+            _daily_scores_written_hour = now_hour
         return True
     except Exception as e:
-        logger.error(f"Failed to record daily score: {e}")
+        logger.error(f"Failed to record daily scores: {e}")
         return False
+    finally:
+        conn.close()
+
+
+def get_category_score_history(category: str, days: int):
+    """Return stored daily scores for one category as a pd.Series.
+
+    The series only covers days that were actually measured — it may be
+    shorter than ``days`` (or empty) while history is still accumulating.
+    Charts render the gap honestly instead of backfilling synthetic data.
+    """
+    import pandas as pd
+
+    conn = get_connection()
+    if not conn:
+        return pd.Series(dtype=float, name=category)
+
+    db_type = get_db_type()
+    try:
+        cursor = conn.cursor()
+        if db_type == "postgres":
+            cursor.execute("""
+                SELECT date, score FROM daily_category_scores
+                WHERE category = %s AND date >= CURRENT_DATE - %s
+                ORDER BY date ASC
+            """, (category, days))
+        elif db_type == "sqlite":
+            cursor.execute("""
+                SELECT date, score FROM daily_category_scores
+                WHERE category = ? AND date >= DATE('now', ?)
+                ORDER BY date ASC
+            """, (category, f"-{days} days"))
+
+        rows = cursor.fetchall()
+        if not rows:
+            return pd.Series(dtype=float, name=category)
+        index = pd.DatetimeIndex([pd.Timestamp(r[0]) for r in rows])
+        return pd.Series([float(r[1]) for r in rows], index=index, name=category)
+    except Exception as e:
+        logger.error(f"Failed to fetch category score history for {category}: {e}")
+        return pd.Series(dtype=float, name=category)
     finally:
         conn.close()
 

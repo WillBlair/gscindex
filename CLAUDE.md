@@ -9,8 +9,8 @@ Real-time supply chain health dashboard built with Python/Dash. Aggregates data 
 - **Framework:** Dash 2.14+ (wraps Flask), Dash Bootstrap Components
 - **Visualizations:** Plotly
 - **Data:** Pandas, NumPy
-- **Production server:** Gunicorn (1 worker, 4 gthreads)
-- **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers only
+- **Production server:** Gunicorn (1 worker, 8 gthreads)
+- **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers + daily score history
 - **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Google Generative AI
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes, 1-hour default TTL
@@ -28,11 +28,11 @@ gunicorn app:server -c gunicorn.conf.py          # Prod
 ## Environment Variables
 
 ```bash
-FRED_API_KEY        # Required — powers 5 of 6 categories
+FRED_API_KEY        # Required — energy, tariffs, trucking scoring + WEI context
 NEWSAPI_KEY         # Required — geopolitical scoring + alerts
 DATABASE_URL        # PostgreSQL (omit for SQLite fallback)
 ADMIN_TOKEN         # Protects /api/v1/newsletter-data
-GEMINI_API_KEY      # Optional — AI briefing + score validation
+GEMINI_API_KEY      # Optional — AI briefing + news analysis
 PORT                # Server port (default 10000)
 ```
 
@@ -49,11 +49,11 @@ data/
   providers/
     base.py               # Abstract BaseProvider interface
     weather.py            # Open-Meteo: 14 shipping hubs, linear deductions
-    supply_chain.py       # NY Fed WEI via FRED
-    energy.py             # WTI crude (yfinance) normalized against FRED 5yr range
-    tariffs.py            # Policy Uncertainty Index via FRED
-    trucking.py           # Diesel PPI via FRED
-    geopolitical.py       # NewsAPI + VADER, three-tier fallback
+    supply_chain.py       # NY Fed GSCPI (monthly); WEI fetched for context only
+    energy.py             # WTI crude (yfinance), percentile vs trailing 2yr FRED range
+    tariffs.py            # Trade Policy Uncertainty (EPUTRADE, monthly) via FRED
+    trucking.py           # DOE weekly diesel + live HO=F nowcast for today
+    geopolitical.py       # RSS/NewsAPI + VADER/Gemini severity, three-tier fallback
     fred_client.py        # Shared FRED API wrapper
   fallback_snapshot_safe.json  # Committed cold-start fallback (only cache file in git)
 components/
@@ -156,8 +156,6 @@ composite = sum(weights[cat] * scores[cat] for cat in weights)
 return float(np.clip(composite, 0.0, 100.0))
 ```
 
-Also provides `compute_composite_series()` for time-series variant used in sparklines.
-
 ---
 
 ## Provider Contract
@@ -203,22 +201,28 @@ return max(0.0, min(100.0, score))
 # Max total deduction: 30+30+25+15 = 100
 ```
 
-**Geopolitical** — Three-tier fallback, negative-only scoring:
+**Geopolitical** — Three-tier fallback, negative-only, volume-invariant scoring:
 ```
 Tier 1: Cached Gemini AI analysis (4h cache)
 Tier 2: Live RSS + VADER sentiment (2–3 seconds)
 Tier 3: Neutral baseline 85.0
 
-Score = 100.0 + sum(negative_severity_scores)  # Only negative news reduces score
+Score = 100 + sum(10 most severe negative severities)   # dedup by title,
+# total deduction floored at -60. Only negative news reduces the score.
 ```
+History comes from `daily_category_scores` in the database — real stored
+measurements only, no proxy series.
 
-**Energy** — yfinance real-time price normalized against FRED 5-year range (inverse: lower price = higher score)
+**Energy / Trucking** — cost-pressure gauges (NOT demand gauges): inverse
+percentile of price within the trailing 2-year window. A price collapse from
+demand destruction reads as low cost pressure; demand health is not measured.
 
-**FRED-based providers** (supply_chain, tariffs, trucking) — use shared `fred_client.py` and `normalize_series_inverse()`:
+**FRED-based providers** (tariffs, trucking) — use shared `fred_client.py` and `normalize_series_inverse()`:
 ```python
 def normalize_series_inverse(series):
-    """Lower raw value → Higher score. Returns 0–100 Series."""
-    return ((1 - (series - min) / (max - min)) * 100).round(1)
+    """Lower raw value → Higher score (0–100), rolling percentile rank."""
+    pct = series.rolling(f"{days}D", min_periods=12).rank(pct=True)
+    return ((1 - pct) * 100).round(1).clip(0.0, 100.0)
 ```
 
 ### Error Handling
@@ -230,7 +234,12 @@ try:
 except Exception as exc:
     logger.error("Provider %s failed: %s", cat, exc)
     score = 50.0  # Neutral fallback
+    metadata = _fallback_metadata(str(exc))  # is_fallback=True, full key shape
 ```
+
+Fallback categories are flagged: `metadata["is_fallback"]`, snapshot keys
+`degraded` / `fallback_categories`, a card badge, `/api/v1/latest`, and
+`/health`. Fallback scores are never written to the daily score history.
 
 ---
 
@@ -278,21 +287,22 @@ ThreadPoolExecutor(max_workers=3)
 ```python
 dates = pd.date_range(end=today, periods=HISTORY_DAYS, freq="D")
 aligned = hist_series.reindex(dates, method="ffill")
-aligned = aligned.fillna(current_score)
 aligned.iloc[-1] = current_score  # Force last point = today's live score
 ```
 
 This prevents sparklines from showing yesterday's stale value as today.
+Dates BEFORE the first real observation stay NaN — never backfill them with
+the current score; charts must render unmeasured history as a gap.
 
 ### Map Markers
 
-55% local weather score + 45% regional macro score per port. 37 ports total with lat/lon, score, description, region-specific macro weights, structural vulnerability, and news penalty. Generated in `_derive_map_markers()`.
+40% local weather score + 60% regional macro score per port. 37 ports total with lat/lon, score, description, region-specific macro weights, structural vulnerability, and news penalty. Generated in `_derive_map_markers()`.
 
 ### Post-Processing
 
 - Fresh news score overwrites geopolitical history's last point
-- AI validation via Gemini (optional, stored but not applied)
 - Disruptions generated from any category scoring < 70
+- Measured (non-fallback) daily scores persisted via `record_daily_scores()`
 
 ---
 
@@ -314,7 +324,8 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
     "disruptions": list[dict],                       # event, region, impact_score, categories
     "provider_errors": dict[str, str | None],        # None = OK, str = error message
     "market_data": dict,                             # Crude Oil, Gas, Copper, Gold, VIX: price, prev, change_pct
-    "ai_validation": dict,                           # score, reasoning, adjustment
+    "degraded": bool,                                # True if any category is serving a fallback
+    "fallback_categories": list[str],                # categories with is_fallback metadata
 }
 ```
 
@@ -363,7 +374,7 @@ Health returns HTTP 200 for healthy/warming_up, HTTP 503 for degraded (data > 30
 
 Lazy dual-backend: resolves PostgreSQL vs SQLite at connection time, not import time. This lets `dotenv` load environment variables first.
 
-Tables: `subscribers` (email, subscribed_at, is_active) and `daily_scores` (date, score).
+Tables: `subscribers` (email, subscribed_at, is_active), `daily_scores` (date, score), and `daily_category_scores` (date, category, score — the real measurement history behind trend charts; written hourly via `record_daily_scores()`, fallback values excluded).
 
 ---
 
@@ -423,6 +434,8 @@ All tunable values live in `config.py`. Never put magic numbers in provider or c
 - **Not bumping cache key version** — old schema data will be deserialized into new code. Bump the version suffix when changing what's cached.
 - **Geopolitical score direction** — only negative news reduces the score (from base 100). Don't add positive sentiment boosts.
 - **Provider return type** — must return `tuple[float, dict]`, not bare `float`. The aggregator handles both for legacy reasons but new providers should always use the tuple.
+- **Never fabricate history** — `fetch_history()` must return only real measurements (stored daily scores or the actual source series). No proxy series level-shifted to match the current score, no backfilling leading NaNs with today's value. Short series render as gaps; that is correct.
+- **Don't put WEI back in the supply chain score** — WEI is a GDP-growth nowcast; high growth coincides with supply chain stress (2021), so it has no defensible sign in a linear health blend. Context only.
 
 ## Known Inconsistencies
 

@@ -24,7 +24,7 @@ GEMINI_CACHE_TTL_SECONDS: int = int(os.environ.get("GEMINI_CACHE_TTL_SECONDS", "
 NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
 
 # Shared disk cache key for RSS/Gemini news payload (alerts, briefing, report).
-NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v15"
+NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v16"
 
 # FRED inverse/direct scoring uses a trailing window (not full 5yr history).
 # Avoids COVID-era spikes from pinning "normal" prices in the middle of the scale.
@@ -47,10 +47,6 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "geopolitical":        0.20,
 }
 
-# Supply chain category: blend high-frequency WEI with NY Fed GSCPI (must sum to 1.0).
-SUPPLY_CHAIN_WEI_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_WEI_WEIGHT", "0.6"))
-SUPPLY_CHAIN_GSCPI_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_GSCPI_WEIGHT", "0.4"))
-
 # Fallback scores when a provider fails — visible and tunable in one place.
 DEFAULT_FALLBACK_SCORES: dict[str, float] = {
     "weather":      75.0,   # Conservative — assumes minor disruptions
@@ -65,7 +61,6 @@ CATEGORY_LABELS: dict[str, str] = {
     "tariffs":             "Trade & Tariffs",
     "trucking":            "Inland Freight",
     "geopolitical":        "Geopolitical Risk",
-    "chokepoint":          "Critical Chokepoint",
 }
 
 # ---------------------------------------------------------------------------
@@ -93,29 +88,6 @@ HISTORY_DAYS = 90            # how many days of history to show in charts
 REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 
 # ---------------------------------------------------------------------------
-# Regions Tracked on the Risk Heatmap
-# ---------------------------------------------------------------------------
-
-REGIONS: list[str] = [
-    "North America",
-    "Central America",
-    "South America",
-    "Europe",
-    "Eastern Europe",
-    "East Asia",
-    "Southeast Asia",
-    "South Asia",
-    "Middle East",
-    "Sub-Saharan Africa",
-    "North Africa",
-    "Oceania",
-]
-
-# ---------------------------------------------------------------------------
-# Color Palette (consistent across all charts)
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # Per-Category Colors (used in the multi-line trend chart)
 # ---------------------------------------------------------------------------
 
@@ -126,7 +98,6 @@ CATEGORY_COLORS: dict[str, str] = {
     "tariffs":             "#ef4444",   # red
     "trucking":            "#06b6d4",   # cyan
     "geopolitical":        "#f97316",   # orange
-    "chokepoint":          "#d946ef",   # magenta
 }
 
 # ---------------------------------------------------------------------------

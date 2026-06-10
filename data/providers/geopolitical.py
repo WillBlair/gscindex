@@ -12,17 +12,21 @@ positive).
 
 Score Logic
 -----------
-1. Fetch 30 recent supply chain articles from NewsAPI
-2. Run VADER on each article's title + description
+1. Fetch recent supply chain articles (RSS primary, NewsAPI fallback)
+2. Score each article's severity (Gemini analysis when available,
+   VADER compound × 6 as the deterministic fallback)
 3. Classify each article into a supply chain category via keywords
-4. Compute geopolitical score: start at 100, deduct based on VADER
-   negativity of each article (only negative articles reduce the score;
-   positive news does not inflate it — 100 means "no risk detected")
-5. Return categorized alerts for the dashboard feed
+4. Compute the score: deduplicate articles by title, take the 10 most
+   severe negative items, and deduct their summed severity from 100
+   (floored at -60 total). Positive news never inflates the score;
+   100 means "no risk detected".
 
-The score starts at 85 (not 100) because there's ALWAYS some negative
-supply chain news — a score of 100 would mean "no news at all" which
-isn't realistic or useful.
+Deduplication and the top-N cut keep the score volume-invariant: thirty
+mildly negative wire stories cannot outweigh one severe event, and the
+score does not swing with how many items the feeds happen to return.
+
+History comes from the daily_category_scores table — real stored
+measurements only. No proxy series, no synthetic backfill.
 """
 
 from datetime import datetime, timedelta
@@ -132,6 +136,35 @@ def _score_to_severity(score: float) -> str:
     return "low"
 
 
+# Volume-invariance parameters for the risk score: only the N most severe
+# unique articles count, and the total deduction is floored.
+_RISK_TOP_N = 10
+_RISK_FLOOR = -60.0
+
+
+def _risk_score_from_alerts(alerts: list[dict]) -> float:
+    """Compute the geopolitical risk score from a list of alerts.
+
+    Deduplicates by normalized title, keeps only the ``_RISK_TOP_N`` most
+    severe negative items, floors the total deduction at ``_RISK_FLOOR``,
+    and subtracts from 100. Positive sentiment never adds to the score.
+    """
+    seen: set[str] = set()
+    negatives: list[float] = []
+    for alert in alerts:
+        key = " ".join(str(alert.get("title", "")).lower().split())[:80]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        sentiment = float(alert.get("sentiment", 0.0))
+        if sentiment < 0:
+            negatives.append(sentiment)
+
+    worst = sorted(negatives)[:_RISK_TOP_N]
+    deduction = max(_RISK_FLOOR, sum(worst))
+    return round(max(0.0, min(100.0, 100.0 + deduction)), 1)
+
+
 def _build_fallback_briefing(alerts: list[dict]) -> str:
     """Build a deterministic 3-bullet briefing when AI output is unavailable."""
     if not alerts:
@@ -161,10 +194,9 @@ def _build_fallback_briefing(alerts: list[dict]) -> str:
     return "\n".join(bullets[:3])
 
 
-def _build_vader_alerts(candidates: list[dict]) -> tuple[list[dict], float]:
+def _build_vader_alerts(candidates: list[dict]) -> list[dict]:
     """Generate alerts deterministically from RSS/NewsAPI using VADER fallback."""
     alerts: list[dict] = []
-    severity_sum = 0.0
 
     for candidate in candidates:
         title = (candidate.get("title") or "").strip()
@@ -180,8 +212,6 @@ def _build_vader_alerts(candidates: list[dict]) -> tuple[list[dict], float]:
         compound = float(_VADER.polarity_scores(combined).get("compound", 0.0))
         # Scale VADER [-1, +1] into the existing severity banding used elsewhere.
         severity_score = round(compound * 6.0, 2)
-        if severity_score < 0:
-            severity_sum += severity_score
 
         alerts.append(
             {
@@ -198,7 +228,7 @@ def _build_vader_alerts(candidates: list[dict]) -> tuple[list[dict], float]:
 
     # Most severe first (more negative sentiment = higher risk)
     alerts.sort(key=lambda a: (float(a.get("sentiment", 0.0)), str(a.get("timestamp", ""))))
-    return alerts, severity_sum
+    return alerts
 
 
 def _refresh_cached_news_from_rss(cached: dict) -> dict | None:
@@ -219,12 +249,12 @@ def _refresh_cached_news_from_rss(cached: dict) -> dict | None:
         }
         for art in rss_articles
     ]
-    alerts, severity_sum = _build_vader_alerts(candidates[:30])
+    alerts = _build_vader_alerts(candidates[:30])
     if not alerts:
         return None
 
     refreshed = dict(cached)
-    refreshed["score"] = round(max(0.0, min(100.0, 100.0 + severity_sum)), 1)
+    refreshed["score"] = _risk_score_from_alerts(alerts)
     refreshed["alerts"] = alerts
     if not (refreshed.get("briefing") or "").strip():
         refreshed["briefing"] = _build_fallback_briefing(alerts)
@@ -369,11 +399,8 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     full_report_md = generate_full_report(candidates[:50])
     
     alerts = []
-    severity_sum = 0.0
     briefing_text = ai_briefing.strip() if isinstance(ai_briefing, str) else ""
-    
-    # ... (Rest of processing)
-    
+
     if ai_results:
         logger.info(f"AI successfully analyzed {len(ai_results)} articles")
         for cid, analysis in ai_results.items():
@@ -381,8 +408,6 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
                 continue
                 
             severity = analysis.get("severity_score", 0.0)
-            if severity < 0:
-                severity_sum += severity
             
             # Find original
             original = next((c for c in ai_candidates if c["id"] == cid), None)
@@ -406,7 +431,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
             "Gemini returned no usable alerts; using deterministic VADER fallback for %d candidates.",
             len(candidates),
         )
-        alerts, severity_sum = _build_vader_alerts(candidates[:30])
+        alerts = _build_vader_alerts(candidates[:30])
 
     # Ensure briefing is always populated (AI first, deterministic fallback second)
     if not briefing_text:
@@ -427,14 +452,13 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
             "Track updates over the next 24-48 hours for escalation in weather and geopolitical chokepoints."
         )
 
-    # 4. Calculate Final Score
-    final_score = 100.0 + severity_sum
-    final_score = max(0.0, min(100.0, final_score))
+    # 4. Calculate Final Score (deduplicated, top-N, floored — volume-invariant)
+    final_score = _risk_score_from_alerts(alerts)
 
     alerts.sort(key=lambda a: (a.get("sentiment", 0.0), a.get("timestamp", "")), reverse=False)
 
     result = {
-        "score": round(final_score, 1),
+        "score": final_score,
         "alerts": alerts,
         "briefing": briefing_text,
         "full_report": full_report_md
@@ -489,17 +513,11 @@ class GeopoliticalProvider(BaseProvider):
                     }
                     for art in rss_articles
                 ]
-                alerts, _ = _build_vader_alerts(candidates)
-                # Only count negative severity (positive news doesn't reduce risk)
-                neg_only = sum(
-                    float(a.get("sentiment", 0))
-                    for a in alerts
-                    if float(a.get("sentiment", 0)) < 0
-                )
-                score = max(0.0, min(100.0, 100.0 + neg_only))
+                alerts = _build_vader_alerts(candidates)
+                score = _risk_score_from_alerts(alerts)
                 high_sev = sum(1 for a in alerts if a.get("severity") == "high")
                 med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
-                return round(score, 1), {
+                return score, {
                     "source": "RSS + VADER (live fallback)",
                     "raw_value": f"{len(alerts)} articles",
                     "raw_label": "Analyzed News Volume",
@@ -508,7 +526,8 @@ class GeopoliticalProvider(BaseProvider):
                         f"and {med_sev} medium-severity risk events."
                     ),
                     "calculation": (
-                        "Score = 100 - (sum of negative VADER severity scores). "
+                        "Score = 100 + sum of the 10 most severe negative VADER severities "
+                        "(deduplicated by title, total deduction floored at -60). "
                         "Only negative news reduces the score; positive news does not inflate it."
                     ),
                     "updated": "Live (VADER)",
@@ -528,69 +547,12 @@ class GeopoliticalProvider(BaseProvider):
         }
 
     def fetch_history(self, days: int) -> pd.Series:
-        """Fetch historical VIX (Volatility Index) as a proxy for geopolitical risk.
+        """Return stored daily geopolitical scores from the database.
 
-        We align the VIX series so that the *last* point (today) matches our
-        actual NewsAPI-derived score. This ensures the trend looks real (it is)
-        but the absolute level reflects current supply chain news sentiment.
+        Only real measurements are returned — the series is short (or empty)
+        until enough daily scores have accumulated. Charts render the gap
+        rather than showing a proxy series dressed up as news history.
         """
-        from data.providers.fred_client import fetch_fred_series
-        
-        # 1. Get current score (anchor point)
-        # Handle tuple return from fetch_current
-        current_result = self.fetch_current()
-        if isinstance(current_result, tuple):
-            current_score = current_result[0]
-        else:
-            current_score = current_result
+        from data.database import get_category_score_history
 
-        try:
-            # We fetch a bit more history than needed to ensure we have enough data points
-            # after dropping NaNs and alignment.
-            vix = fetch_fred_series("VIXCLS", lookback_days=days + 60)
-            
-            # 2. Normalize (Inverted: Low VIX is good)
-            # We use a fixed "reasonable" range for VIX normalization to keep it consistent
-            # Low: 10 (very calm), High: 60 (crisis like 2008/2020)
-            # This is better than min/max because VIX can spike hugely.
-            # a VIX of 10 -> Score 100
-            # a VIX of 35 -> Score 50
-            # a VIX of 60 -> Score 0
-            # Formula: Score = 120 - 2 * VIX (clipped 0-100)
-            #   10 -> 100
-            #   35 -> 50
-            #   60 -> 0
-            vix_score = (120 - 2 * vix).clip(0, 100)
-            
-            # 3. Align to current score
-            # We want the shape of the VIX, but the level of our NewsAPI score.
-            if not vix_score.empty:
-                latest_vix = vix_score.iloc[-1]
-                delta = current_score - latest_vix
-                
-                # Apply delta to the whole series
-                adjusted_score = (vix_score + delta).clip(0, 100)
-                
-                # Resample to daily (VIX is trading days only) and fill gaps
-                dates = pd.date_range(
-                    end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-                    periods=days,
-                    freq="D",
-                )
-                aligned = adjusted_score.reindex(dates, method="ffill")
-                
-                # Force the last point to be exactly our current score (integrity check)
-                aligned.iloc[-1] = current_score
-                
-                return aligned.rename("geopolitical")
-
-        except Exception as e:
-            logger.warning("Failed to fetch VIX history: %s", e)
-
-        # Fallback: Flat line at current score
-        dates = pd.date_range(
-            end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-            periods=days,
-            freq="D",
-        )
-        return pd.Series(current_score, index=dates, name="geopolitical")
+        return get_category_score_history("geopolitical", days).rename("geopolitical")

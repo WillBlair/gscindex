@@ -32,7 +32,6 @@ from data.providers.trucking import TruckingProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.port_analyst import generate_port_summaries
-from data.ai_validator import validate_score
 from scoring import get_health_tier
 
 logger = logging.getLogger(__name__)
@@ -92,13 +91,20 @@ def _fetch_market_data() -> dict:
 
 
 def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Series:
-    """Create a flat series at a neutral value for categories that failed to load."""
+    """Series with only TODAY's point set; the rest is NaN.
+
+    A flat line at the fallback value would fabricate 90 days of history
+    that was never measured. Charts render the single point and leave the
+    rest of the window honestly empty.
+    """
     dates = pd.date_range(
         end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
         periods=days,
         freq="D",
     )
-    return pd.Series(value, index=dates, name=name)
+    series = pd.Series(float("nan"), index=dates, name=name)
+    series.iloc[-1] = value
+    return series
 
 
 def get_safe_fallback_data() -> dict:
@@ -128,6 +134,8 @@ def get_safe_fallback_data() -> dict:
         "provider_errors": {"System": "Using fallback data while background fetch initializes."},
         "category_metadata": {},
         "market_data": {},
+        "degraded": True,
+        "fallback_categories": sorted(CATEGORY_WEIGHTS),
     }
 
 
@@ -136,8 +144,7 @@ def get_safe_fallback_data() -> dict:
 # News penalty tables + helpers
 # ---------------------------------------------------------------------------
 
-_DIRECT_PENALTY:   dict[str, float] = {"high": 30, "medium": 15, "low": 5}
-_REGIONAL_PENALTY: dict[str, float] = {"high": 20, "medium": 10, "low": 3}
+_DIRECT_PENALTY: dict[str, float] = {"high": 30, "medium": 15, "low": 5}
 
 # ---------------------------------------------------------------------------
 # Regional risk profiles — per-port macro sensitivity
@@ -279,15 +286,18 @@ _PORT_REGION: dict[str, str] = {
 }
 
 
-def _sentiment_label(compound: float) -> str:
-    """Human-readable description of VADER compound sentiment."""
-    if compound <= -0.75:
-        return "Very negative"
-    if compound <= -0.5:
-        return "Strongly negative"
-    if compound <= -0.25:
-        return "Negative"
-    return "Slightly negative"
+def _severity_label(severity: float) -> str:
+    """Human-readable label for an alert severity score.
+
+    Alert ``sentiment`` values are on the severity scale (roughly -6..0,
+    VADER compound x 6 or Gemini severity_score) — NOT raw VADER compound.
+    Thresholds match ``_score_to_severity`` in the geopolitical provider.
+    """
+    if severity <= -4.0:
+        return "Severe"
+    if severity <= -1.5:
+        return "Significant"
+    return "Minor"
 
 
 def _wrap_text(text: str, max_chars: int = 40) -> str:
@@ -416,7 +426,7 @@ def _derive_map_markers(
             short_desc = description[:100] + "..." if len(description) > 100 else description
             wrapped_desc = _wrap_text(short_desc, max_chars=45) if short_desc else ""
             
-            label = _sentiment_label(sentiment)
+            label = _severity_label(sentiment)
 
             penalty = _DIRECT_PENALTY.get(severity, 2)
             raw_penalties.append(penalty)
@@ -427,12 +437,12 @@ def _derive_map_markers(
                 news_lines.append(
                     f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
                     f"<i>{wrapped_desc}</i><br>"
-                    f"   {label} ({sentiment:+.2f}) · Direct impact"
+                    f"   {label} severity ({sentiment:+.1f}) · Direct impact"
                 )
             else:
                 news_lines.append(
                     f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
-                    f"   {label} ({sentiment:+.2f}) · Direct impact"
+                    f"   {label} severity ({sentiment:+.1f}) · Direct impact"
                 )
 
         # Diminishing returns penalty calculation to prevent excessive stacking
@@ -516,6 +526,24 @@ def _derive_map_markers(
     return markers
 
 
+def _fallback_metadata(reason: str) -> dict:
+    """Full required-key metadata for a failed provider, flagged as fallback.
+
+    Keeps the detail modal renderable and lets the UI/API distinguish a
+    measured score from an injected neutral default.
+    """
+    return {
+        "source": "Unavailable (provider failed)",
+        "raw_value": "—",
+        "raw_label": "No data",
+        "description": f"Data fetch failed; showing a neutral fallback score. Error: {reason}",
+        "calculation": "Neutral fallback of 50.0 — not a measured value.",
+        "updated": "Unavailable",
+        "error": reason,
+        "is_fallback": True,
+    }
+
+
 def _fetch_provider_data(provider) -> tuple[str, float, pd.Series | None, dict, str | None]:
     """Helper to fetch data for a single provider safely."""
     cat = provider.category
@@ -540,15 +568,17 @@ def _fetch_provider_data(provider) -> tuple[str, float, pd.Series | None, dict, 
         # Guard against NaN/Inf from providers (e.g. division by zero in normalization).
         # NaN would propagate through the composite calculation and break the gauge.
         if not math.isfinite(current_score):
-            logger.warning("Provider %s returned non-finite score %.1f; using 50.0", cat, current_score)
+            logger.warning("Provider %s returned non-finite score; using neutral fallback", cat)
             current_score = 50.0
+            metadata["is_fallback"] = True
 
+        metadata.setdefault("is_fallback", False)
         logger.info("Loaded %s: %.1f", cat, current_score)
     except Exception as exc:
         logger.error("Provider %s failed (current): %s", cat, exc)
         error_msg = str(exc)
         current_score = 50.0
-        metadata = {"error": str(exc), "description": "Data fetch failed."}
+        metadata = _fallback_metadata(str(exc))
 
     try:
         # 2. Fetch history
@@ -638,19 +668,19 @@ def aggregate_data(status_callback=None) -> dict:
 
                     # Align history series
                     if hist_series is not None and not hist_series.empty:
-                        # Reindex handles filling missing dates with NaNs, then we ffill/bfill
+                        # Reindex fills gaps by ffill. Dates BEFORE the first real
+                        # observation stay NaN — backfilling them with today's
+                        # score would paint history that was never measured.
                         aligned = hist_series.reindex(dates, method="ffill")
-                        # Fill any remaining NaNs (e.g. at start) with current score
-                        aligned = aligned.fillna(score)
 
                         # CRITICAL FIX: Overwrite the last data point (today) with the LIVE score.
-                        # This ensures the sparking/delta calculation uses the real current value,
+                        # This ensures the sparkline/delta calculation uses the real current value,
                         # not yesterday's close (which ffill would do).
                         aligned.iloc[-1] = score
 
                         category_history[cat] = aligned
                     else:
-                        # Fallback if history fetch failed
+                        # Fallback if history fetch failed: today's point only
                         category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)
 
                 except Exception as e:
@@ -695,12 +725,16 @@ def aggregate_data(status_callback=None) -> dict:
     # -----------------------------------------------------------------------
     # 3. Post-Processing (Scoring & Markers)
     # -----------------------------------------------------------------------
-    # Ensure complete datasets (fill missing providers with neutral)
+    # Ensure complete datasets (fill missing providers with neutral, flagged)
     for p in _PROVIDERS:
         if p.category not in current_scores:
             current_scores[p.category] = 50.0
             category_history[p.category] = _make_fallback_series(HISTORY_DAYS, p.category, 50.0)
             provider_errors[p.category] = "Provider timed out"
+            meta = _fallback_metadata("Provider timed out")
+            meta["score"] = 50.0
+            meta["tier"] = get_health_tier(50.0)
+            category_metadata[p.category] = meta
 
     # Compute composite
     from scoring.engine import compute_composite_index
@@ -724,6 +758,7 @@ def aggregate_data(status_callback=None) -> dict:
                 "updated": "Live",
                 "score": round(float(news_score), 1),
                 "tier": get_health_tier(float(news_score)),
+                "is_fallback": False,
             }
         )
         category_metadata["geopolitical"] = geo_meta
@@ -733,20 +768,11 @@ def aggregate_data(status_callback=None) -> dict:
 
     composite = compute_composite_index(current_scores)
 
-    # -----------------------------------------------------------------------
-    # 4. AI Verification (New Layer)
-    # -----------------------------------------------------------------------
-    # Ask Gemini if this score makes sense
-    if status_callback: status_callback("Validating score with Gemini 3...")
-    ai_validation = validate_score(composite, current_scores, alerts)
-    
-    # Optional: Adjust the score based on AI feedback (weighted 80/20?)
-    # For now, we trust the math but Show the AI opinion.
-    # If we wanted to adjust:
-    # adjustment = ai_validation.get("adjustment", 0.0)
-    # composite += adjustment
-    # composite = max(0.0, min(100.0, composite))
-
+    # Degradation flags: which categories are serving a fallback value
+    # instead of a measurement. Exposed via the snapshot, API, and /health.
+    fallback_categories = sorted(
+        cat for cat, meta in category_metadata.items() if meta.get("is_fallback")
+    )
 
     # Map markers — requires WeatherProvider specifically
     # We need to find the WeatherProvider instance from our list
@@ -809,17 +835,24 @@ def aggregate_data(status_callback=None) -> dict:
         "provider_errors": provider_errors,
         "category_metadata": category_metadata,
         "market_data": market_data,
-        "ai_validation": ai_validation,
+        "degraded": bool(fallback_categories),
+        "fallback_categories": fallback_categories,
     }
 
     # Persist the full dashboard state to disk for instant startup
     from data.cache import set_cached_dashboard, _write_text_atomic
     from data.status import set_status
-    from data.database import record_daily_score
+    from data.database import record_daily_scores
     import json as _json
     from pathlib import Path as _Path
     try:
-        record_daily_score(composite)
+        # Only persist measured values — fallback scores must not pollute
+        # the real daily history that trend charts are built from.
+        measured_scores = {
+            cat: score for cat, score in current_scores.items()
+            if cat not in fallback_categories
+        }
+        record_daily_scores(composite, measured_scores)
         set_cached_dashboard(result)
         logger.info("Dashboard state persisted to disk (JSON/Safe).")
 
@@ -831,7 +864,6 @@ def aggregate_data(status_callback=None) -> dict:
             if _fallback_path.exists() else float("inf")
         )
         if _fallback_age > 7 * 86400:
-            from data.cache import set_cached_dashboard as _scd  # noqa: F811
             # Re-use the same safe serialisation logic that set_cached_dashboard uses
             import copy as _copy
             safe = _copy.deepcopy(result)

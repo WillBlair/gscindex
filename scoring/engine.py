@@ -14,7 +14,6 @@ and must sum to 1.0.
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 
 from config import CATEGORY_WEIGHTS, HEALTH_TIERS
 
@@ -64,30 +63,6 @@ def compute_composite_index(
         for cat in weights
     )
     return float(np.clip(composite, 0.0, 100.0))
-
-
-def compute_composite_series(
-    category_history: dict[str, pd.Series],
-    weights: dict[str, float] | None = None,
-) -> pd.Series:
-    """Compute composite index for each date across all categories.
-
-    Parameters
-    ----------
-    category_history : dict[str, pd.Series]
-        Mapping of category key → pandas Series indexed by date.
-    weights : dict[str, float] | None
-        Override weights. Defaults to ``CATEGORY_WEIGHTS`` from config.
-
-    Returns
-    -------
-    pd.Series
-        Composite index over time, indexed by date.
-    """
-    weights = weights or CATEGORY_WEIGHTS
-    df = pd.DataFrame(category_history)
-    composite = sum(df[cat] * w for cat, w in weights.items())
-    return composite.clip(0.0, 100.0)
 
 
 def get_health_tier(score: float) -> dict:

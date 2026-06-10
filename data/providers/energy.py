@@ -1,15 +1,19 @@
 """
 Energy & Fuel Provider
 =======================
-Uses FRED series ``DCOILWTICO`` (WTI Crude Oil Price, daily) to score
-the energy category.
+Scores energy COST PRESSURE on supply chains from the WTI crude oil price
+(live CL=F futures, with FRED ``DCOILWTICO`` as history and fallback).
 
 Score Logic
 -----------
-Lower oil prices = healthier supply chain. The raw price is normalized
-against its trailing 2-year historical range:
-    - At the 2-year LOW  → score = 100 (cheapest energy in that window)
-    - At the 2-year HIGH → score = 0   (most expensive in that window)
+The score is the inverse percentile of the current price within its
+trailing 2-year distribution:
+    - Cheapest end of the window  → score near 100 (low cost pressure)
+    - Most expensive end          → score near 0   (high cost pressure)
+
+This is explicitly a COST gauge, not a demand gauge: a price collapse
+driven by falling demand will read as low cost pressure even though the
+demand picture may be bad. Demand-side health is not measured here.
 """
 
 from __future__ import annotations
@@ -20,13 +24,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-from config import HISTORY_DAYS
+from config import FRED_SCORE_LOOKBACK_DAYS, HISTORY_DAYS
 from data.providers.base import BaseProvider
-from config import FRED_SCORE_LOOKBACK_DAYS
 from data.providers.fred_client import (
     fetch_fred_series,
-    inverse_normalize_value,
-    normalization_bounds,
+    inverse_percentile_value,
     normalize_series_inverse,
 )
 
@@ -64,10 +66,11 @@ class EnergyProvider(BaseProvider):
             price = float(raw.iloc[-1])
             change_str = ""
 
-        # 2. Normalize against trailing FRED window (2yr default, not full 5yr)
+        # 2. Score by percentile within the trailing FRED window (2yr default).
+        # Note: CL=F is the front-month future and DCOILWTICO is spot; the
+        # basis between them is small relative to the scoring window.
         fred_hist = fetch_fred_series(self._SERIES_ID)
-        min_val, max_val = normalization_bounds(fred_hist)
-        score = inverse_normalize_value(float(price), min_val, max_val)
+        score = inverse_percentile_value(float(price), fred_hist)
 
         return score, {
             "source": "Live Futures (CL=F)",
@@ -75,12 +78,13 @@ class EnergyProvider(BaseProvider):
             "raw_label": f"WTI Crude Oil{change_str}",
             "description": (
                 f"Crude oil is trading at ${price:.2f}/barrel{change_str}. "
-                "Real-time pricing from futures markets."
+                "Real-time pricing from futures markets. This score measures energy "
+                "cost pressure on supply chains, not demand-side health."
             ),
             "calculation": (
-                "Score = 100 - (Normalized Price). "
-                f"We baseline the LIVE price against the trailing {FRED_SCORE_LOOKBACK_DAYS}-day "
-                "FRED range, then invert (higher price = lower score)."
+                "Score = inverse percentile of the live price within the trailing "
+                f"{FRED_SCORE_LOOKBACK_DAYS}-day FRED price distribution. "
+                "Cheaper than most of the window = high score (low cost pressure)."
             ),
             "updated": datetime.now().strftime("%H:%M:%S Live")
         }

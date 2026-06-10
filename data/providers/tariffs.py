@@ -1,18 +1,22 @@
 """
 Trade & Tariffs Provider
 =========================
-Uses FRED series ``USEPUINDXD`` (US Economic Policy Uncertainty Index, daily)
-as a proxy for trade and tariff disruption risk.
+Uses FRED series ``EPUTRADE`` (Economic Policy Uncertainty: Categorical
+Index, Trade Policy) as the trade and tariff disruption signal. Unlike
+the general EPU index (which spikes on fiscal, monetary, and electoral
+news), this categorical index counts only trade-policy coverage.
 
 Score Logic
 -----------
-Higher policy uncertainty = worse for supply chains. Inverted normalization
-over a trailing 2-year window:
-    - At the window LOW  → score = 100 (stable policy environment)
-    - At the window HIGH → score = 0   (maximum uncertainty)
+Higher trade policy uncertainty = worse for supply chains. Score is the
+inverse percentile of the latest value within a trailing 2-year window:
+    - Calm end of the window      → score near 100
+    - Most uncertain end          → score near 0
 
-Source: https://fred.stlouisfed.org/series/USEPUINDXD
-Based on: Baker, Bloom, and Davis Economic Policy Uncertainty Index
+The series is monthly, so this category moves slowly by design.
+
+Source: https://fred.stlouisfed.org/series/EPUTRADE
+Based on: Baker, Bloom, and Davis categorical EPU data
 """
 
 from __future__ import annotations
@@ -28,10 +32,10 @@ from data.providers.fred_client import (
 
 
 class TariffsProvider(BaseProvider):
-    """Trade & Tariffs — derived from Economic Policy Uncertainty Index."""
+    """Trade & Tariffs — derived from the Trade Policy Uncertainty categorical index."""
 
     category = "tariffs"
-    _SERIES_ID = "USEPUINDXD"
+    _SERIES_ID = "EPUTRADE"
 
     def fetch_current(self) -> tuple[float, dict]:
         raw = fetch_fred_series(self._SERIES_ID)
@@ -40,18 +44,19 @@ class TariffsProvider(BaseProvider):
         val = float(raw.iloc[-1])
 
         return score, {
-            "source": "FRED Series USEPUINDXD",
+            "source": "FRED Series EPUTRADE",
             "raw_value": f"{val:.1f}",
-            "raw_label": "Policy Uncertainty Index",
+            "raw_label": "Trade Policy Uncertainty",
             "description": (
-                f"Economic Policy Uncertainty Index is at {val:.1f}. "
-                "Higher uncertainty often correlates with tariff volatility and trade barriers."
+                f"Trade Policy Uncertainty (categorical EPU) is at {val:.1f}. "
+                "This index counts newspaper coverage of trade policy uncertainty "
+                "specifically — tariffs, trade wars, import/export policy — rather "
+                "than general economic policy noise. Updated monthly."
             ),
             "calculation": (
-                "Score = 100 - (Normalized Uncertainty). "
-                "We track the Economic Policy Uncertainty Index. "
-                f"We normalize against the trailing {FRED_SCORE_LOOKBACK_DAYS}-day range. "
-                "Higher uncertainty = lower supply chain health score."
+                "Score = inverse percentile of the latest value within the trailing "
+                f"{FRED_SCORE_LOOKBACK_DAYS}-day range. Higher trade policy "
+                "uncertainty = lower score."
             ),
             "updated": str(raw.index[-1].date())
         }
@@ -59,4 +64,4 @@ class TariffsProvider(BaseProvider):
     def fetch_history(self, days: int = HISTORY_DAYS) -> pd.Series:
         raw = fetch_fred_series(self._SERIES_ID)
         scores = normalize_series_inverse(raw)
-        return scores.tail(days).rename("tariffs")
+        return scores.resample("D").ffill().tail(days).rename("tariffs")

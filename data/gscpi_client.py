@@ -22,8 +22,36 @@ _GSCPI_CSV_URL = (
     "https://www.newyorkfed.org/medialibrary/research/interactives/"
     "data/gscpi/gscpi_interactive_data.csv"
 )
-_CACHE_KEY = "nyfed_gscpi_monthly_v1"
+_CACHE_KEY = "nyfed_gscpi_monthly_v2"
 _CACHE_TTL = 6 * 3600  # 6 hours — index updates monthly
+
+# Excel serial day 0 (the NY Fed export switched column headers from
+# "Jan-22" style strings to Excel serial dates like 44562 = 2022-01-01).
+_EXCEL_EPOCH = pd.Timestamp("1899-12-30")
+
+
+def _parse_month_column(col: str) -> pd.Timestamp | None:
+    """Parse a vintage column header to a month-end Timestamp.
+
+    Supports both header formats the NY Fed has used: "%b-%y" strings
+    ("Jan-22") and Excel serial dates ("44562"). Returns None for headers
+    that are neither (parsing must not crash on format drift).
+    """
+    text = str(col).strip()
+    parsed: pd.Timestamp | None = None
+    try:
+        parsed = pd.to_datetime(text, format="%b-%y")
+    except ValueError:
+        try:
+            parsed = _EXCEL_EPOCH + pd.Timedelta(days=float(text))
+        except ValueError:
+            return None
+    month_end = (parsed + pd.offsets.MonthEnd(0)).normalize()
+    # Sanity bounds: GSCPI vintages start in the 2020s and can't be future-dated
+    # beyond next year. Anything else is a mis-parse.
+    if not (pd.Timestamp("1995-01-01") <= month_end <= pd.Timestamp.now() + pd.DateOffset(years=1)):
+        return None
+    return month_end
 
 
 def fetch_gscpi_series() -> pd.Series:
@@ -47,11 +75,14 @@ def fetch_gscpi_series() -> pd.Series:
 
     by_month: dict[pd.Timestamp, float] = {}
     for col in month_cols:
+        month_end = _parse_month_column(col)
+        if month_end is None:
+            logger.warning("GSCPI: skipping unparseable vintage column %r", col)
+            continue
         numeric = pd.to_numeric(df[col], errors="coerce")
         valid = numeric.dropna()
         if valid.empty:
             continue
-        month_end = pd.to_datetime(col, format="%b-%y") + pd.offsets.MonthEnd(0)
         by_month[month_end] = float(valid.iloc[-1])
 
     if not by_month:
