@@ -59,9 +59,9 @@ _CATEGORY_KEYWORDS: dict[str, set[str]] = {
     "supply_chain":  {"port", "congestion", "container terminal", "vessel queue", "berth", "dock worker", "longshoreman",
                       "dwell time", "inventory", "shortage", "surplus", "consumer demand", "retail sales",
                       "stockpile", "backlog", "pmi"},
-    "energy":        {"oil", "crude", "gas price", "fuel", "opec", "petroleum", "brent", "lng", "refinery", "pipeline", "energy cost"},
+    "energy":        {"oil", "crude", "gas price", "fuel", "opec", "petroleum", "brent", "lng", "refinery", "pipeline", "energy cost", "diesel"},
     "tariffs":       {"tariff", "trade war", "duty", "import ban", "export ban", "sanctions", "trade deal", "cbam", "trade policy", "customs"},
-    "trucking":      {"freight rate", "container rate", "shipping cost", "blank sailing", "feu", "teu", "carrier", "maersk", "hapag", "cosco"},
+    "freight":       {"freight rate", "container rate", "shipping cost", "blank sailing", "feu", "teu", "carrier", "maersk", "hapag", "cosco"},
     "geopolitical":  {"war", "conflict", "missile", "blockade", "military", "coup", "protest", "unrest", "territory", "houthi", "red sea",
                       "suez canal", "panama canal", "malacca strait", "strait of hormuz", "bab el-mandeb", "bosporus", "dardanelles", "cape of good hope"},
 }

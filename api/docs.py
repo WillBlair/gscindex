@@ -449,11 +449,11 @@ flowchart LR
         </div>
     </div>
     <div class="p-card">
-        <h3>Energy Costs <span class="card-badge">20%</span></h3>
+        <h3>Energy &amp; Fuel <span class="card-badge">20%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Live WTI Crude Oil futures (<span class="code-inline">CL=F</span>) via Yahoo Finance.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Baseline:</strong> FRED series <span class="code-inline">DCOILWTICO</span> provides the 5-year historical range.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse normalization — <span class="highlight-amber">lower price = higher score</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Live WTI Crude futures (<span class="code-inline">CL=F</span>) plus DOE retail diesel (<span class="code-inline">GASDESW</span>) via FRED.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Baseline:</strong> Each leg scored against its trailing 2-year FRED distribution.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Average of the two inverse percentiles — <span class="highlight-amber">cheaper fuel = higher score</span>. Crude and diesel are blended into one gauge to avoid double-weighting the oil complex.</div></div>
         </div>
     </div>
     <div class="p-card">
@@ -473,14 +473,6 @@ flowchart LR
         </div>
     </div>
     <div class="p-card">
-        <h3>Inland Freight <span class="card-badge">15%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Heating Oil futures (<span class="code-inline">HO=F</span>) + DOE Weekly Diesel (<span class="code-inline">GASDESW</span>).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Method:</strong> Synthesizes a real-time estimated diesel price by adding the retail distribution spread to live HO futures.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse normalized — <span class="highlight-amber">cheaper diesel = healthier trucking</span>.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
         <h3>Port Weather <span class="card-badge">10%</span></h3>
         <div class="step-list">
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Open-Meteo API (free, no key required).</div></div>
@@ -497,11 +489,10 @@ flowchart LR
 | Category | Weight | Primary Source | Normalization |
 |:---|:---|:---|:---|
 | **Supply Chain Activity** | 20% | NY Fed WEI (FRED) | Fixed calibration (WEI × 12.5 + 50) |
-| **Energy Costs** | 20% | WTI Crude (CL=F) | Inverse against 5-year FRED range |
+| **Energy & Fuel** | 20% | WTI Crude (CL=F) + DOE Diesel (GASDESW) | Average inverse percentile vs trailing 2-year range |
 | **Geopolitical Risk** | 20% | RSS + Gemini AI | Severity deductions from baseline |
-| **Trade & Tariffs** | 15% | EPU Index (FRED) | Inverse against 5-year range |
-| **Inland Freight** | 15% | HO=F + GASDESW | Inverse estimated daily diesel |
-| **Port Weather** | 10% | Open-Meteo (14 hubs) | Continuous weather deductions |
+| **Trade & Tariffs** | 15% | EPU Index (FRED) | Inverse against trailing range |
+| **Port Weather** | 10% | Open-Meteo | Continuous weather deductions |
 
 <div class="math-block">
     <code>

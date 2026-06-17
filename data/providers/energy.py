@@ -1,25 +1,33 @@
 """
 Energy & Fuel Provider
 =======================
-Scores energy COST PRESSURE on supply chains from the WTI crude oil price
-(live CL=F futures, with FRED ``DCOILWTICO`` as history and fallback).
+Scores combined energy + inland-fuel COST PRESSURE on supply chains from two
+oil-complex prices, blended into a single category:
+
+    1. WTI crude oil  — live ``CL=F`` futures, FRED ``DCOILWTICO`` for history.
+    2. Retail diesel  — DOE weekly via FRED ``GASDESW`` (inland freight fuel).
 
 Score Logic
 -----------
-The score is the inverse percentile of the current price within its
-trailing 2-year distribution:
-    - Cheapest end of the window  → score near 100 (low cost pressure)
-    - Most expensive end          → score near 0   (high cost pressure)
+Each leg is the inverse percentile of the current price within its trailing
+2-year distribution (cheapest end → ~100, most expensive → ~0). The category
+score is the average of the two legs.
 
-This is explicitly a COST gauge, not a demand gauge: a price collapse
-driven by falling demand will read as low cost pressure even though the
-demand picture may be bad. Demand-side health is not measured here.
+Crude and diesel are the same petroleum complex (diesel is refined crude, the
+two correlate north of 0.9), so they are deliberately blended into ONE gauge
+rather than scored as two independent categories — that avoids placing an
+oversized effective weight on a single price signal.
+
+This is explicitly a COST gauge, not a demand gauge: a price collapse driven
+by falling demand reads as low cost pressure even though the demand picture
+may be bad. Demand-side health is not measured here.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
+
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -34,62 +42,74 @@ from data.providers.fred_client import (
 
 
 class EnergyProvider(BaseProvider):
-    """Energy & Fuel — derived from WTI crude oil price."""
+    """Energy & Fuel — blend of WTI crude and retail diesel cost pressure."""
 
     category = "energy"
-    _SERIES_ID = "DCOILWTICO"
+    _CRUDE_SERIES = "DCOILWTICO"
+    _DIESEL_SERIES = "GASDESW"
 
-    def fetch_current(self) -> tuple[float, dict]:
+    def _live_crude_price(self) -> tuple[float, str]:
+        """Return the latest WTI price and a change string (live, FRED fallback)."""
         import yfinance as yf
-        
-        # 1. Fetch Live Data from Yahoo Finance
-        ticker = yf.Ticker("CL=F")
+
         try:
-            # Try to get the absolute latest real-time price
+            ticker = yf.Ticker("CL=F")
             price = ticker.fast_info.get("last_price")
             if not price:
-                # Fallback to recent history if market is closed/fast_info empty
                 hist = ticker.history(period="1d")
                 price = float(hist["Close"].iloc[-1])
-            
-            # Get previous close for "Change" calculation
             prev_close = ticker.fast_info.get("previous_close")
             change_str = ""
             if prev_close:
-                pct_change = ((price - prev_close) / prev_close) * 100
-                change_str = f" ({pct_change:+.2f}%)"
+                pct = ((price - prev_close) / prev_close) * 100
+                change_str = f" ({pct:+.2f}%)"
+            return float(price), change_str
+        except Exception as exc:
+            logger.warning("yfinance crude failed, falling back to FRED: %s", exc)
+            return float(fetch_fred_series(self._CRUDE_SERIES).iloc[-1]), ""
 
-        except Exception as e:
-            # Fallback to FRED if Yahoo fails
-            logger.warning("yfinance failed, falling back to FRED: %s", e)
-            raw = fetch_fred_series(self._SERIES_ID)
-            price = float(raw.iloc[-1])
-            change_str = ""
+    def fetch_current(self) -> tuple[float, dict]:
+        # 1. Crude leg — live price scored against its trailing FRED distribution.
+        crude_hist = fetch_fred_series(self._CRUDE_SERIES)
+        crude_price, crude_change = self._live_crude_price()
+        crude_score = inverse_percentile_value(crude_price, crude_hist)
 
-        # 2. Score by percentile within the trailing FRED window (2yr default).
-        # Note: CL=F is the front-month future and DCOILWTICO is spot; the
-        # basis between them is small relative to the scoring window.
-        fred_hist = fetch_fred_series(self._SERIES_ID)
-        score = inverse_percentile_value(float(price), fred_hist)
+        # 2. Diesel leg — latest weekly DOE retail price scored against its own range.
+        diesel_hist = fetch_fred_series(self._DIESEL_SERIES)
+        diesel_price = float(diesel_hist.iloc[-1])
+        diesel_score = inverse_percentile_value(diesel_price, diesel_hist)
+
+        # 3. Blend: equal-weight average of the two oil-complex legs.
+        score = round((crude_score + diesel_score) / 2.0, 1)
 
         return score, {
-            "source": "Live Futures (CL=F)",
-            "raw_value": f"${price:.2f}",
-            "raw_label": f"WTI Crude Oil{change_str}",
+            "source": "WTI Crude (CL=F) + DOE Diesel (GASDESW)",
+            "raw_value": f"${crude_price:.0f} oil / ${diesel_price:.2f} diesel",
+            "raw_label": f"Crude & Diesel{crude_change}",
             "description": (
-                f"Crude oil is trading at ${price:.2f}/barrel{change_str}. "
-                "Real-time pricing from futures markets. This score measures energy "
-                "cost pressure on supply chains, not demand-side health."
+                f"WTI crude is ${crude_price:.2f}/bbl{crude_change} and US retail diesel "
+                f"is ${diesel_price:.2f}/gal. This category blends both legs of the oil "
+                "complex into one fuel-cost-pressure gauge. It measures energy cost "
+                "pressure on supply chains, not demand-side health."
             ),
             "calculation": (
-                "Score = inverse percentile of the live price within the trailing "
-                f"{FRED_SCORE_LOOKBACK_DAYS}-day FRED price distribution. "
+                "Score = average of two inverse percentiles (crude price and diesel price, "
+                f"each within its trailing {FRED_SCORE_LOOKBACK_DAYS}-day FRED distribution). "
                 "Cheaper than most of the window = high score (low cost pressure)."
             ),
-            "updated": datetime.now().strftime("%H:%M:%S Live")
+            "updated": datetime.now().strftime("%H:%M:%S Live"),
         }
 
     def fetch_history(self, days: int = HISTORY_DAYS) -> pd.Series:
-        raw = fetch_fred_series(self._SERIES_ID)
-        scores = normalize_series_inverse(raw)
-        return scores.tail(days).rename("energy")
+        crude = normalize_series_inverse(fetch_fred_series(self._CRUDE_SERIES))
+        diesel = normalize_series_inverse(fetch_fred_series(self._DIESEL_SERIES))
+
+        # Align both legs onto a common daily index, forward-fill the weekly
+        # diesel series, then average. Days where only one leg exists use that
+        # leg alone (mean skips NaN).
+        idx = crude.index.union(diesel.index)
+        blended = pd.concat(
+            [crude.reindex(idx).ffill(), diesel.reindex(idx).ffill()],
+            axis=1,
+        ).mean(axis=1)
+        return blended.tail(days).round(1).rename("energy")

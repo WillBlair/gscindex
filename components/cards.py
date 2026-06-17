@@ -52,13 +52,19 @@ def _sparkline(series: pd.Series, color: str) -> go.Figure:
         )
         return fig
 
-    # Tight y-range around actual data so the fill doesn't create a huge
-    # rectangle below the line (scores typically cluster 60–100).
+    # Center the data vertically with a minimum amplitude. Monthly-updated
+    # categories (GSCPI, tariffs, freight) are flat or stepped day-to-day; a
+    # tight data-hugging range pins them to the top or bottom edge and looks
+    # broken. Anchoring the range to the data midpoint keeps every sparkline —
+    # flat, stepped, or volatile — sitting cleanly in the middle of the box.
+    # This is a viewport only (no axis labels), so it may extend past 0–100.
     y_min = float(recent.min())
     y_max = float(recent.max())
-    padding = max((y_max - y_min) * 0.15, 2.0)
-    y_lo = max(0, y_min - padding)
-    y_hi = min(100, y_max + padding)
+    mid = (y_min + y_max) / 2.0
+    # Data occupies ~65% of the vertical height; the remainder is breathing room.
+    half_height = max((y_max - y_min) / 2.0, 3.0) / 0.65
+    y_lo = mid - half_height
+    y_hi = mid + half_height
 
     # Build the filled shape manually: line data + a baseline return to y_lo
     # This avoids tozeroy (which fills to y=0, far below the visible range).

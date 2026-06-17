@@ -29,7 +29,6 @@ from data.providers.energy import EnergyProvider
 from data.providers.freight import FreightProvider
 from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
 from data.providers.supply_chain import SupplyChainProvider
-from data.providers.trucking import TruckingProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.port_analyst import generate_port_summaries
@@ -44,7 +43,6 @@ _PROVIDERS = [
     FreightProvider(),
     EnergyProvider(),
     TariffsProvider(),
-    TruckingProvider(),
     GeopoliticalProvider(),
 ]
 
@@ -246,6 +244,15 @@ _REGION_PROFILES: dict[str, dict] = {
     },
 }
 
+# Energy and Inland Freight (diesel) were merged into a single "energy" fuel-cost
+# category. The per-region profiles above still list a legacy "trucking" weight;
+# fold it into "energy" once at import so the macro blend keeps summing to 1.0
+# and never references a category that no longer exists.
+for _profile in _REGION_PROFILES.values():
+    _weights = _profile["weights"]
+    if "trucking" in _weights:
+        _weights["energy"] = _weights.get("energy", 0.0) + _weights.pop("trucking")
+
 # Port name → region key
 _PORT_REGION: dict[str, str] = {
     "Houston":       "us_gulf",
@@ -381,8 +388,8 @@ def _derive_map_markers(
     batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
 
     # ── Default macro weights (fallback for unmapped ports) ──────
-    non_weather_cats = ["energy", "supply_chain", "tariffs", "trucking", "geopolitical"]
-    default_weights = {cat: 0.20 for cat in non_weather_cats}
+    non_weather_cats = ["energy", "supply_chain", "tariffs", "geopolitical"]
+    default_weights = {cat: 0.25 for cat in non_weather_cats}
 
     # ── Match news to ports ──────────────────────────────────────
     port_news = _match_news_to_ports(alerts)

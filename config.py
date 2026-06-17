@@ -63,16 +63,15 @@ FREIGHT_YOY_SLOPE: float = float(os.environ.get("FREIGHT_YOY_SLOPE", "6.5"))
 
 # Weights favor genuine disruption/flow signals over pure cost gauges.
 # Disruption-oriented (weather, supply_chain, freight, geopolitical) = 0.65;
-# cost-oriented (energy, trucking, tariffs) = 0.35. Energy and trucking are the
-# same oil complex (diesel is refined crude), so their combined weight is held
-# to 0.20 to avoid double-counting one price signal as 35% of the index.
+# cost-oriented (energy+fuel, tariffs) = 0.35. Crude oil and diesel are the
+# same petroleum complex (diesel is refined crude, correlation > 0.9), so they
+# are blended into a single "energy" category rather than weighted twice.
 CATEGORY_WEIGHTS: dict[str, float] = {
     "weather":             0.10,
-    "supply_chain":        0.25,  # NY Fed GSCPI — core disruption index (was 0.20)
+    "supply_chain":        0.25,  # NY Fed GSCPI — core disruption index
     "freight":             0.10,  # BTS Freight Transportation Services Index (throughput)
-    "energy":              0.10,  # WTI crude — cost gauge (was 0.20)
+    "energy":              0.20,  # blended WTI crude + retail diesel cost pressure
     "tariffs":             0.15,  # trade policy uncertainty
-    "trucking":            0.10,  # diesel — cost gauge (was 0.15)
     "geopolitical":        0.20,
 }
 
@@ -87,9 +86,8 @@ CATEGORY_LABELS: dict[str, str] = {
     "weather":             "Weather Disruptions",
     "supply_chain":        "Supply Chain", # Shortened to fit on one line
     "freight":             "Freight Flow",
-    "energy":              "Energy Costs",
+    "energy":              "Energy & Fuel",
     "tariffs":             "Trade & Tariffs",
-    "trucking":            "Inland Freight",
     "geopolitical":        "Geopolitical Risk",
 }
 
@@ -127,7 +125,6 @@ CATEGORY_COLORS: dict[str, str] = {
     "freight":             "#10b981",   # emerald
     "energy":              "#f59e0b",   # amber
     "tariffs":             "#ef4444",   # red
-    "trucking":            "#06b6d4",   # cyan
     "geopolitical":        "#f97316",   # orange
 }
 
