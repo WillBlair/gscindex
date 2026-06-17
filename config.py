@@ -31,6 +31,29 @@ NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v16"
 FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "730"))
 
 # ---------------------------------------------------------------------------
+# GSCPI score calibration
+# ---------------------------------------------------------------------------
+# GSCPI is a z-score (0 = average pressure). We map it to 0-100 health via
+#   score = 50 - GSCPI * GSCPI_SCORE_SCALE   (clipped 0-100)
+# Scale 12.5 means the index zeroes out at +4 sigma — GSCPI's real historical
+# extreme (Dec-2021 COVID peak was ~+4.3). The previous scale of 25 zeroed out
+# at only +2 sigma, which collapsed moderate-but-not-crisis readings (e.g.
+# +1.8 sigma) to a near-zero "Critical" score and overstated severity.
+GSCPI_SCORE_SCALE: float = float(os.environ.get("GSCPI_SCORE_SCALE", "12.5"))
+
+# ---------------------------------------------------------------------------
+# Freight Flow score calibration (BTS Freight Transportation Services Index)
+# ---------------------------------------------------------------------------
+# Physical freight throughput is scored from its year-over-year growth:
+#   score = FREIGHT_YOY_BASELINE + yoy_pct * FREIGHT_YOY_SLOPE   (clipped 0-100)
+# A freight *contraction* (negative YoY) signals real disruption / demand
+# destruction and pulls the score down; steady or growing volume reads healthy.
+# Baseline 72 puts flat YoY (0%) at "Stable"; slope 6.5 puts a -6% freight
+# recession near "Critical" (33) and +4% growth near "Healthy" (98).
+FREIGHT_YOY_BASELINE: float = float(os.environ.get("FREIGHT_YOY_BASELINE", "72.0"))
+FREIGHT_YOY_SLOPE: float = float(os.environ.get("FREIGHT_YOY_SLOPE", "6.5"))
+
+# ---------------------------------------------------------------------------
 # Category Definitions
 # ---------------------------------------------------------------------------
 # Each category contributes to the overall Supply Chain Health Index.
@@ -38,12 +61,18 @@ FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "
 # Weights MUST sum to 1.0 — the scoring engine will yell at you if they don't.
 # ---------------------------------------------------------------------------
 
+# Weights favor genuine disruption/flow signals over pure cost gauges.
+# Disruption-oriented (weather, supply_chain, freight, geopolitical) = 0.65;
+# cost-oriented (energy, trucking, tariffs) = 0.35. Energy and trucking are the
+# same oil complex (diesel is refined crude), so their combined weight is held
+# to 0.20 to avoid double-counting one price signal as 35% of the index.
 CATEGORY_WEIGHTS: dict[str, float] = {
     "weather":             0.10,
-    "supply_chain":        0.20,  # NY Fed GSCPI (was: ports)
-    "energy":              0.20,
-    "tariffs":             0.15,
-    "trucking":            0.15,  # FRED Trucking PPI (was: shipping)
+    "supply_chain":        0.25,  # NY Fed GSCPI — core disruption index (was 0.20)
+    "freight":             0.10,  # BTS Freight Transportation Services Index (throughput)
+    "energy":              0.10,  # WTI crude — cost gauge (was 0.20)
+    "tariffs":             0.15,  # trade policy uncertainty
+    "trucking":            0.10,  # diesel — cost gauge (was 0.15)
     "geopolitical":        0.20,
 }
 
@@ -57,6 +86,7 @@ DEFAULT_FALLBACK_SCORES: dict[str, float] = {
 CATEGORY_LABELS: dict[str, str] = {
     "weather":             "Weather Disruptions",
     "supply_chain":        "Supply Chain", # Shortened to fit on one line
+    "freight":             "Freight Flow",
     "energy":              "Energy Costs",
     "tariffs":             "Trade & Tariffs",
     "trucking":            "Inland Freight",
@@ -94,6 +124,7 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 CATEGORY_COLORS: dict[str, str] = {
     "weather":             "#3b82f6",   # blue
     "supply_chain":        "#8b5cf6",   # purple
+    "freight":             "#10b981",   # emerald
     "energy":              "#f59e0b",   # amber
     "tariffs":             "#ef4444",   # red
     "trucking":            "#06b6d4",   # cyan

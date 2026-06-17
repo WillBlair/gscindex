@@ -21,7 +21,7 @@ import logging
 
 import pandas as pd
 
-from config import HISTORY_DAYS
+from config import GSCPI_SCORE_SCALE, HISTORY_DAYS
 from data.gscpi_client import (
     fetch_gscpi_series,
     gscpi_to_score,
@@ -79,9 +79,9 @@ class SupplyChainProvider(BaseProvider):
                 f"average: {gscpi_condition}.{wei_context}"
             ),
             "calculation": (
-                "Score = 50 - GSCPI × 25, clipped 0-100. GSCPI is a z-score "
-                "(0 = average pressure), so 50 = normal, 0 = pressure at +2 sigma, "
-                "100 = pressure at -2 sigma. Updated monthly by the NY Fed."
+                f"Score = 50 - GSCPI × {GSCPI_SCORE_SCALE:g}, clipped 0-100. GSCPI is a "
+                "z-score (0 = average pressure), so 50 = normal and the score zeroes "
+                "out near GSCPI's historical extreme (~+4 sigma). Updated monthly by the NY Fed."
             ),
             "updated": f"GSCPI {gscpi_date}",
         }

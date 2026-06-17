@@ -14,6 +14,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 
+from config import GSCPI_SCORE_SCALE
 from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -54,39 +55,60 @@ def _parse_month_column(col: str) -> pd.Timestamp | None:
     return month_end
 
 
+# Stale-cache fallback TTL: if the live CSV fetch fails, reuse the last good
+# GSCPI for up to 60 days rather than letting the provider drop to a neutral
+# fallback. GSCPI moves monthly, so a slightly stale real reading beats a
+# fabricated 50.0 that hides the actual pressure level.
+_STALE_FALLBACK_TTL = 60 * 86400
+
+
+def _series_from_cache(cached: dict) -> pd.Series:
+    """Rebuild the GSCPI Series from a cached payload."""
+    series = pd.Series(cached["values"], name="GSCPI")
+    series.index = pd.DatetimeIndex(cached["dates"])
+    return series.sort_index()
+
+
 def fetch_gscpi_series() -> pd.Series:
     """Return monthly GSCPI levels (z-score; higher = more pressure)."""
     cached = get_cached(_CACHE_KEY, ttl=_CACHE_TTL)
     if cached is not None:
-        series = pd.Series(cached["values"], name="GSCPI")
-        series.index = pd.DatetimeIndex(cached["dates"])
-        return series.sort_index()
+        return _series_from_cache(cached)
 
-    resp = requests.get(_GSCPI_CSV_URL, timeout=30)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(_GSCPI_CSV_URL, timeout=30)
+        resp.raise_for_status()
 
-    df = pd.read_csv(
-        io.BytesIO(resp.content),
-        encoding="utf-8-sig",
-        na_values=["#N/A"],
-    )
-    df.columns = ["Date"] + list(df.columns[1:])
-    month_cols = list(df.columns[1:])
+        df = pd.read_csv(
+            io.BytesIO(resp.content),
+            encoding="utf-8-sig",
+            na_values=["#N/A"],
+        )
+        df.columns = ["Date"] + list(df.columns[1:])
+        month_cols = list(df.columns[1:])
 
-    by_month: dict[pd.Timestamp, float] = {}
-    for col in month_cols:
-        month_end = _parse_month_column(col)
-        if month_end is None:
-            logger.warning("GSCPI: skipping unparseable vintage column %r", col)
-            continue
-        numeric = pd.to_numeric(df[col], errors="coerce")
-        valid = numeric.dropna()
-        if valid.empty:
-            continue
-        by_month[month_end] = float(valid.iloc[-1])
+        by_month: dict[pd.Timestamp, float] = {}
+        for col in month_cols:
+            month_end = _parse_month_column(col)
+            if month_end is None:
+                logger.warning("GSCPI: skipping unparseable vintage column %r", col)
+                continue
+            numeric = pd.to_numeric(df[col], errors="coerce")
+            valid = numeric.dropna()
+            if valid.empty:
+                continue
+            by_month[month_end] = float(valid.iloc[-1])
 
-    if not by_month:
-        raise ValueError("GSCPI CSV parsed empty — NY Fed format may have changed")
+        if not by_month:
+            raise ValueError("GSCPI CSV parsed empty — NY Fed format may have changed")
+    except Exception as exc:
+        # Network blip / format drift: fall back to the last good reading
+        # (up to 60 days old) instead of failing the provider entirely.
+        stale = get_cached(_CACHE_KEY, ttl=_STALE_FALLBACK_TTL)
+        if stale is not None:
+            logger.warning("GSCPI live fetch failed (%s); serving stale cached series", exc)
+            return _series_from_cache(stale)
+        raise
 
     series = pd.Series(by_month, name="GSCPI").sort_index()
     set_cached(
@@ -114,5 +136,10 @@ def latest_published_gscpi(series: pd.Series) -> tuple[float, pd.Timestamp]:
 
 
 def gscpi_to_score(value: float) -> float:
-    """Map GSCPI z-score to 0–100 health (lower pressure → higher score)."""
-    return float(max(0.0, min(100.0, 50.0 - value * 25.0)))
+    """Map GSCPI z-score to 0–100 health (lower pressure → higher score).
+
+    Uses ``GSCPI_SCORE_SCALE`` (default 12.5) so the index zeroes out at the
+    real historical extreme (~+4 sigma) rather than the previous +2 sigma,
+    which over-penalized moderate elevations.
+    """
+    return float(max(0.0, min(100.0, 50.0 - value * GSCPI_SCORE_SCALE)))

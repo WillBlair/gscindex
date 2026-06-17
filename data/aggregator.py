@@ -26,6 +26,7 @@ from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS
 from data.ports_data import MAJOR_PORTS
 
 from data.providers.energy import EnergyProvider
+from data.providers.freight import FreightProvider
 from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
 from data.providers.supply_chain import SupplyChainProvider
 from data.providers.trucking import TruckingProvider
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 _PROVIDERS = [
     WeatherProvider(),
     SupplyChainProvider(),
+    FreightProvider(),
     EnergyProvider(),
     TariffsProvider(),
     TruckingProvider(),
