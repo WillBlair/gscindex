@@ -11,7 +11,24 @@ from __future__ import annotations
 import plotly.graph_objects as go
 
 from config import COLORS, HEALTH_TIERS, hex_to_rgba
+from dash import html
 from scoring import get_health_tier
+
+
+def build_score_tooltip(explanation: dict) -> html.Div:
+    """Hover card explaining why the composite score is at its current level."""
+    bullets = explanation.get("bullets") or []
+    return html.Div(
+        className="score-explanation-tooltip",
+        children=[
+            html.Div(explanation.get("headline", ""), className="score-explanation-headline"),
+            html.P(explanation.get("summary", ""), className="score-explanation-summary"),
+            *[
+                html.Div(line, className="score-explanation-bullet")
+                for line in bullets
+            ],
+        ],
+    )
 
 
 def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) -> go.Figure:

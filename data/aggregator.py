@@ -777,6 +777,36 @@ def aggregate_data(status_callback=None) -> dict:
 
     composite = compute_composite_index(current_scores)
 
+    # AI score context for gauge hover — at most once per day (GEMINI_CACHE_TTL_SECONDS).
+    score_explanation = ""
+    try:
+        from data.cache import get_cached, set_cached
+        from config import GEMINI_CACHE_TTL_SECONDS
+        from data.ai_analyst import generate_score_explanation
+
+        _score_cache_key = "gemini_score_explanation_v1"
+        cached_explanation = get_cached(_score_cache_key, ttl=GEMINI_CACHE_TTL_SECONDS)
+
+        if cached_explanation and cached_explanation.get("text"):
+            score_explanation = str(cached_explanation["text"])
+        else:
+            tier_label = get_health_tier(composite)["label"]
+            top_alerts = [a for a in alerts if a.get("severity") in ("high", "medium")][:5]
+            score_explanation = generate_score_explanation(
+                composite=composite,
+                tier_label=tier_label,
+                category_scores=current_scores,
+                category_metadata=category_metadata,
+                top_alerts=top_alerts,
+            )
+            if score_explanation:
+                set_cached(
+                    _score_cache_key,
+                    {"composite": composite, "text": score_explanation},
+                )
+    except Exception as exc:
+        logger.warning("Score explanation generation skipped: %s", exc)
+
     # Degradation flags: which categories are serving a fallback value
     # instead of a measurement. Exposed via the snapshot, API, and /health.
     fallback_categories = sorted(
@@ -844,6 +874,7 @@ def aggregate_data(status_callback=None) -> dict:
         "provider_errors": provider_errors,
         "category_metadata": category_metadata,
         "market_data": market_data,
+        "score_explanation": score_explanation,
         "degraded": bool(fallback_categories),
         "fallback_categories": fallback_categories,
     }

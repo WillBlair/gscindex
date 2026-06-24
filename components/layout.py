@@ -31,9 +31,9 @@ from dash import dcc, html
 from components.cards import build_category_cards
 from components.charts import build_category_panel, build_history_chart, build_world_map
 from components.feed import build_briefing_panel, build_news_panel
-from components.gauge import build_gauge_figure
+from components.gauge import build_gauge_figure, build_score_tooltip
 from config import APP_AUTHOR_URL, APP_SUBTITLE, APP_TITLE
-from scoring import compute_composite_index
+from scoring import build_score_explanation, compute_composite_index
 
 from components.market_costs import build_market_costs_panel
 
@@ -111,6 +111,16 @@ def build_layout(
     # Build sub-components
     gauge_fig = build_gauge_figure(composite, delta, show_delta=not is_provisional)
     category_metadata = data.get("category_metadata", {})
+    score_context = build_score_explanation(
+        composite,
+        current_scores,
+        category_metadata,
+        delta=delta if not is_provisional else None,
+    )
+    ai_score_summary = str(data.get("score_explanation", "") or "").strip()
+    if ai_score_summary:
+        score_context = {**score_context, "summary": ai_score_summary}
+    gauge_tooltip = build_score_tooltip(score_context)
     category_cards = build_category_cards(current_scores, category_history, category_metadata)
     trend_fig = build_history_chart(category_history)
     health_panel = build_category_panel(current_scores)
@@ -224,12 +234,20 @@ def build_layout(
                 className="hero-row",
                 children=[
                     html.Div(
-                        className="chart-panel",
+                        className="chart-panel gauge-panel",
                         children=[
                             dcc.Graph(
                                 id="gauge",
                                 figure=gauge_fig,
                                 config={"displayModeBar": False, "responsive": True},
+                            ),
+                            html.Div(
+                                className="gauge-score-hover-zone",
+                                tabIndex=0,
+                                children=[
+                                    gauge_tooltip,
+                                    html.Span("?", className="gauge-score-hint", **{"aria-hidden": "true"}),
+                                ],
                             ),
                         ],
                     ),

@@ -201,6 +201,99 @@ body {
     /* Maintain layout spacing but hide line */
 }
 
+/* Gauge score hover explanation */
+.gauge-panel {
+    overflow: visible;
+}
+
+.gauge-panel .js-plotly-plot,
+.gauge-panel .plotly,
+.gauge-panel .plot-container {
+    pointer-events: none;
+}
+
+.gauge-score-hover-zone {
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    width: 160px;
+    height: 88px;
+    z-index: 6;
+    cursor: help;
+}
+
+.gauge-score-hint {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #8a8f9e;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    background: rgba(15, 17, 23, 0.85);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+}
+
+.gauge-panel:hover .gauge-score-hint,
+.gauge-score-hover-zone:focus-within .gauge-score-hint {
+    opacity: 1;
+}
+
+.score-explanation-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 12px);
+    transform: translateX(-50%);
+    width: min(340px, 88vw);
+    padding: 14px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #12151d;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
+    z-index: 20;
+}
+
+.gauge-score-hover-zone:hover .score-explanation-tooltip,
+.gauge-score-hover-zone:focus-within .score-explanation-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(-2px);
+}
+
+.score-explanation-headline {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #e1e4ea;
+    margin-bottom: 8px;
+}
+
+.score-explanation-summary {
+    margin: 0 0 10px;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    color: #b8bcc8;
+}
+
+.score-explanation-bullet {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: #8a8f9e;
+    margin-top: 6px;
+}
+
 /* Corner Ticks (Standardized Viewfinder Style) */
 /* Disabled for "Thin Rounded" look */
 /*
