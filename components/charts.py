@@ -18,6 +18,7 @@ from config import (
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     COLORS,
+    HEALTH_TIERS,
 )
 from scoring import get_health_tier
 
@@ -179,15 +180,26 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
 def build_world_map(map_markers: list[dict]) -> go.Figure:
     """Build a scatter-geo map showing every major shipping port.
 
-    Each dot is color-coded by its composite health score:
+    Dots are color-coded by **relative rank** among today's ports rather than
+    by an absolute score band. Because composite port scores tend to cluster
+    in a narrow range, absolute coloring washed the whole map orange/red. With
+    rank-based coloring the worst few ports always read red, the best few read
+    green, and the rest spread smoothly across the middle:
 
-        green  (80–100)  Healthy — no disruptions
-        yellow (60–79)   Moderate Risk — mild signals / negative news
-        orange (40–59)   Elevated Risk — significant disruption detected
-        red    (0–39)    Critical — severe news, API, or global stress
+        green   top ~10% of ports today (healthiest relative to the rest)
+        yellow  the broad middle of the pack
+        red     bottom ~10% of ports today (most stressed relative to the rest)
+
+    Absolute guardrails keep the relative hue honest at the extremes: a
+    genuinely Critical port can never render green, and a genuinely Healthy
+    port always stays green, no matter how it ranks on a given day. Only the
+    Stressed/Stable middle keeps its full relative spread.
+
+    Marker size and the hover tooltip still use each port's real absolute
+    score, so the underlying numbers remain honest — only the hue is relative.
 
     Hovering shows a rich tooltip with news headlines, VADER sentiment
-    scores, and any stressed global factors that explain the color.
+    scores, and any stressed global factors that explain the score.
 
     Parameters
     ----------
@@ -221,16 +233,47 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             f"<b>{marker['name']}</b><br>{marker['description']}"
         )
 
-    # Continuous color scale: green → yellow → orange → red
-    # Uses a smooth gradient, but anchors the deep red and orange
-    # so critical ports don't wash out.
+    # ── Relative (rank-based) coloring ───────────────────────────────────
+    # Absolute scores tend to cluster (e.g. everything 40–60), which made the
+    # whole map read orange/red. Instead, color each port by its RANK among
+    # today's ports: the worst few are red, the best few are green, and the
+    # rest spread smoothly across the middle. Sizing and the tooltip still use
+    # the real absolute score, so the numbers stay honest.
+    n = len(scores)
+    if n > 1 and len(set(scores)) > 1:
+        score_series = pd.Series(scores)
+        # Average rank handles ties; normalize to 0.0 (worst) … 1.0 (best).
+        ranks = score_series.rank(method="average")
+        color_values = ((ranks - 1) / (n - 1)).tolist()
+    else:
+        # All identical (or single port): park everyone in the neutral middle.
+        color_values = [0.5] * n
+
+    # Color-scale anchors over rank fraction (0 = worst, 1 = best). The same
+    # anchors are reused by the guardrails below so the two never drift apart.
+    _ORANGE_ANCHOR = 0.12   # bottom ~12% by rank trends orange
+    _GREEN_ANCHOR = 0.88    # top ~12% by rank trends green
     _colorscale = [
-        [0.00, COLORS["red"]],       # 0   — Solid critical red
-        [0.30, COLORS["red"]],       # 30  — Begin transition to orange
-        [0.50, COLORS["orange"]],    # 50  — Solid orange
-        [0.60, COLORS["yellow"]],    # 60  — Solid yellow (Stable boundary)
-        [0.80, COLORS["green"]],     # 80  — Solid green (Healthy boundary)
-        [1.00, COLORS["green"]],     # 100 — Solid green
+        [0.00, COLORS["red"]],            # worst port — solid red
+        [_ORANGE_ANCHOR, COLORS["orange"]],  # bottom band — orange
+        [0.50, COLORS["yellow"]],         # middle of the pack — yellow
+        [_GREEN_ANCHOR, COLORS["green"]],    # top band — green
+        [1.00, COLORS["green"]],          # best port — solid green
+    ]
+
+    # ── Absolute guardrails on the relative hue ──────────────────────────
+    # Pure relative coloring can lie about the extremes (a green dot on a
+    # globally awful day, or a red dot when a port is objectively fine).
+    # Clamp so a genuinely Critical port can NEVER render green and a
+    # genuinely Healthy port ALWAYS stays green, regardless of today's rank.
+    # The Stressed/Stable middle (40–79) keeps its full relative spread.
+    _critical_max = max(t["max"] for t in HEALTH_TIERS if t["label"] == "Critical")
+    _healthy_min = min(t["min"] for t in HEALTH_TIERS if t["label"] == "Healthy")
+    color_values = [
+        min(cv, _ORANGE_ANCHOR) if sc <= _critical_max
+        else max(cv, _GREEN_ANCHOR) if sc >= _healthy_min
+        else cv
+        for cv, sc in zip(color_values, scores)
     ]
 
     fig = go.Figure(
@@ -242,10 +285,10 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             mode="markers",
             marker={
                 "size": sizes,
-                "color": scores,
+                "color": color_values,
                 "colorscale": _colorscale,
                 "cmin": 0,
-                "cmax": 100,
+                "cmax": 1,
                 "showscale": False,
                 # Use solid dark background color for the border to create a sharp cutout effect
                 "line": {"width": 1.5, "color": COLORS["bg"]},
