@@ -174,6 +174,8 @@ body {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 16px;
+    position: relative;
+    z-index: 1;
 }
 
 /* --------------------------------------------------------------------------
@@ -206,6 +208,11 @@ body {
 .gauge-panel {
     overflow: visible;
     z-index: 4;
+}
+
+.gauge-panel:has(.gauge-score-hover-zone:hover),
+.gauge-panel:has(.gauge-score-hover-zone:focus-within) {
+    z-index: 500;
 }
 
 .gauge-panel .js-plotly-plot,
@@ -260,13 +267,30 @@ body {
     padding: 14px 16px;
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background: #12151d;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    background-color: #12151d;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
-    z-index: 30;
+    z-index: 501;
+    isolation: isolate;
+}
+
+.score-explanation-tooltip::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: #12151d;
+    z-index: -1;
+}
+
+.score-explanation-headline,
+.score-explanation-summary,
+.score-explanation-bullet {
+    position: relative;
+    z-index: 1;
 }
 
 .gauge-score-hover-zone:hover .score-explanation-tooltip,
@@ -1200,7 +1224,7 @@ body {
     right: -1px;
     bottom: -1px;
     pointer-events: none;
-    z-index: 10;
+    z-index: 1;
     background:
         linear-gradient(to right, #fff 2px, transparent 2px) 0 0,
         linear-gradient(to bottom, #fff 2px, transparent 2px) 0 0,
