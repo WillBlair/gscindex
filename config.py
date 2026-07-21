@@ -55,6 +55,13 @@ GSCPI_SCORE_SCALE: float = float(os.environ.get("GSCPI_SCORE_SCALE", "12.5"))
 SUPPLY_CHAIN_PROXY_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_PROXY_WEIGHT", "0.30"))
 TARIFFS_PROXY_WEIGHT: float = float(os.environ.get("TARIFFS_PROXY_WEIGHT", "0.30"))
 
+# TSIFRGHT (BTS Freight Transportation Services Index) is monthly with a
+# 1-2 month publication lag -- the longest lag of any category. Blend in a
+# daily transportation-sector equity proxy (IYT) the same way GSCPI and
+# EPUTRADE are blended above. Same 30% minority weight, same fail-safe
+# fallback to 100% TSIFRGHT if the proxy fetch fails.
+FREIGHT_PROXY_WEIGHT: float = float(os.environ.get("FREIGHT_PROXY_WEIGHT", "0.30"))
+
 # ---------------------------------------------------------------------------
 # Freight Flow score calibration (BTS Freight Transportation Services Index)
 # ---------------------------------------------------------------------------
