@@ -33,9 +33,13 @@ import logging
 
 import pandas as pd
 
-from config import FREIGHT_YOY_BASELINE, FREIGHT_YOY_SLOPE, HISTORY_DAYS
+from config import FREIGHT_PROXY_WEIGHT, FREIGHT_YOY_BASELINE, FREIGHT_YOY_SLOPE, HISTORY_DAYS
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
+from data.providers.transport_equity_proxy import (
+    fetch_transport_equity_score,
+    fetch_transport_equity_score_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +61,10 @@ def _score_series(raw: pd.Series) -> pd.Series:
 
 
 class FreightProvider(BaseProvider):
-    """Freight Flow — physical throughput from the BTS Freight TSI."""
+    """Freight Flow — physical throughput from the BTS Freight TSI (monthly,
+    1-2 month lag), blended with a daily transportation-sector equity proxy
+    (IYT) so the category moves between BTS prints instead of sitting flat
+    for 8-12 weeks at a time."""
 
     category = "freight"
     _SERIES_ID = "TSIFRGHT"
@@ -70,7 +77,7 @@ class FreightProvider(BaseProvider):
         current = float(raw.iloc[-1])
         year_ago = float(raw.iloc[-(_YOY_LAG_MONTHS + 1)])
         yoy_pct = (current / year_ago - 1.0) * 100.0 if year_ago else 0.0
-        score = _yoy_to_score(yoy_pct)
+        tsifrght_score = _yoy_to_score(yoy_pct)
         obs_date = raw.index[-1].date()
 
         if yoy_pct <= -4.0:
@@ -82,8 +89,26 @@ class FreightProvider(BaseProvider):
         else:
             condition = "freight volumes are expanding (healthy demand)"
 
+        # Daily proxy: transportation-sector equities (IYT). Best-effort —
+        # if this fails, we fall back to 100% TSIFRGHT rather than crash.
+        proxy_note = ""
+        blend_weight = 0.0
+        score = tsifrght_score
+        try:
+            proxy_score, proxy_price, proxy_date = fetch_transport_equity_score()
+            blend_weight = FREIGHT_PROXY_WEIGHT
+            score = (1 - blend_weight) * tsifrght_score + blend_weight * proxy_score
+            proxy_note = (
+                f" Blended with a daily transportation-sector equity proxy (IYT @ "
+                f"${proxy_price:.2f}, {proxy_date}) at {blend_weight:.0%} weight so "
+                "this category moves between monthly BTS prints (which carry a "
+                "1-2 month publication lag)."
+            )
+        except Exception as exc:
+            logger.warning("Transport-equity proxy fetch failed (using 100%% TSIFRGHT): %s", exc)
+
         return score, {
-            "source": "FRED Series TSIFRGHT (BTS)",
+            "source": "FRED TSIFRGHT (BTS) + IYT daily proxy" if blend_weight else "FRED Series TSIFRGHT (BTS)",
             "raw_value": f"{yoy_pct:+.1f}% YoY",
             "raw_label": "Freight Throughput Growth",
             "description": (
@@ -91,14 +116,20 @@ class FreightProvider(BaseProvider):
                 f"({yoy_pct:+.1f}% vs a year ago): {condition}. This index tracks the "
                 "physical volume of for-hire freight moved across trucking, rail, "
                 "inland waterways, pipelines, and air cargo — a measure of whether "
-                "goods are actually moving, not what they cost."
+                f"goods are actually moving, not what they cost.{proxy_note}"
             ),
             "calculation": (
                 f"Score = {FREIGHT_YOY_BASELINE:g} + YoY% × {FREIGHT_YOY_SLOPE:g}, clipped 0-100. "
                 "Contracting freight volume (negative YoY) lowers the score; steady or "
-                "growing volume reads healthy. Updated monthly by the BTS."
+                "growing volume reads healthy. Updated monthly by the BTS (1-2 month lag)."
+                + (
+                    f" Blended {1 - blend_weight:.0%}/{blend_weight:.0%} with a daily "
+                    "IYT transportation-equity proxy scored by direct percentile."
+                    if blend_weight
+                    else ""
+                )
             ),
-            "updated": str(obs_date),
+            "updated": str(obs_date) + (" + IYT daily" if blend_weight else ""),
         }
 
     def fetch_history(self, days: int = HISTORY_DAYS) -> pd.Series:
@@ -106,4 +137,17 @@ class FreightProvider(BaseProvider):
         scores = _score_series(raw)
         if scores.empty:
             return pd.Series(dtype=float, name="freight")
-        return scores.resample("D").ffill().tail(days).rename("freight")
+        daily = scores.resample("D").ffill().tail(days)
+
+        try:
+            proxy_daily = fetch_transport_equity_score_history(days)
+            blended = daily.copy()
+            common_idx = blended.index.intersection(proxy_daily.index)
+            blended.loc[common_idx] = (
+                (1 - FREIGHT_PROXY_WEIGHT) * blended.loc[common_idx]
+                + FREIGHT_PROXY_WEIGHT * proxy_daily.loc[common_idx]
+            )
+            return blended.rename("freight")
+        except Exception as exc:
+            logger.warning("Transport-equity proxy history fetch failed (using 100%% TSIFRGHT): %s", exc)
+            return daily.rename("freight")
