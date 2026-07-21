@@ -56,6 +56,17 @@ SUPPLY_CHAIN_PROXY_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_PROXY_WEIG
 TARIFFS_PROXY_WEIGHT: float = float(os.environ.get("TARIFFS_PROXY_WEIGHT", "0.30"))
 
 # ---------------------------------------------------------------------------
+# Port disruption blend weight (aggregate port_analyst signal -> geopolitical)
+# ---------------------------------------------------------------------------
+# generate_port_summaries() (data/port_analyst.py) already produces a
+# per-port AI disruption_penalty (0-50) grounded in live news, but until now
+# it only affected individual map markers -- the aggregate signal never fed
+# back into the geopolitical category score. Blending a minority weight in
+# gives geopolitical a second, port-grounded read on top of the raw
+# news-severity score.
+PORT_DISRUPTION_WEIGHT: float = float(os.environ.get("PORT_DISRUPTION_WEIGHT", "0.15"))
+
+# ---------------------------------------------------------------------------
 # Freight Flow score calibration (BTS Freight Transportation Services Index)
 # ---------------------------------------------------------------------------
 # Physical freight throughput is scored from its year-over-year growth:
