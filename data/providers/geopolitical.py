@@ -36,7 +36,12 @@ import requests
 import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY, NEWS_RSS_REFRESH_SECONDS
+from config import (
+    GEMINI_CACHE_TTL_SECONDS,
+    NEWS_BRIEFING_CACHE_KEY,
+    NEWS_RSS_REFRESH_SECONDS,
+    PORT_DISRUPTION_WEIGHT,
+)
 from data.cache import get_cache_age_seconds, get_cached, set_cached
 from data.providers.base import BaseProvider
 from data.ai_analyst import analyze_news_batch
@@ -469,9 +474,34 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
 
 
 class GeopoliticalProvider(BaseProvider):
-    """Geopolitical Risk — VADER sentiment analysis on supply chain news."""
+    """Geopolitical Risk — VADER sentiment analysis on supply chain news,
+    blended with the aggregate AI port-disruption signal from port_analyst.py
+    so a fleet-wide pattern of port disruptions can move the score even when
+    the raw news-severity read doesn't fully capture it."""
 
     category = "geopolitical"
+
+    @staticmethod
+    def _blend_port_disruption(base_score: float, source_label: str) -> tuple[float, str, str]:
+        """Best-effort blend of the aggregate port-disruption score into a
+        base geopolitical score. Returns (blended_score, source_suffix, note).
+        Falls back to the unmodified base score if port data isn't available
+        (e.g. GEMINI_API_KEY unset) — never raises.
+        """
+        try:
+            from data.port_analyst import get_aggregate_disruption_score
+
+            port_score, port_count, port_summary = get_aggregate_disruption_score()
+            weight = PORT_DISRUPTION_WEIGHT
+            blended = (1 - weight) * base_score + weight * port_score
+            note = (
+                f" Blended with an aggregate AI port-disruption signal ({port_summary}) "
+                f"at {weight:.0%} weight."
+            )
+            return round(blended, 1), f" + port-disruption ({port_count} ports)", note
+        except Exception as exc:
+            logger.debug("Port-disruption blend skipped (base score used as-is): %s", exc)
+            return base_score, "", ""
 
     def fetch_current(self) -> tuple[float, dict]:
         # Never trigger long AI/RSS pipeline from provider path.
@@ -481,17 +511,28 @@ class GeopoliticalProvider(BaseProvider):
             score, alerts, _, _ = cached_tuple
             high_sev = sum(1 for a in alerts if a.get("severity") == "high")
             med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
-            return score, {
-                "source": "RSS + Gemini (cached)",
+
+            blended_score, source_suffix, port_note = self._blend_port_disruption(
+                score, "RSS + Gemini (cached)"
+            )
+
+            return blended_score, {
+                "source": f"RSS + Gemini (cached){source_suffix}",
                 "raw_value": f"{len(alerts)} articles",
                 "raw_label": "Analyzed News Volume",
                 "description": (
                     f"Using cached analysis. Found {high_sev} high-severity "
-                    f"and {med_sev} medium-severity risk events."
+                    f"and {med_sev} medium-severity risk events.{port_note}"
                 ),
                 "calculation": (
                     "Score is derived from Gemini severity analysis of recent supply-chain "
                     "articles and used as the current anchor for geopolitical risk."
+                    + (
+                        f" Blended {1 - PORT_DISRUPTION_WEIGHT:.0%}/{PORT_DISRUPTION_WEIGHT:.0%} "
+                        "with the aggregate AI port-disruption signal."
+                        if source_suffix
+                        else ""
+                    )
                 ),
                 "updated": "Cached",
             }
@@ -517,18 +558,29 @@ class GeopoliticalProvider(BaseProvider):
                 score = _risk_score_from_alerts(alerts)
                 high_sev = sum(1 for a in alerts if a.get("severity") == "high")
                 med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
-                return score, {
-                    "source": "RSS + VADER (live fallback)",
+
+                blended_score, source_suffix, port_note = self._blend_port_disruption(
+                    score, "RSS + VADER (live fallback)"
+                )
+
+                return blended_score, {
+                    "source": f"RSS + VADER (live fallback){source_suffix}",
                     "raw_value": f"{len(alerts)} articles",
                     "raw_label": "Analyzed News Volume",
                     "description": (
                         f"Live VADER analysis (AI cache unavailable). Found {high_sev} high-severity "
-                        f"and {med_sev} medium-severity risk events."
+                        f"and {med_sev} medium-severity risk events.{port_note}"
                     ),
                     "calculation": (
                         "Score = 100 + sum of the 10 most severe negative VADER severities "
                         "(deduplicated by title, total deduction floored at -60). "
                         "Only negative news reduces the score; positive news does not inflate it."
+                        + (
+                            f" Blended {1 - PORT_DISRUPTION_WEIGHT:.0%}/{PORT_DISRUPTION_WEIGHT:.0%} "
+                            "with the aggregate AI port-disruption signal."
+                            if source_suffix
+                            else ""
+                        )
                     ),
                     "updated": "Live (VADER)",
                 }

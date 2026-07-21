@@ -210,3 +210,50 @@ Provide the JSON status summary and disruption_penalty for each port."""
     except Exception as e:
         logger.error("Gemini dynamic port analysis failed: %s", e)
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Aggregate disruption signal (feeds the geopolitical category composite)
+# ---------------------------------------------------------------------------
+
+def get_aggregate_disruption_score() -> tuple[float, int, str]:
+    """Roll up all per-port AI disruption_penalty values into one 0-100
+    health score so the geopolitical category can blend in a port-grounded
+    signal on top of the raw news-severity score.
+
+    Uses the mean disruption_penalty (0-50 scale, 0=normal, 50=catastrophic)
+    across every port with a summary, converted via ``score = 100 - 2 * avg``
+    so a fleet-wide average penalty of 25 (moderate-to-severe) reads as 50
+    (Stressed), and an average of 0 reads as a perfect 100.
+
+    Returns
+    -------
+    tuple[float, int, str]
+        (score_0_100, port_count_with_data, summary_str). Raises if no port
+        summaries are available (e.g. GEMINI_API_KEY unset) — the caller
+        decides how to fall back (blend skipped, geopolitical score used
+        as-is).
+    """
+    summaries = generate_port_summaries()
+    if not summaries:
+        raise ValueError("No port summaries available (Gemini unset or fetch failed)")
+
+    penalties = []
+    for data in summaries.values():
+        if isinstance(data, dict) and "disruption_penalty" in data:
+            try:
+                penalties.append(float(data["disruption_penalty"]))
+            except (TypeError, ValueError):
+                continue
+
+    if not penalties:
+        raise ValueError("Port summaries present but no valid disruption_penalty values")
+
+    avg_penalty = sum(penalties) / len(penalties)
+    score = round(max(0.0, min(100.0, 100.0 - 2.0 * avg_penalty)), 1)
+    worst_count = sum(1 for p in penalties if p >= 25.0)
+    summary = (
+        f"{len(penalties)} ports scanned, avg disruption penalty {avg_penalty:.1f}/50, "
+        f"{worst_count} at severe-or-worse levels"
+    )
+    return score, len(penalties), summary
