@@ -42,6 +42,20 @@ FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "
 GSCPI_SCORE_SCALE: float = float(os.environ.get("GSCPI_SCORE_SCALE", "12.5"))
 
 # ---------------------------------------------------------------------------
+# Daily proxy blend weights (Fix 2: supplement frozen monthly series)
+# ---------------------------------------------------------------------------
+# GSCPI (supply_chain) and EPUTRADE (tariffs) are monthly FRED/NY-Fed series —
+# they can sit flat for weeks. Blend in a genuinely daily proxy for each so
+# the composite actually moves day to day instead of only on print days.
+#   supply_chain = (1 - SUPPLY_CHAIN_PROXY_WEIGHT) * GSCPI + SUPPLY_CHAIN_PROXY_WEIGHT * BDRY_proxy
+#   tariffs      = (1 - TARIFFS_PROXY_WEIGHT) * EPUTRADE + TARIFFS_PROXY_WEIGHT * tariff_news_nowcast
+# Kept as a minority blend (25-30%) so the well-vetted monthly print still
+# anchors the score; the proxy just adds daily texture between prints.
+# If the proxy fetch fails, providers fall back to 100% monthly (no crash).
+SUPPLY_CHAIN_PROXY_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_PROXY_WEIGHT", "0.30"))
+TARIFFS_PROXY_WEIGHT: float = float(os.environ.get("TARIFFS_PROXY_WEIGHT", "0.30"))
+
+# ---------------------------------------------------------------------------
 # Freight Flow score calibration (BTS Freight Transportation Services Index)
 # ---------------------------------------------------------------------------
 # Physical freight throughput is scored from its year-over-year growth:
