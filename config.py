@@ -74,6 +74,13 @@ FREIGHT_PROXY_WEIGHT: float = float(os.environ.get("FREIGHT_PROXY_WEIGHT", "0.30
 PORT_DISRUPTION_WEIGHT: float = float(os.environ.get("PORT_DISRUPTION_WEIGHT", "0.15"))
 
 # ---------------------------------------------------------------------------
+# Industry-specific provider cache
+# ---------------------------------------------------------------------------
+# Semiconductor and other industry-specific data is slow-moving (quarterly
+# or monthly updates). A 24-hour cache prevents unnecessary API calls.
+INDUSTRY_PROVIDER_CACHE_TTL: int = int(os.environ.get("INDUSTRY_PROVIDER_CACHE_TTL", "86400"))
+
+# ---------------------------------------------------------------------------
 # Freight Flow score calibration (BTS Freight Transportation Services Index)
 # ---------------------------------------------------------------------------
 # Physical freight throughput is scored from its year-over-year growth:
@@ -121,6 +128,58 @@ CATEGORY_LABELS: dict[str, str] = {
     "energy":              "Energy & Fuel",
     "tariffs":             "Trade & Tariffs",
     "geopolitical":        "Geopolitical Risk",
+    # Semiconductor-specific categories (industry profile mode)
+    "chip_fab_util":       "Fab Utilization",
+    "chip_memory_prices":  "Memory Prices",
+    "chip_lead_times":     "Component Lead Times",
+    "chip_wafer_prices":   "Wafer Prices",
+}
+
+# ---------------------------------------------------------------------------
+# Industry Profiles
+# ---------------------------------------------------------------------------
+# Each profile defines custom category weights and a list of industry-specific
+# data providers that supply additional signals beyond the default six.
+# Weights MUST sum to 1.0 per profile. The dropdown selector in the navbar
+# switches between profiles; the current selection is stored as a URL parameter.
+# ---------------------------------------------------------------------------
+
+DEFAULT_PROFILE: str = "baseline"
+
+INDUSTRY_PROFILES: dict[str, dict] = {
+    "baseline": {
+        "label": "🌐 Baseline (Global)",
+        "description": "General supply chain health across all sectors",
+        "weights": {
+            "weather":        0.10,
+            "supply_chain":   0.25,
+            "freight":        0.10,
+            "energy":         0.20,
+            "tariffs":        0.15,
+            "geopolitical":   0.20,
+        },
+        "providers": [],
+    },
+    "semiconductor": {
+        "label": "💻 Semiconductor",
+        "description": (
+            "Chip supply chain — fab utilization, memory prices, lead times, "
+            "and wafer pricing from Silicon Analysts API"
+        ),
+        "weights": {
+            "weather":            0.05,
+            "supply_chain":       0.15,
+            "freight":            0.05,
+            "energy":             0.10,
+            "tariffs":            0.10,
+            "geopolitical":       0.15,
+            "chip_fab_util":      0.20,
+            "chip_memory_prices": 0.10,
+            "chip_lead_times":    0.05,
+            "chip_wafer_prices":  0.05,
+        },
+        "providers": ["silicon_analysts"],
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -158,6 +217,10 @@ CATEGORY_COLORS: dict[str, str] = {
     "energy":              "#f59e0b",   # amber
     "tariffs":             "#ef4444",   # red
     "geopolitical":        "#f97316",   # orange
+    "chip_fab_util":       "#06b6d4",   # cyan
+    "chip_memory_prices":  "#a855f7",   # violet
+    "chip_lead_times":     "#14b8a6",   # teal
+    "chip_wafer_prices":   "#ec4899",   # pink
 }
 
 # ---------------------------------------------------------------------------

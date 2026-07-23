@@ -33,6 +33,7 @@ from components.charts import build_category_panel, build_history_chart, build_w
 from components.feed import build_briefing_panel, build_news_panel
 from components.gauge import build_gauge_figure, build_score_tooltip
 from config import APP_AUTHOR_URL, APP_SUBTITLE, APP_TITLE
+from config import COLORS, DEFAULT_PROFILE, INDUSTRY_PROFILES
 from scoring import build_score_explanation, compute_composite_index
 
 from components.market_costs import build_market_costs_panel
@@ -173,6 +174,22 @@ def build_layout(
                     html.Div(
                         className="header-meta",
                         children=[
+                            dcc.Dropdown(
+                                id="profile-selector",
+                                options=[
+                                    {"label": p["label"], "value": k}
+                                    for k, p in INDUSTRY_PROFILES.items()
+                                ],
+                                value=DEFAULT_PROFILE,
+                                clearable=False,
+                                searchable=False,
+                                style={
+                                    "width": "200px",
+                                    "backgroundColor": COLORS["card"],
+                                    "borderRadius": "6px",
+                                    "fontSize": "13px",
+                                },
+                            ),
                             html.Span(
                                 (
                                     f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
@@ -324,6 +341,7 @@ def build_layout(
 
             # ── Hidden Data Stores ──────────────────────────────────
             dcc.Store(id="category-metadata-store", data=data.get("category_metadata", {})),
+            dcc.Store(id="profile-store", data=DEFAULT_PROFILE),
             
             # ── Detail Modal ────────────────────────────────────────
             dbc.Modal(

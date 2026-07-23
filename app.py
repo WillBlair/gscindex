@@ -702,6 +702,60 @@ def create_app() -> dash.Dash:
         else:
             return result.get("message", "An error occurred."), {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
 
+    # ── Industry Profile Callbacks ──────────────────────────────────────
+    from config import DEFAULT_PROFILE, INDUSTRY_PROFILES
+    from components.gauge import build_gauge_figure
+    from components.charts import build_history_chart
+    from scoring import compute_composite_index
+
+    @app.callback(
+        Output("profile-store", "data"),
+        Input("profile-selector", "value"),
+    )
+    def update_profile_store(profile_key):
+        return profile_key or DEFAULT_PROFILE
+
+    @app.callback(
+        Output("gauge", "figure"),
+        [Input("profile-store", "data"),
+         Input("refresh-interval", "n_intervals")],
+    )
+    def update_gauge_for_profile(profile_key, n_intervals):
+        with _LOCK:
+            data = _DATA_CACHE
+            is_fresh = _DATA_IS_FRESH
+        if not data or not data.get("current_scores"):
+            raise dash.exceptions.PreventUpdate
+        profile = INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES["baseline"])
+        current_scores = data["current_scores"]
+        composite = compute_composite_index(current_scores, weights=profile["weights"])
+        from data.database import get_previous_daily_score
+        try:
+            previous = get_previous_daily_score()
+            delta = round(composite - previous, 1) if previous is not None else 0.0
+        except Exception:
+            delta = 0.0
+        show_delta = is_fresh and not data.get("degraded", True)
+        return build_gauge_figure(composite, delta, show_delta=show_delta)
+
+    @app.callback(
+        Output("trend-chart", "figure"),
+        [Input("profile-store", "data"),
+         Input("refresh-interval", "n_intervals")],
+    )
+    def update_chart_for_profile(profile_key, n_intervals):
+        with _LOCK:
+            data = _DATA_CACHE
+        if not data or not data.get("category_history"):
+            raise dash.exceptions.PreventUpdate
+        profile = INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES["baseline"])
+        history = data["category_history"]
+        filtered_history = {}
+        for cat in profile["weights"]:
+            if cat in history:
+                filtered_history[cat] = history[cat]
+        return build_history_chart(filtered_history)
+
     return app
 
 
