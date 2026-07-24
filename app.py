@@ -539,14 +539,20 @@ def create_app() -> dash.Dash:
 
     # ── Modal Interaction Callback ──────────────────────────────────────
     from dash import ALL, ctx
-    from config import CATEGORY_LABELS, CATEGORY_WEIGHTS
+    from config import CATEGORY_LABELS, INDUSTRY_PROFILES
+
+    # Collect all category IDs across all profiles so every card click is captured
+    _all_categories = set()
+    for prof in INDUSTRY_PROFILES.values():
+        _all_categories.update(prof["weights"].keys())
+    _all_category_list = sorted(_all_categories)
 
     @app.callback(
         Output("details-modal", "is_open"),
         Output("modal-header", "children"),
         Output("modal-body", "children"),
         Input("modal-close", "n_clicks"),
-        [Input(f"card-{cat}", "n_clicks") for cat in CATEGORY_WEIGHTS],
+        [Input(f"card-{cat}", "n_clicks") for cat in _all_category_list],
         Input("category-metadata-store", "data"),
         prevent_initial_call=True,
     )
@@ -568,6 +574,14 @@ def create_app() -> dash.Dash:
             # If clicked a card
             # triggered will be "card-energy", "card-ports", etc.
             if triggered and triggered.startswith("card-"):
+                # Ignore 0-clicks from dynamically recreated cards (profile switch).
+                # When cards are rebuilt via callback, n_clicks starts at 0 for
+                # the new components, which would falsely trigger the modal.
+                for trig_info in ctx.triggered:
+                    if trig_info["prop_id"] == f"{triggered}.n_clicks":
+                        if trig_info["value"] is None or trig_info["value"] == 0:
+                            return False, dash.no_update, dash.no_update
+                        break
                 # Safety check for metadata
                 if metadata is None:
                     logging.error("Metadata is None in callback!")
