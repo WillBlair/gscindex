@@ -289,6 +289,7 @@ def build_layout(
             # ── Category Cards ──────────────────────────────────────
             html.Section(
                 className="cards-row",
+                id="cards-container",
                 children=category_cards,
             ),
 

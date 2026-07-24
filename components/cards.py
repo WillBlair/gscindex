@@ -115,6 +115,7 @@ def build_category_cards(
     current_scores: dict[str, float],
     category_history: dict[str, pd.Series],
     metadata: dict[str, dict] | None = None,
+    active_weights: dict[str, float] | None = None,
 ) -> list:
     """Build a list of 'Tech HUD' card components for all categories.
 
@@ -126,6 +127,10 @@ def build_category_cards(
         Full history per category.
     metadata : dict[str, dict], optional
         Metadata/Context per category (source, raw values).
+    active_weights : dict[str, float], optional
+        Category weights dict (e.g. from an industry profile).
+        If provided, only cards for these categories are rendered.
+        Defaults to ``CATEGORY_WEIGHTS``.
 
     Returns
     -------
@@ -136,9 +141,9 @@ def build_category_cards(
 
     if metadata is None:
         metadata = {}
-
+    active_weights = active_weights or CATEGORY_WEIGHTS
     cards = []
-    for cat in CATEGORY_WEIGHTS:
+    for cat in active_weights:
         score = current_scores.get(cat, 0.0)
         tier = get_health_tier(score)
         history = category_history.get(cat, pd.Series(dtype=float))
@@ -171,7 +176,7 @@ def build_category_cards(
         delta_arrow = "▲" if delta >= 0 else "▼"
         sparkline_color = delta_color  # Match sparkline to trend
 
-        weight_pct = int(CATEGORY_WEIGHTS[cat] * 100)
+        weight_pct = int(active_weights[cat] * 100)
 
         # Visible flag when the score is an injected fallback, not a measurement
         is_fallback = bool(meta.get("is_fallback"))

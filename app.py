@@ -706,6 +706,7 @@ def create_app() -> dash.Dash:
     from config import DEFAULT_PROFILE, INDUSTRY_PROFILES
     from components.gauge import build_gauge_figure
     from components.charts import build_history_chart
+    from components.cards import build_category_cards
     from scoring import compute_composite_index
 
     @app.callback(
@@ -755,6 +756,25 @@ def create_app() -> dash.Dash:
             if cat in history:
                 filtered_history[cat] = history[cat]
         return build_history_chart(filtered_history)
+
+    @app.callback(
+        Output("cards-container", "children"),
+        [Input("profile-store", "data"),
+         Input("refresh-interval", "n_intervals")],
+    )
+    def update_cards_for_profile(profile_key, n_intervals):
+        with _LOCK:
+            data = _DATA_CACHE
+        if not data or not data.get("current_scores"):
+            raise dash.exceptions.PreventUpdate
+        profile = INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES["baseline"])
+        current_scores = data["current_scores"]
+        category_history = data.get("category_history", {})
+        category_metadata = data.get("category_metadata", {})
+        return build_category_cards(
+            current_scores, category_history, category_metadata,
+            active_weights=profile["weights"],
+        )
 
     return app
 
