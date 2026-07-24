@@ -252,11 +252,13 @@ def build_layout(
                 children=[
                     html.Div(
                         className="chart-panel gauge-panel",
+                        style={"minHeight": "340px", "position": "relative"},
                         children=[
                             dcc.Graph(
                                 id="gauge",
                                 figure=gauge_fig,
-                                config={"displayModeBar": False, "responsive": True},
+                                config={"displayModeBar": False, "responsive": False},
+                                style={"height": "100%", "width": "100%"},
                             ),
                             html.Div(
                                 className="gauge-score-hover-zone",

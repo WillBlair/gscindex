@@ -148,7 +148,7 @@ DEFAULT_PROFILE: str = "baseline"
 
 INDUSTRY_PROFILES: dict[str, dict] = {
     "baseline": {
-        "label": "🌐 Baseline (Global)",
+        "label": "Baseline (Global)",
         "description": "General supply chain health across all sectors",
         "weights": {
             "weather":        0.10,
@@ -161,7 +161,7 @@ INDUSTRY_PROFILES: dict[str, dict] = {
         "providers": [],
     },
     "semiconductor": {
-        "label": "💻 Semiconductor",
+        "label": "Semiconductor",
         "description": (
             "Chip supply chain — fab utilization, memory prices, lead times, "
             "and wafer pricing from Silicon Analysts API"

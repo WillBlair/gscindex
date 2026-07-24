@@ -1396,3 +1396,65 @@ body {
 #newsletter-toast-inner:hover {
     border-color: rgba(99, 102, 241, 0.3) !important;
 }
+
+/* --------------------------------------------------------------------------
+   Dark Theme Dropdown (Industry Profile Selector)
+   -------------------------------------------------------------------------- */
+#profile-selector .Select-control {
+    background-color: #1a1d26 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 6px !important;
+    color: #e1e4ea !important;
+}
+
+#profile-selector .Select-control .Select-value-label,
+#profile-selector .Select-control .Select-placeholder {
+    color: #e1e4ea !important;
+}
+
+#profile-selector .Select-menu-outer {
+    background-color: #1a1d26 !important;
+    border: 1px solid #2a2d3a !important;
+    border-radius: 6px !important;
+    z-index: 1000 !important;
+}
+
+#profile-selector .Select-option {
+    background-color: #1a1d26 !important;
+    color: #e1e4ea !important;
+}
+
+#profile-selector .Select-option.is-focused {
+    background-color: #2a2d3a !important;
+    color: #ffffff !important;
+}
+
+#profile-selector .Select-option.is-selected {
+    background-color: #6366f1 !important;
+    color: #ffffff !important;
+}
+
+#profile-selector .Select-arrow {
+    border-color: #8a8f9e transparent transparent !important;
+}
+
+#profile-selector .Select-input {
+    color: #e1e4ea !important;
+}
+
+#profile-selector .Select.is-open > .Select-control {
+    border-color: #6366f1 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Gauge Panel — prevent reflow when profile switches
+   -------------------------------------------------------------------------- */
+.gauge-panel {
+    height: 340px;
+    overflow: hidden;
+}
+
+.gauge-panel .dash-graph {
+    height: 100% !important;
+    width: 100% !important;
+}
