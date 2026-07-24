@@ -174,21 +174,18 @@ def build_layout(
                     html.Div(
                         className="header-meta",
                         children=[
-                            dcc.Dropdown(
-                                id="profile-selector",
-                                options=[
-                                    {"label": p["label"], "value": k}
-                                    for k, p in INDUSTRY_PROFILES.items()
+                            html.Div(
+                                className="profile-selector-wrapper",
+                                children=[
+                                    dbc.Select(
+                                        id="profile-selector",
+                                        options=[
+                                            {"label": p["label"], "value": k}
+                                            for k, p in INDUSTRY_PROFILES.items()
+                                        ],
+                                        value=DEFAULT_PROFILE,
+                                    ),
                                 ],
-                                value=DEFAULT_PROFILE,
-                                clearable=False,
-                                searchable=False,
-                                style={
-                                    "width": "200px",
-                                    "backgroundColor": COLORS["card"],
-                                    "borderRadius": "6px",
-                                    "fontSize": "13px",
-                                },
                             ),
                             html.Span(
                                 (

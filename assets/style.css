@@ -1400,50 +1400,33 @@ body {
 /* --------------------------------------------------------------------------
    Dark Theme Dropdown (Industry Profile Selector)
    -------------------------------------------------------------------------- */
-#profile-selector .Select-control {
+.profile-selector-wrapper {
+    width: 200px;
+    min-width: 200px;
+    margin-right: 15px;
+}
+
+#profile-selector {
     background-color: #1a1d26 !important;
     border: 1px solid #2a2d3a !important;
     border-radius: 6px !important;
     color: #e1e4ea !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 6px 10px !important;
+    cursor: pointer !important;
+    height: auto !important;
 }
 
-#profile-selector .Select-control .Select-value-label,
-#profile-selector .Select-control .Select-placeholder {
-    color: #e1e4ea !important;
-}
-
-#profile-selector .Select-menu-outer {
-    background-color: #1a1d26 !important;
-    border: 1px solid #2a2d3a !important;
-    border-radius: 6px !important;
-    z-index: 1000 !important;
-}
-
-#profile-selector .Select-option {
-    background-color: #1a1d26 !important;
-    color: #e1e4ea !important;
-}
-
-#profile-selector .Select-option.is-focused {
-    background-color: #2a2d3a !important;
-    color: #ffffff !important;
-}
-
-#profile-selector .Select-option.is-selected {
-    background-color: #6366f1 !important;
-    color: #ffffff !important;
-}
-
-#profile-selector .Select-arrow {
-    border-color: #8a8f9e transparent transparent !important;
-}
-
-#profile-selector .Select-input {
-    color: #e1e4ea !important;
-}
-
-#profile-selector .Select.is-open > .Select-control {
+#profile-selector:focus {
     border-color: #6366f1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+}
+
+#profile-selector option {
+    background-color: #1a1d26 !important;
+    color: #e1e4ea !important;
+    padding: 8px !important;
 }
 
 /* --------------------------------------------------------------------------
