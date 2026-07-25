@@ -19,8 +19,13 @@
       var canvas = canvases[i];
       canvas.setAttribute("data-orb-mounted", "");
       window.ThinkingOrbs.mount(canvas, {
+        // React: <ThinkingOrb state="working" size={64} theme="dark" />
         state: canvas.getAttribute("data-orb-state") || "working",
         size: parseInt(canvas.getAttribute("data-orb-size"), 10) || 64,
+        theme: "dark",
+        forceMotion:
+          canvas.getAttribute("data-orb-force-motion") === "true" ||
+          canvas.classList.contains("brand-orb"),
       });
     }
     return true;
