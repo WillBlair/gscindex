@@ -14,16 +14,28 @@ def build_skeleton_layout():
             html.Div(
                 className="header-brand",
                 children=[
-                    html.Div([
-                        html.Div(
-                            className="skeleton-pulse",
-                            style={"height": "32px", "width": "300px", "borderRadius": "8px", "marginBottom": "8px"},
-                        ),
-                        html.Div(
-                            className="skeleton-pulse",
-                            style={"height": "16px", "width": "200px", "borderRadius": "8px"},
-                        ),
-                    ]),
+                    html.Div(
+                        className="brand-title-row",
+                        children=[
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "34px", "width": "34px", "borderRadius": "50%", "flexShrink": "0"},
+                            ),
+                            html.Div(
+                                className="brand-text",
+                                children=[
+                                    html.Div(
+                                        className="skeleton-pulse",
+                                        style={"height": "26px", "width": "280px", "borderRadius": "8px"},
+                                    ),
+                                    html.Div(
+                                        className="skeleton-pulse",
+                                        style={"height": "14px", "width": "120px", "borderRadius": "8px", "marginTop": "6px"},
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
                     html.Div(
                         className="skeleton-pulse",
                         style={"height": "34px", "width": "200px", "borderRadius": "8px"},
@@ -34,12 +46,22 @@ def build_skeleton_layout():
                 className="header-meta",
                 children=[
                     html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "20px", "width": "150px", "borderRadius": "999px"},
+                        className="header-status",
+                        children=[
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "14px", "width": "220px", "borderRadius": "999px"},
+                            ),
+                        ],
                     ),
                     html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "20px", "width": "100px", "borderRadius": "999px"},
+                        className="header-nav",
+                        children=[
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "28px", "width": "160px", "borderRadius": "8px"},
+                            ),
+                        ],
                     ),
                 ],
             ),
@@ -207,11 +229,6 @@ def build_skeleton_layout():
                     "gap": "10px",
                 },
                 children=[
-                    html.Canvas(
-                        className="thinking-orb-mount",
-                        style={"width": "64px", "height": "64px"},
-                        **{"data-orb-state": "searching", "data-orb-size": "64"},
-                    ),
                     html.Div(
                         id="loading-message",
                         children="Initializing system...",
