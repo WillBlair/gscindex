@@ -12,13 +12,15 @@ from datetime import datetime, timezone
 
 from dash import html, dcc
 
-from config import CATEGORY_LABELS, COLORS
+from config import CATEGORY_LABELS, COLORS, hex_to_rgba
 
 
+# Soft pills: tinted background + tier-colored text/border, no harsh
+# white-on-neon fill and no colored left edge on the alert card itself.
 _SEVERITY_STYLES: dict[str, dict] = {
-    "high":   {"border": COLORS["red"],    "badge_bg": COLORS["red"]},
-    "medium": {"border": COLORS["orange"], "badge_bg": COLORS["orange"]},
-    "low":    {"border": COLORS["green"],  "badge_bg": COLORS["green"]},
+    "high":   {"color": COLORS["red"],    "bg": hex_to_rgba(COLORS["red"], 0.15)},
+    "medium": {"color": COLORS["orange"], "bg": hex_to_rgba(COLORS["orange"], 0.15)},
+    "low":    {"color": COLORS["green"],  "bg": hex_to_rgba(COLORS["green"], 0.15)},
 }
 
 
@@ -209,7 +211,6 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
 
         item = html.Div(
             className="alert-item",
-            style={"borderLeft": f"3px solid {sev['border']}"},
             children=[
                 html.Div(
                     className="alert-header",
@@ -220,7 +221,11 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
                                 html.Span(
                                     alert["severity"].upper(),
                                     className="severity-badge",
-                                    style={"backgroundColor": sev["badge_bg"]},
+                                    style={
+                                        "backgroundColor": sev["bg"],
+                                        "color": sev["color"],
+                                        "border": f"1px solid {sev['color']}",
+                                    },
                                 ),
                                 html.Span(
                                     cat_label,
