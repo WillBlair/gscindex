@@ -62,13 +62,13 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
     fig.update_layout(
         title={
             "text": "90-Day Category Trends",
-            "font": {"size": 14, "color": COLORS["text"], "family": "IBM Plex Sans"},
+            "font": {"size": 14, "color": COLORS["text"], "family": "Satoshi"},
             "x": 0,
             "xanchor": "left",
         },
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "IBM Plex Sans", "color": COLORS["text_muted"]},
+        font={"family": "Satoshi", "color": COLORS["text_muted"]},
         margin={"t": 40, "b": 40, "l": 45, "r": 16},
         height=300,
         dragmode=False,  # Disable drag interactions (pan/zoom selection)
@@ -162,16 +162,7 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
 
     return html.Div(
         children=[
-            html.H3(
-                "Category Health",
-                style={
-                    "margin": "4px 0 16px",  # Reduced margin to align with Plotly title
-                    "fontSize": "14px",      # Matches Plotly
-                    "fontFamily": "IBM Plex Sans, sans-serif", # Matches Plotly
-                    "fontWeight": "500",     # Matches Plotly (Medium)
-                    "color": COLORS["text"],
-                },
-            ),
+            html.H3("Category Health", className="panel-title"),
             html.Div(className="health-bar-container", children=bars),
         ],
     )
@@ -300,7 +291,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     fig.update_layout(
         title={
             "text": "Major Shipping Ports & Risk Status",
-            "font": {"size": 14, "color": COLORS["text"], "family": "IBM Plex Sans"},
+            "font": {"size": 14, "color": COLORS["text"], "family": "Satoshi"},
             "x": 0,
             "xanchor": "left",
         },
@@ -311,7 +302,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         hoverlabel={
             "bgcolor": COLORS["card"],
             "bordercolor": COLORS["card_border_hex"],
-            "font": {"family": "IBM Plex Sans", "size": 12, "color": COLORS["text"]},
+            "font": {"family": "Satoshi", "size": 12, "color": COLORS["text"]},
             "align": "left",
             "namelength": -1,
         },

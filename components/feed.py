@@ -129,11 +129,6 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
                             "padding": "24px 0",
                         },
                         children=[
-                            html.Canvas(
-                                className="thinking-orb-mount",
-                                style={"width": "64px", "height": "64px"},
-                                **{"data-orb-state": "composing", "data-orb-size": "64"},
-                            ),
                             html.Span(
                                 "Composing briefing…",
                                 style={

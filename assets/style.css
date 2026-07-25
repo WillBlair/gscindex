@@ -19,7 +19,7 @@
     --radius-panel: 10px;
     --radius-control: 8px;
     --radius-pill: 999px;
-    --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+    --font-sans: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --tier-healthy: #3d9b6e;
     --tier-stable: #c4a35a;
@@ -64,10 +64,10 @@ body {
 .dash-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 12px 24px;
-    padding-bottom: 12px;
+    gap: 16px 32px;
+    padding-bottom: 14px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -75,32 +75,84 @@ body {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
+    gap: 12px;
+    min-width: 0;
+}
+
+.brand-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     min-width: 0;
 }
 
 .app-title {
     margin: 0;
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
     color: var(--text);
 }
 
 .app-subtitle {
-    margin: 4px 0 0;
-    font-size: 0.95rem;
+    margin: 0;
+    font-size: 0.875rem;
     color: var(--text-muted);
-    font-weight: 400;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+}
+
+.app-subtitle-link:hover {
+    color: var(--text);
 }
 
 .header-meta {
     display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 0;
+}
+
+.header-status {
+    display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 12px;
     flex-wrap: wrap;
-    margin-top: 0;
+    gap: 10px 14px;
+}
+
+.header-nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px 2px;
+}
+
+.header-nav-link {
+    color: var(--text-muted) !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    text-decoration: none !important;
+    padding: 4px 10px !important;
+    border-radius: var(--radius-control);
+}
+
+.header-nav-link:hover {
+    color: var(--text) !important;
+    background: var(--surface-raised);
+}
+
+.header-nav-link-accent {
+    color: var(--tier-healthy) !important;
 }
 
 .last-updated {
@@ -149,16 +201,6 @@ body {
 /* --------------------------------------------------------------------------
    Chart Panels (shared card style for gauge, trend, map, health bars)
    -------------------------------------------------------------------------- */
-/* Generic Panel Container */
-.panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-    padding: 24px;
-    margin-bottom: 24px;
-    position: relative;
-}
-
 .chart-panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -204,10 +246,9 @@ body {
     border: 1px solid var(--border);
 }
 
-/* Top Row (Gauge & Trend): Frameless / "No Border" look per user request */
+/* Top Row (Gauge & Trend) */
 .hero-row .chart-panel {
-    border: 1px solid transparent;
-    /* Maintain layout spacing but hide line */
+    border: 1px solid var(--border);
 }
 
 /* Gauge score hover explanation */
@@ -376,9 +417,10 @@ body {
 }
 
 .panel-title {
-    margin: 0 0 16px;
-    font-size: 1rem;
+    margin: 0 0 14px;
+    font-size: 0.95rem;
     font-weight: 600;
+    letter-spacing: -0.02em;
     color: var(--text);
 }
 
@@ -746,8 +788,13 @@ body {
     }
 
     .header-meta {
-        justify-content: flex-start;
+        align-items: flex-start;
         gap: 10px;
+    }
+
+    .header-status,
+    .header-nav {
+        justify-content: flex-start;
     }
 
     .hero-row {
@@ -849,7 +896,7 @@ body {
    ========================================================================== */
 
 .market-section-ticker {
-    background: var(--bg);
+    background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     padding: 12px 16px;
@@ -858,6 +905,8 @@ body {
     /* Hide the scrolling content */
     position: relative;
     white-space: nowrap;
+    mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
 /* The Scrolling Track */
@@ -888,36 +937,16 @@ body {
     /* Move half the width (the duplicate set) */
 }
 
-/* Header Item (Inside ticker) */
-.market-ticker-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-right: 24px;
-}
-
-.ticker-label {
-    font-size: 0.8rem;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    font-family: var(--font-mono);
-}
-
-.ticker-live-dot {
-    font-size: 0.7rem;
-    color: var(--tier-healthy);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
 /* Individual Ticker Items */
 .market-ticker-item {
     display: flex;
     align-items: baseline;
     gap: 12px;
+}
+
+.market-ticker-item + .market-ticker-item {
+    border-left: 1px solid var(--border);
+    padding-left: 12px;
 }
 
 .market-symbol {
@@ -965,7 +994,7 @@ body {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    padding: 12px;
+    padding: 16px;
 
     display: flex;
     flex-direction: column;
@@ -994,12 +1023,12 @@ body {
 }
 
 .tech-label {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 700;
+    font-family: var(--font-sans);
+    font-size: 0.68rem;
+    font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     max-width: 75%;
     /* Ensure space for weight badge */
     line-height: 1.2;
@@ -1036,7 +1065,7 @@ body {
 
 .tech-meta-label {
     display: block;
-    font-size: 0.55rem;
+    font-size: 0.65rem;
     color: var(--text-faint);
     text-transform: uppercase;
     margin-bottom: 1px;
@@ -1086,39 +1115,6 @@ body {
     /* Push to bottom */
 }
 
-/* Corner Decorations */
-/* Corner Decorations (Legacy - Hidden in favor of standard ticks) */
-.tech-corner-tr,
-.tech-corner-bl {
-    display: none !important;
-}
-
-/* ── Newsletter Toast Animations ─────────────────────────────── */
-@keyframes toastIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes toastOut {
-    from {
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    to {
-        opacity: 0;
-        transform: translateY(20px);
-        pointer-events: none;
-    }
-}
-
 #newsletter-toast-inner:hover {
     border-color: var(--border-strong) !important;
 }
@@ -1127,26 +1123,41 @@ body {
    Dark Theme Dropdown (Industry Profile Selector)
    -------------------------------------------------------------------------- */
 .profile-selector-wrapper {
-    width: 200px;
-    max-width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(220px, 100%);
+}
+
+.profile-metal-badge {
+    position: relative;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
 }
 
 #profile-selector {
-    background-color: var(--surface) !important;
+    background-color: var(--surface-raised) !important;
     border: 1px solid var(--border) !important;
     border-radius: var(--radius-control) !important;
     color: var(--text) !important;
+    font-family: var(--font-sans) !important;
     font-size: 13px !important;
     font-weight: 500 !important;
-    padding: 6px 10px !important;
+    padding: 7px 12px !important;
     cursor: pointer !important;
     height: auto !important;
     width: 100% !important;
+    flex: 1;
+    min-width: 0;
 }
 
 #profile-selector:focus {
     border-color: var(--border-strong) !important;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06) !important;
 }
 
 #profile-selector option {
@@ -1181,6 +1192,7 @@ body {
 .modal-header,
 .modal-footer {
     border-color: var(--border) !important;
+    background: var(--surface) !important;
 }
 
 .modal-title {
@@ -1194,28 +1206,10 @@ body {
    restrained brand accent, not decoration.
    -------------------------------------------------------------------------- */
 
-/* thinking-orbs: sized up front so canvases don't flash at the browser's
-   default 300x150 placeholder size before JS mounts them. */
-canvas.thinking-orb-mount {
+/* thinking-orbs: brand mark only — sized before JS mounts to avoid layout jump */
+canvas.thinking-orb-mount.brand-orb {
     display: block;
-    width: 20px;
-    height: 20px;
-}
-
-/* metal-fx: brand badge next to the app title. Sized/backed as a plain
-   circle up front so layout doesn't shift once the WebGL ring mounts. */
-.brand-title-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.brand-metal-badge {
-    position: relative;
+    width: 34px;
+    height: 34px;
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
 }

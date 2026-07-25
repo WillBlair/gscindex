@@ -160,43 +160,60 @@ def build_layout(
                     html.Div(
                         className="header-brand",
                         children=[
-                            html.Div([
-                                html.Div(
-                                    className="brand-title-row",
-                                    children=[
-                                        html.Div(
-                                            className="brand-metal-badge",
-                                            **{
-                                                "data-metal-preset": "silver",
-                                                "data-metal-size": "28",
-                                                "aria-hidden": "true",
-                                            },
-                                        ),
-                                        html.H1(APP_TITLE, className="app-title"),
-                                    ],
-                                ),
-                                html.P(
-                                    (
-                                        [
-                                            "by ",
-                                            html.A(
-                                                APP_SUBTITLE[3:],
-                                                href=APP_AUTHOR_URL,
-                                                target="_blank",
-                                                rel="noopener noreferrer",
-                                                className="app-subtitle",
-                                                style={"color": "inherit", "textDecoration": "none"},
-                                            ),
-                                        ]
-                                        if APP_SUBTITLE.lower().startswith("by ")
-                                        else [APP_SUBTITLE]
+                            html.Div(
+                                className="brand-title-row",
+                                children=[
+                                    # thinking-orbs used once — brand mark only
+                                    html.Canvas(
+                                        className="thinking-orb-mount brand-orb",
+                                        **{
+                                            "data-orb-state": "listening",
+                                            "data-orb-size": "34",
+                                            "aria-hidden": "true",
+                                        },
                                     ),
-                                    className="app-subtitle",
-                                ),
-                            ]),
+                                    html.Div(
+                                        className="brand-text",
+                                        children=[
+                                            html.H1(APP_TITLE, className="app-title"),
+                                            html.P(
+                                                (
+                                                    [
+                                                        "by ",
+                                                        html.A(
+                                                            APP_SUBTITLE[3:],
+                                                            href=APP_AUTHOR_URL,
+                                                            target="_blank",
+                                                            rel="noopener noreferrer",
+                                                            className="app-subtitle-link",
+                                                            style={
+                                                                "color": "inherit",
+                                                                "textDecoration": "none",
+                                                            },
+                                                        ),
+                                                    ]
+                                                    if APP_SUBTITLE.lower().startswith("by ")
+                                                    else [APP_SUBTITLE]
+                                                ),
+                                                className="app-subtitle",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
                             html.Div(
                                 className="profile-selector-wrapper",
+                                # metal-fx frames the industry selector (circle host
+                                # sits beside the control as a quiet chrome accent)
                                 children=[
+                                    html.Div(
+                                        className="profile-metal-badge",
+                                        **{
+                                            "data-metal-preset": "silver",
+                                            "data-metal-size": "18",
+                                            "aria-hidden": "true",
+                                        },
+                                    ),
                                     dbc.Select(
                                         id="profile-selector",
                                         options=[
@@ -212,48 +229,64 @@ def build_layout(
                     html.Div(
                         className="header-meta",
                         children=[
-                            html.Span(
-                                (
-                                    f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
-                                    if display_last_updated
-                                    else ("Last updated: provisional snapshot" if is_provisional else "Last updated: warming up...")
-                                ),
-                                className="last-updated",
+                            html.Div(
+                                className="header-status",
+                                children=[
+                                    html.Span(
+                                        (
+                                            f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
+                                            if display_last_updated
+                                            else (
+                                                "Last updated: provisional snapshot"
+                                                if is_provisional
+                                                else "Last updated: warming up..."
+                                            )
+                                        ),
+                                        className="last-updated",
+                                    ),
+                                    html.Span(
+                                        "Updating — refreshing in ~20s..."
+                                        if is_provisional
+                                        else "Auto-refreshes every 5 min",
+                                        className="refresh-note",
+                                    ),
+                                    html.Span(data_age_str, className="system-stats"),
+                                ],
                             ),
-                            html.Span(
-                                "Updating — refreshing in ~20s..." if is_provisional else "Auto-refreshes every 5 min",
-                                className="refresh-note",
-                            ),
-                            html.Span(
-                                data_age_str,
-                                className="system-stats",
-                            ),
-                            dbc.Button(
-                                "Docs",
-                                href="/docs",
-                                external_link=True,
-                                color="link",
-                                className="docs-btn-header",
-                                style={"color": COLORS["text_muted"], "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
-                            ),
-                            dbc.Button(
-                                "API",
-                                id="api-btn",
-                                color="link",
-                                className="api-btn-header",
-                                style={"color": COLORS["text_muted"], "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
-                            ),
-                            dbc.Button(
-                                "Newsletter",
-                                id="newsletter-btn",
-                                color="link",
-                                className="newsletter-btn-header",
-                                style={"color": COLORS["text_muted"], "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
-                            ),
-                            html.Span(
-                                "● Updating..." if is_provisional else "● Live",
-                                className="live-dot",
-                                style={"color": COLORS["yellow"] if is_provisional else COLORS["green"]},
+                            html.Div(
+                                className="header-nav",
+                                children=[
+                                    dbc.Button(
+                                        "Docs",
+                                        href="/docs",
+                                        external_link=True,
+                                        color="link",
+                                        className="header-nav-link",
+                                    ),
+                                    dbc.Button(
+                                        "API",
+                                        id="api-btn",
+                                        color="link",
+                                        className="header-nav-link",
+                                    ),
+                                    dbc.Button(
+                                        "Newsletter",
+                                        id="newsletter-btn",
+                                        color="link",
+                                        className="header-nav-link header-nav-link-accent",
+                                    ),
+                                    html.Span(
+                                        "● Updating..." if is_provisional else "● Live",
+                                        className="live-dot",
+                                        style={
+                                            "color": (
+                                                COLORS["yellow"]
+                                                if is_provisional
+                                                else COLORS["green"]
+                                            )
+                                        },
+                                    ),
+                                ],
                             ),
                         ],
                     ),

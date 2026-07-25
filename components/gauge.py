@@ -71,7 +71,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
             ),
             title={
                 "text": f"Supply Chain Health Index<br><span style='font-size:14px;color:{tier['color']}'>{tier['label']}</span>",
-                "font": {"size": 16, "color": COLORS["text"], "family": "IBM Plex Sans"},
+                "font": {"size": 16, "color": COLORS["text"], "family": "Satoshi"},
             },
             gauge={
                 "axis": {
@@ -99,7 +99,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "IBM Plex Sans"},
+        font={"family": "Satoshi"},
         margin={"t": 40, "b": 10, "l": 30, "r": 30},
         height=250,
     )
