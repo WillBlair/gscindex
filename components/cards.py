@@ -11,104 +11,152 @@ Renders a row of cards, one per supply-chain category, each showing:
 from __future__ import annotations
 
 import pandas as pd
-import plotly.graph_objects as go
-from dash import html
+from dash import dcc, html
 
-from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, COLORS, hex_to_rgba
+from config import (
+    CATEGORY_LABELS,
+    CATEGORY_WEIGHTS,
+    COLORS,
+    HEALTH_TIERS,
+    hex_to_rgba,
+)
 from scoring import get_health_tier
 
+# SVG viewBox for every sparkline. Height is small (32) so the line has
+# visible amplitude; the wrapper CSS stretches it to the card's screen height.
+_SPARK_VB_W = 100
+_SPARK_VB_H = 32
+_SPARK_MIN_POINTS = 5  # below this, real chart shape is not meaningful — plot dots only
 
-def _sparkline(series: pd.Series, color: str) -> go.Figure:
-    """Build a tiny sparkline chart for a category card.
+# NOTE ON IMPLEMENTATION: `dash.html` has no Svg/Path/Circle/Rect/Line
+# components — SVG was never added to core Dash (see plotly/dash#219); the
+# only Python wrapper for real SVG *components* is the third-party
+# `dash-svg` package, which this task explicitly avoids. The Dash-native
+# way to render raw markup without a callback round-trip is `dcc.Markdown`
+# with `dangerously_allow_html=True`, which passes an HTML/SVG string
+# through to the browser unescaped. We build the SVG as a plain string
+# below and hand it to `dcc.Markdown` — still server-rendered, still no
+# Plotly figure, still no extra package.
+
+
+def _tier_band_svg() -> str:
+    """Faint background bands for each health tier, fixed to the 0-100 domain.
+
+    Gives every sparkline the same visual reference frame (e.g. "this line
+    is sitting in the Stressed band") regardless of the category's own
+    min/max, which is the whole point of a fixed 0-100 y domain.
+    """
+    parts = []
+    for tier in HEALTH_TIERS:
+        y_top = _SPARK_VB_H - (tier["max"] / 100.0) * _SPARK_VB_H
+        y_bottom = _SPARK_VB_H - (tier["min"] / 100.0) * _SPARK_VB_H
+        parts.append(
+            f'<rect x="0" y="{y_top:.2f}" width="{_SPARK_VB_W}" '
+            f'height="{(y_bottom - y_top):.2f}" '
+            f'fill="{hex_to_rgba(tier["color"], 0.07)}" stroke="none"></rect>'
+        )
+    return "".join(parts)
+
+
+def _score_to_y(value: float) -> float:
+    """Map a 0-100 score to an SVG y-coordinate (0 = top of the viewBox)."""
+    clamped = max(0.0, min(100.0, value))
+    return round(_SPARK_VB_H - (clamped / 100.0) * _SPARK_VB_H, 2)
+
+
+def _wrap_svg(inner: str) -> str:
+    return (
+        f'<svg class="spark-svg" viewBox="0 0 {_SPARK_VB_W} {_SPARK_VB_H}" '
+        f'preserveAspectRatio="none">{inner}</svg>'
+    )
+
+
+def _sparkline(series: pd.Series, color: str) -> html.Div:
+    """Build a tiny server-rendered SVG sparkline for a category card.
+
+    Unlike a Plotly figure with a data-hugging y-axis, this always maps the
+    fixed 0-100 score domain onto the viewBox, so a card sitting at 90 always
+    looks near the top and a card at 20 always looks near the bottom —
+    comparable across every category at a glance.
 
     Parameters
     ----------
     series : pd.Series
-        Last 30 data points to display.
+        History to display (last 30 points are used).
     color : str
         Line color (hex) — green if trending up, red if trending down.
 
     Returns
     -------
-    go.Figure
-        A minimal Plotly figure with no axes, suitable for inline display.
+    html.Div
+        A ``.spark-wrap`` div containing an inline SVG (via
+        ``dcc.Markdown(dangerously_allow_html=True)``) and an optional
+        caption for sparse/empty history.
     """
     # Drop NaN: history may legitimately be short (real measurements only
-    # accumulate day by day), and NaN breaks the manual fill polygon.
+    # accumulate day by day), and NaN breaks the polyline/fill path.
     recent = series.tail(30).dropna()
+    n = len(recent)
 
-    fig = go.Figure()
+    bands = _tier_band_svg()
 
-    if recent.empty:
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin={"t": 0, "b": 0, "l": 0, "r": 0},
-            height=40,
-            xaxis={"visible": False, "fixedrange": True},
-            yaxis={"visible": False, "fixedrange": True},
-            showlegend=False,
-            autosize=False,
+    if n == 0:
+        mid_y = _score_to_y(50.0)
+        line = (
+            f'<line x1="0" y1="{mid_y}" x2="{_SPARK_VB_W}" y2="{mid_y}" '
+            f'stroke="{COLORS["text_faint"]}" stroke-width="1" '
+            f'stroke-dasharray="3,3"></line>'
         )
-        return fig
-
-    # Center the data vertically with a minimum amplitude. Monthly-updated
-    # categories (GSCPI, tariffs, freight) are flat or stepped day-to-day; a
-    # tight data-hugging range pins them to the top or bottom edge and looks
-    # broken. Anchoring the range to the data midpoint keeps every sparkline —
-    # flat, stepped, or volatile — sitting cleanly in the middle of the box.
-    # This is a viewport only (no axis labels), so it may extend past 0–100.
-    y_min = float(recent.min())
-    y_max = float(recent.max())
-    mid = (y_min + y_max) / 2.0
-    # Data occupies ~65% of the vertical height; the remainder is breathing room.
-    half_height = max((y_max - y_min) / 2.0, 3.0) / 0.65
-    y_lo = mid - half_height
-    y_hi = mid + half_height
-
-    # Build the filled shape manually: line data + a baseline return to y_lo
-    # This avoids tozeroy (which fills to y=0, far below the visible range).
-    x_vals = list(range(len(recent)))
-    y_vals = list(recent.values)
-
-    # Filled area: draw the line, then return along the baseline at y_lo
-    fig.add_trace(
-        go.Scatter(
-            x=x_vals + x_vals[::-1],
-            y=y_vals + [y_lo] * len(x_vals),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.15),
-            line={"width": 0},
-            hoverinfo="skip",
-            showlegend=False,
+        svg_markup = _wrap_svg(bands + line)
+        return html.Div(
+            className="spark-wrap spark-wrap--empty",
+            children=[
+                dcc.Markdown(svg_markup, dangerously_allow_html=True, className="spark-markdown"),
+                html.Span("No history", className="spark-caption"),
+            ],
         )
+
+    x_step = _SPARK_VB_W / max(n - 1, 1)
+    points = [
+        (round(i * x_step, 2), _score_to_y(float(v)))
+        for i, v in enumerate(recent.values)
+    ]
+
+    if n < _SPARK_MIN_POINTS:
+        # Too few real measurements to imply a trend shape — show discrete
+        # dots (never a connecting line, which would fabricate a slope).
+        dots = "".join(
+            f'<circle cx="{px}" cy="{py}" r="1.8" fill="{color}"></circle>'
+            for px, py in points
+        )
+        svg_markup = _wrap_svg(bands + dots)
+        return html.Div(
+            className="spark-wrap spark-wrap--sparse",
+            children=[
+                dcc.Markdown(svg_markup, dangerously_allow_html=True, className="spark-markdown"),
+                html.Span(f"{n}/30d", className="spark-caption"),
+            ],
+        )
+
+    line_d = "M " + " L ".join(f"{px},{py}" for px, py in points)
+    # Filled-to-bottom polygon: line points, then back along the baseline.
+    fill_d = (
+        "M " + " L ".join(f"{px},{py}" for px, py in points)
+        + f" L {points[-1][0]},{_SPARK_VB_H} L {points[0][0]},{_SPARK_VB_H} Z"
     )
 
-    # Actual sparkline on top (markers when too short to draw a line)
-    fig.add_trace(
-        go.Scatter(
-            x=x_vals,
-            y=y_vals,
-            mode="lines" if len(recent) > 1 else "markers",
-            line={"color": color, "width": 2},
-            marker={"color": color, "size": 5},
-            hoverinfo="skip",
-            showlegend=False,
-        )
+    fill_path = f'<path d="{fill_d}" fill="{hex_to_rgba(color, 0.15)}" stroke="none"></path>'
+    line_path = (
+        f'<path d="{line_d}" fill="none" stroke="{color}" stroke-width="1.6" '
+        f'stroke-linejoin="round" stroke-linecap="round" '
+        f'vector-effect="non-scaling-stroke"></path>'
     )
+    svg_markup = _wrap_svg(bands + fill_path + line_path)
 
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin={"t": 0, "b": 0, "l": 0, "r": 0},
-        height=40,
-        xaxis={"visible": False, "fixedrange": True},
-        yaxis={"visible": False, "range": [y_lo, y_hi], "fixedrange": True},
-        showlegend=False,
-        autosize=False,
+    return html.Div(
+        className="spark-wrap",
+        children=[dcc.Markdown(svg_markup, dangerously_allow_html=True, className="spark-markdown")],
     )
-
-    return fig
 
 
 def build_category_cards(
@@ -141,8 +189,6 @@ def build_category_cards(
     list
         List of technical card components.
     """
-    from dash import dcc  # deferred to avoid circular imports during load
-
     if metadata is None:
         metadata = {}
     active_weights = active_weights or CATEGORY_WEIGHTS
@@ -271,14 +317,7 @@ def build_category_cards(
                 # Sparkline Container (The "Screen")
                 html.Div(
                     className="tech-sparkline-container",
-                    children=[
-                        dcc.Graph(
-                            figure=_sparkline(history, sparkline_color),
-                            config={"displayModeBar": False, "responsive": True},
-                            className="tech-sparkline",
-                            style={"height": "40px", "width": "100%"}
-                        )
-                    ]
+                    children=[_sparkline(history, sparkline_color)],
                 ),
             ],
         )

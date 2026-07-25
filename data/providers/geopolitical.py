@@ -596,6 +596,7 @@ class GeopoliticalProvider(BaseProvider):
             "description": "No news feeds available. Showing neutral baseline until data sources come online.",
             "calculation": "Neutral baseline of 85 — all data sources are offline.",
             "updated": "Initializing",
+            "is_fallback": True,
         }
 
     def fetch_history(self, days: int) -> pd.Series:

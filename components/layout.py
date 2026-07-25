@@ -164,11 +164,13 @@ def build_layout(
                                 className="brand-title-row",
                                 children=[
                                     # thinking-orbs used once — brand mark only
+                                    # Vendored thinking-orbs (same as React:
+                                    # <ThinkingOrb state="working" size={64} />)
                                     html.Canvas(
                                         className="thinking-orb-mount brand-orb",
                                         **{
-                                            "data-orb-state": "listening",
-                                            "data-orb-size": "34",
+                                            "data-orb-state": "working",
+                                            "data-orb-size": "64",
                                             "aria-hidden": "true",
                                         },
                                     ),
