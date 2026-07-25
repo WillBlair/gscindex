@@ -36,9 +36,14 @@ def build_skeleton_layout():
                             ),
                         ],
                     ),
+                ],
+            ),
+            html.Div(
+                className="header-center",
+                children=[
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "34px", "width": "200px", "borderRadius": "8px"},
+                        style={"height": "34px", "width": "200px", "borderRadius": "8px", "margin": "0 auto"},
                     ),
                 ],
             ),

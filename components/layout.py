@@ -157,6 +157,7 @@ def build_layout(
             html.Header(
                 className="dash-header",
                 children=[
+                    # ── Left: brand (title + subtitle only) ─────────
                     html.Div(
                         className="header-brand",
                         children=[
@@ -203,31 +204,23 @@ def build_layout(
                                     ),
                                 ],
                             ),
-                            html.Div(
-                                className="profile-selector-wrapper",
-                                # metal-fx frames the industry selector (circle host
-                                # sits beside the control as a quiet chrome accent)
-                                children=[
-                                    html.Div(
-                                        className="profile-metal-badge",
-                                        **{
-                                            "data-metal-preset": "silver",
-                                            "data-metal-size": "18",
-                                            "aria-hidden": "true",
-                                        },
-                                    ),
-                                    dbc.Select(
-                                        id="profile-selector",
-                                        options=[
-                                            {"label": p["label"], "value": k}
-                                            for k, p in INDUSTRY_PROFILES.items()
-                                        ],
-                                        value=DEFAULT_PROFILE,
-                                    ),
+                        ],
+                    ),
+                    # ── Center: industry profile dropdown, front-and-center ──
+                    html.Div(
+                        className="header-center",
+                        children=[
+                            dbc.Select(
+                                id="profile-selector",
+                                options=[
+                                    {"label": p["label"], "value": k}
+                                    for k, p in INDUSTRY_PROFILES.items()
                                 ],
+                                value=DEFAULT_PROFILE,
                             ),
                         ],
                     ),
+                    # ── Right: last updated / auto-refresh / nav ────
                     html.Div(
                         className="header-meta",
                         children=[
