@@ -247,8 +247,8 @@ def create_app() -> dash.Dash:
         ],
         external_stylesheets=[
             dbc.themes.DARKLY,
-            "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
-            "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap",
+            "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap",
+            "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
         ],
         suppress_callback_exceptions=True,
     )
@@ -264,8 +264,8 @@ def create_app() -> dash.Dash:
             {%css%}
             <style>
                 body {
-                    background-color: #0f1117;
-                    color: #e1e4ea;
+                    background-color: #0a0a0b;
+                    color: #ececef;
                     margin: 0;
                 }
                 ._dash-loading {
@@ -539,7 +539,7 @@ def create_app() -> dash.Dash:
 
     # ── Modal Interaction Callback ──────────────────────────────────────
     from dash import ALL, ctx
-    from config import CATEGORY_LABELS, INDUSTRY_PROFILES
+    from config import CATEGORY_LABELS, COLORS, INDUSTRY_PROFILES
 
     # Collect all category IDs across all profiles so every card click is captured
     _all_categories = set()
@@ -636,23 +636,52 @@ def create_app() -> dash.Dash:
                         ], style={"flex": "1"}),
                         html.Div([
                             html.Span("Data Source", style={"color": "#9ca3af", "fontSize": "14px"}),
-                            html.P(meta.get("source", "Unknown"), style={"fontWeight": "500", "marginTop": "5px", "color": "#6366f1"}),
+                            html.P(
+                                meta.get("source", "Unknown"),
+                                style={"fontWeight": "500", "marginTop": "5px", "color": COLORS["text"]},
+                            ),
                         ], style={"flex": "1"})
-                    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px", "backgroundColor": "#1a1d26", "padding": "15px", "borderRadius": "8px"}),
+                    ], style={
+                        "display": "flex",
+                        "gap": "20px",
+                        "marginBottom": "20px",
+                        "backgroundColor": COLORS["card_raised"],
+                        "padding": "15px",
+                        "borderRadius": "8px",
+                    }),
                     
                     # Bottom Section: Reasoning
-                    html.H5("Analysis", style={"color": "#fff", "fontWeight": "bold", "marginBottom": "10px"}),
-                    html.P(meta.get("description", "No detailed description available."), style={"fontSize": "15px", "lineHeight": "1.6", "color": "#d1d5db", "marginBottom": "25px"}),
+                    html.H5("Analysis", style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"}),
+                    html.P(
+                        meta.get("description", "No detailed description available."),
+                        style={
+                            "fontSize": "15px",
+                            "lineHeight": "1.6",
+                            "color": COLORS["text_muted"],
+                            "marginBottom": "25px",
+                        },
+                    ),
 
                     # Extra Bottom Section: Math / Calculation Logic
-                    html.H5("Scoring Logic", style={"color": "#fff", "fontWeight": "bold", "marginBottom": "10px"}),
+                    html.H5("Scoring Logic", style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"}),
                     html.Div(
-                        html.Code(meta.get("calculation", "Calculation logic not available."), style={"color": "#a5b4fc", "fontFamily": "monospace"}),
-                        style={"backgroundColor": "#1e1b4b", "padding": "15px", "borderRadius": "8px", "border": "1px solid #4338ca"}
+                        html.Code(
+                            meta.get("calculation", "Calculation logic not available."),
+                            style={"color": COLORS["text"], "fontFamily": "IBM Plex Mono, monospace"},
+                        ),
+                        style={
+                            "backgroundColor": COLORS["card_raised"],
+                            "padding": "15px",
+                            "borderRadius": "8px",
+                            "border": f"1px solid {COLORS['card_border']}",
+                        },
                     ),
                     
-                    html.Hr(style={"borderColor": "#2a2d3a", "marginTop": "20px"}),
-                    html.Small(f"Raw Label: {meta.get('raw_label', '')} | Last Updated: {meta.get('updated', 'Unknown')}", style={"color": "#6b7280"})
+                    html.Hr(style={"borderColor": COLORS["card_border_hex"], "marginTop": "20px"}),
+                    html.Small(
+                        f"Raw Label: {meta.get('raw_label', '')} | Last Updated: {meta.get('updated', 'Unknown')}",
+                        style={"color": COLORS["text_faint"]},
+                    )
                 ])
                 
                 # Use html.H5 instead of dbc.ModalTitle for safety

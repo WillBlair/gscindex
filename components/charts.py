@@ -43,7 +43,7 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
 
     for cat in CATEGORY_WEIGHTS:
         series = category_history[cat]
-        color = CATEGORY_COLORS.get(cat, COLORS["accent"])
+        color = CATEGORY_COLORS.get(cat, COLORS["text_muted"])
 
         fig.add_trace(
             go.Scatter(
@@ -62,13 +62,13 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
     fig.update_layout(
         title={
             "text": "90-Day Category Trends",
-            "font": {"size": 14, "color": COLORS["text"], "family": "Inter"},
+            "font": {"size": 14, "color": COLORS["text"], "family": "IBM Plex Sans"},
             "x": 0,
             "xanchor": "left",
         },
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Inter", "color": COLORS["text_muted"]},
+        font={"family": "IBM Plex Sans", "color": COLORS["text_muted"]},
         margin={"t": 40, "b": 40, "l": 45, "r": 16},
         height=300,
         dragmode=False,  # Disable drag interactions (pan/zoom selection)
@@ -119,7 +119,7 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
         score = current_scores[cat]
         tier = get_health_tier(score)
         label = CATEGORY_LABELS[cat]
-        cat_color = CATEGORY_COLORS.get(cat, COLORS["accent"])
+        cat_color = CATEGORY_COLORS.get(cat, COLORS["text_muted"])
 
         bar = html.Div(
             className="health-bar-item",
@@ -167,7 +167,7 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
                 style={
                     "margin": "4px 0 16px",  # Reduced margin to align with Plotly title
                     "fontSize": "14px",      # Matches Plotly
-                    "fontFamily": "Inter, sans-serif", # Matches Plotly
+                    "fontFamily": "IBM Plex Sans, sans-serif", # Matches Plotly
                     "fontWeight": "500",     # Matches Plotly (Medium)
                     "color": COLORS["text"],
                 },
@@ -300,7 +300,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     fig.update_layout(
         title={
             "text": "Major Shipping Ports & Risk Status",
-            "font": {"size": 14, "color": COLORS["text"], "family": "Inter"},
+            "font": {"size": 14, "color": COLORS["text"], "family": "IBM Plex Sans"},
             "x": 0,
             "xanchor": "left",
         },
@@ -310,8 +310,8 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         height=310,
         hoverlabel={
             "bgcolor": COLORS["card"],
-            "bordercolor": COLORS["card_border"],
-            "font": {"family": "Inter", "size": 12, "color": COLORS["text"]},
+            "bordercolor": COLORS["card_border_hex"],
+            "font": {"family": "IBM Plex Sans", "size": 12, "color": COLORS["text"]},
             "align": "left",
             "namelength": -1,
         },
@@ -319,14 +319,14 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             "bgcolor": "rgba(0,0,0,0)",
             "showframe": False,
             "showcoastlines": True,
-            "coastlinecolor": COLORS["card_border"],
+            "coastlinecolor": COLORS["card_border_hex"],
             "showland": True,
             "landcolor": COLORS["card"],
             "showocean": True,
             "oceancolor": COLORS["bg"],
             "showlakes": False,
             "showcountries": True,
-            "countrycolor": COLORS["card_border"],
+            "countrycolor": COLORS["card_border_hex"],
             "projection": {"type": "natural earth"},
         },
     )

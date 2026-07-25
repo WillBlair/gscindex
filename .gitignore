@@ -17,3 +17,8 @@ data/.cache/
 app_run.log
 data/subscribers.db
 test_*.py
+
+# Frontend build workspace (vendors thinking-orbs/border-beam/metal-fx into
+# assets/vendor/*.js + assets/vendor/border-beam-pulse.css, which ARE
+# committed — see frontend/package.json). Only node_modules is excluded.
+frontend/node_modules/

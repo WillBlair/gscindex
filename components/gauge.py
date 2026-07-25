@@ -55,7 +55,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
             mode="gauge+number+delta" if show_delta else "gauge+number",
             value=composite,
             number={
-                "font": {"size": 48, "color": tier["color"], "family": "JetBrains Mono, monospace"},
+                "font": {"size": 48, "color": tier["color"], "family": "IBM Plex Mono, monospace"},
                 "suffix": "",
             },
             delta=(
@@ -64,14 +64,14 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
                     "relative": False,
                     "increasing": {"color": COLORS["green"]},
                     "decreasing": {"color": COLORS["red"]},
-                    "font": {"size": 16, "family": "JetBrains Mono, monospace"},
+                    "font": {"size": 16, "family": "IBM Plex Mono, monospace"},
                 }
                 if show_delta
                 else {}
             ),
             title={
                 "text": f"Supply Chain Health Index<br><span style='font-size:14px;color:{tier['color']}'>{tier['label']}</span>",
-                "font": {"size": 16, "color": COLORS["text"], "family": "Inter"},
+                "font": {"size": 16, "color": COLORS["text"], "family": "IBM Plex Sans"},
             },
             gauge={
                 "axis": {
@@ -99,7 +99,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Inter"},
+        font={"family": "IBM Plex Sans"},
         margin={"t": 40, "b": 10, "l": 30, "r": 30},
         height=250,
     )

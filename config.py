@@ -209,10 +209,10 @@ INDUSTRY_PROFILES: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 HEALTH_TIERS: list[dict] = [
-    {"min": 80, "max": 100, "label": "Healthy",       "color": "#00d97e"},
-    {"min": 60, "max": 79,  "label": "Stable",        "color": "#f6c343"},
-    {"min": 40, "max": 59,  "label": "Stressed",      "color": "#fd7e14"},
-    {"min": 0,  "max": 39,  "label": "Critical",      "color": "#e63757"},
+    {"min": 80, "max": 100, "label": "Healthy",  "color": "#3d9b6e"},
+    {"min": 60, "max": 79,  "label": "Stable",   "color": "#c4a35a"},
+    {"min": 40, "max": 59,  "label": "Stressed", "color": "#c47a3a"},
+    {"min": 0,  "max": 39,  "label": "Critical", "color": "#c44d5f"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -230,35 +230,39 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 # ---------------------------------------------------------------------------
 
 CATEGORY_COLORS: dict[str, str] = {
-    "weather":             "#3b82f6",   # blue
-    "supply_chain":        "#8b5cf6",   # purple
-    "freight":             "#10b981",   # emerald
-    "energy":              "#f59e0b",   # amber
-    "tariffs":             "#ef4444",   # red
-    "geopolitical":        "#f97316",   # orange
-    "chip_fab_util":       "#06b6d4",   # cyan
-    "chip_memory_prices":  "#a855f7",   # violet
-    "chip_lead_times":     "#14b8a6",   # teal
-    "chip_wafer_prices":   "#ec4899",   # pink
+    "weather":             "#6b8cae",
+    "supply_chain":        "#8a7e9c",
+    "freight":             "#5f8f7a",
+    "energy":              "#b8956a",
+    "tariffs":             "#a66d6d",
+    "geopolitical":        "#a67c5b",
+    "chip_fab_util":       "#5f8f9c",
+    "chip_memory_prices":  "#7d7394",
+    "chip_lead_times":     "#5a8f86",
+    "chip_wafer_prices":   "#9c6b7a",
 }
 
 # ---------------------------------------------------------------------------
 # Color Palette (consistent across all charts)
 # ---------------------------------------------------------------------------
 
+# Keep in sync with :root tokens in assets/style.css (UI makeover 2026-07-25).
 COLORS = {
-    "bg":           "#0f1117",
-    "card":         "#1a1d26",
-    "card_border":  "#2a2d3a",
-    "text":         "#e1e4ea",
-    "text_muted":   "#8a8f9e",
-    "accent":       "#6366f1",   # indigo-500
-    "green":        "#00d97e",
-    "yellow":       "#f6c343",
-    "orange":       "#fd7e14",
-    "red":          "#e63757",
-    "blue":         "#3b82f6",
-    "grid":         "#1e2130",
+    "bg":           "#0a0a0b",
+    "card":         "#111113",
+    "card_raised":  "#18181b",
+    "card_border":  "rgba(255,255,255,0.10)",
+    "card_border_hex": "#2a2a2e",  # Plotly geo attrs need solid hex
+    "text":         "#ececef",
+    "text_muted":   "#8b8b93",
+    "text_faint":   "#5c5c66",
+    "accent":       "#a1a1aa",  # quiet focus / link hover — not indigo
+    "green":        "#3d9b6e",
+    "yellow":       "#c4a35a",
+    "orange":       "#c47a3a",
+    "red":          "#c44d5f",
+    "blue":         "#6b8cae",
+    "grid":         "#1e1e22",
 }
 
 
@@ -268,7 +272,7 @@ def hex_to_rgba(hex_color: str, alpha: float) -> str:
     Parameters
     ----------
     hex_color : str
-        Hex color like ``"#6366f1"``.
+        Hex color like ``"#3d9b6e"``.
     alpha : float
         Opacity between 0.0 and 1.0.
 

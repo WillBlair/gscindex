@@ -1,145 +1,231 @@
-import dash_bootstrap_components as dbc
-from dash import html, dcc
+"""Cold-start skeleton layout matching production chrome."""
+
+from dash import dcc, html
+
+from config import COLORS
+
 
 def build_skeleton_layout():
     """Returns a skeleton version of the dashboard layout."""
-    
-    # ── Header Skeleton ──────────────────────────────────────────────
+
     header = html.Header(
         className="dash-header",
         children=[
-            html.Div([
-                html.Div(className="skeleton-pulse", style={"height": "32px", "width": "300px", "borderRadius": "4px", "marginBottom": "8px"}),
-                html.Div(className="skeleton-pulse", style={"height": "16px", "width": "200px", "borderRadius": "4px"}),
-            ]),
+            html.Div(
+                className="header-brand",
+                children=[
+                    html.Div([
+                        html.Div(
+                            className="skeleton-pulse",
+                            style={"height": "32px", "width": "300px", "borderRadius": "8px", "marginBottom": "8px"},
+                        ),
+                        html.Div(
+                            className="skeleton-pulse",
+                            style={"height": "16px", "width": "200px", "borderRadius": "8px"},
+                        ),
+                    ]),
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "34px", "width": "200px", "borderRadius": "8px"},
+                    ),
+                ],
+            ),
             html.Div(
                 className="header-meta",
                 children=[
-                    html.Div(className="skeleton-pulse", style={"height": "20px", "width": "150px", "borderRadius": "12px"}),
-                    html.Div(className="skeleton-pulse", style={"height": "20px", "width": "100px", "borderRadius": "12px"}),
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "20px", "width": "150px", "borderRadius": "999px"},
+                    ),
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "20px", "width": "100px", "borderRadius": "999px"},
+                    ),
                 ],
             ),
         ],
     )
 
-    # ── Gauge + Trend Skeleton ───────────────────────────────────────
     hero_row = html.Section(
         className="hero-row",
         children=[
             html.Div(
-                className="chart-panel",
-                style={"height": "300px"},
+                className="chart-panel gauge-panel",
+                style={"height": "340px"},
                 children=[
-                    html.Div(className="skeleton-pulse", style={"height": "100%", "width": "100%", "borderRadius": "8px"})
-                ]
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                    )
+                ],
             ),
             html.Div(
                 className="chart-panel",
-                style={"height": "300px"},
+                style={"height": "340px"},
                 children=[
-                    html.Div(className="skeleton-pulse", style={"height": "100%", "width": "100%", "borderRadius": "8px"})
-                ]
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                    )
+                ],
             ),
         ],
     )
 
-    # ── Category Cards Skeleton ─────────────────────────────────────
+    ticker = html.Div(
+        className="market-section-ticker",
+        children=[
+            html.Div(
+                className="skeleton-pulse",
+                style={"height": "40px", "width": "100%", "borderRadius": "8px"},
+            )
+        ],
+    )
+
     cards = []
     for _ in range(6):
         cards.append(
             html.Div(
-                className="metric-card",
+                className="tech-card",
                 children=[
-                    html.Div(style={"display": "flex", "justifyContent": "space-between", "marginBottom": "10px"}, children=[
-                        html.Div(className="skeleton-pulse", style={"height": "12px", "width": "60px", "borderRadius": "2px"}),
-                        html.Div(className="skeleton-pulse", style={"height": "12px", "width": "30px", "borderRadius": "8px"}),
-                    ]),
-                    html.Div(className="skeleton-pulse", style={"height": "32px", "width": "80px", "borderRadius": "4px", "marginBottom": "4px"}),
-                    html.Div(className="skeleton-pulse", style={"marginTop": "auto", "height": "40px", "width": "100%", "borderRadius": "4px"}),
-                ]
+                    html.Div(
+                        style={"display": "flex", "justifyContent": "space-between", "marginBottom": "10px"},
+                        children=[
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "12px", "width": "60px", "borderRadius": "4px"},
+                            ),
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "12px", "width": "30px", "borderRadius": "999px"},
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "32px", "width": "80px", "borderRadius": "6px", "marginBottom": "4px"},
+                    ),
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"marginTop": "auto", "height": "40px", "width": "100%", "borderRadius": "6px"},
+                    ),
+                ],
             )
         )
-    
-    cards_row = html.Section(
-        className="cards-row",
-        children=cards
+
+    cards_row = html.Section(className="cards-row", children=cards)
+
+    bottom_row = html.Section(
+        className="bottom-row",
+        children=[
+            html.Div(
+                className="bottom-panel",
+                children=[
+                    html.Div(
+                        className="panel",
+                        style={"height": "300px"},
+                        children=[
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                            )
+                        ],
+                    )
+                ],
+            ),
+            html.Div(
+                className="bottom-panel",
+                children=[
+                    html.Div(
+                        className="panel",
+                        style={"height": "300px"},
+                        children=[
+                            html.Div(
+                                className="skeleton-pulse",
+                                style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                            )
+                        ],
+                    )
+                ],
+            ),
+        ],
     )
 
-    # ── Middle Row Skeleton ─────────────────────────────────────────
     charts_row = html.Section(
         className="charts-row",
         children=[
             html.Div(
                 className="chart-panel chart-narrow",
                 style={"height": "400px"},
-                children=[html.Div(className="skeleton-pulse", style={"height": "100%", "width": "100%", "borderRadius": "8px"})]
+                children=[
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                    )
+                ],
             ),
             html.Div(
                 className="chart-panel chart-wide",
                 style={"height": "400px"},
-                children=[html.Div(className="skeleton-pulse", style={"height": "100%", "width": "100%", "borderRadius": "8px"})]
+                children=[
+                    html.Div(
+                        className="skeleton-pulse",
+                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                    )
+                ],
             ),
-        ],
-    )
-
-    # ── Bottom Row Skeleton ─────────────────────────────────────────
-    bottom_row = html.Section(
-        className="bottom-row",
-        children=[
-            html.Div(className="panel", style={"height": "300px"}, children=[html.Div(className="skeleton-pulse", style={"height": "100%", "width": "100%", "borderRadius": "8px"})]),
-            html.Div(className="panel", style={"height": "300px"}, children=[html.Div(className="skeleton-pulse", style={"height": "100%", "width": "100%", "borderRadius": "8px"})]),
         ],
     )
 
     return html.Div(
         className="dashboard",
         children=[
-            # Dummy interval to trigger reload once data is ready is handled in app.py's waiting logic
-            # This layout is just visual.
             header,
             hero_row,
+            ticker,
             cards_row,
-            charts_row,
             bottom_row,
-            
-            # ── Hidden Infrastructure ───────────────────────────────────────
-            # Vital for auto-reloading from skeleton to main dash.
-            # We reuse the same IDs so app.py callbacks can target them.
+            charts_row,
             html.Div(id="refresh-trigger", style={"display": "none"}),
-            html.Div(id="boot-trigger", style={"display": "none"}), # Preserved for safety
-            
-            # ── Loading Status Feedback ─────────────────────────────────────
+            html.Div(id="boot-trigger", style={"display": "none"}),
             html.Div(
-                id="loading-message",
-                children="Initializing system...",
+                id="loading-message-wrapper",
                 style={
                     "position": "fixed",
                     "top": "50%",
                     "left": "50%",
                     "transform": "translate(-50%, -50%)",
-                    "backgroundColor": "rgba(15, 17, 23, 0.95)",
-                    "border": "1px solid #374151",
-                    "borderRadius": "8px",
-                    "padding": "24px 40px",
-                    "color": "#10b981",  # Technical Green
-                    "fontFamily": "'JetBrains Mono', monospace",
-                    "fontSize": "18px",
-                    "fontWeight": "600",
-                    "boxShadow": "0 10px 25px rgba(0,0,0,0.5)",
+                    "backgroundColor": COLORS["card"],
+                    "border": f"1px solid {COLORS['card_border']}",
+                    "borderRadius": "10px",
+                    "padding": "20px 40px",
                     "zIndex": "9999",
                     "minWidth": "300px",
-                    "textAlign": "center",
-                }
+                    "display": "flex",
+                    "flexDirection": "column",
+                    "alignItems": "center",
+                    "gap": "10px",
+                },
+                children=[
+                    html.Canvas(
+                        className="thinking-orb-mount",
+                        style={"width": "64px", "height": "64px"},
+                        **{"data-orb-state": "searching", "data-orb-size": "64"},
+                    ),
+                    html.Div(
+                        id="loading-message",
+                        children="Initializing system...",
+                        style={
+                            "color": COLORS["text"],
+                            "fontFamily": "IBM Plex Mono, monospace",
+                            "fontSize": "16px",
+                            "fontWeight": "600",
+                            "textAlign": "center",
+                        },
+                    ),
+                ],
             ),
-
-            # Special triggers for boot sequence
             html.Div(id="boot-reload-trigger", style={"display": "none"}),
-            
-            # Check every 1 second for data readiness
-            dcc.Interval(
-                id="boot-interval",
-                interval=1000, 
-                n_intervals=0
-            ),
-        ]
+            dcc.Interval(id="boot-interval", interval=1000, n_intervals=0),
+        ],
     )

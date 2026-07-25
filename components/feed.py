@@ -91,9 +91,9 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
                         "display": "block",
                         "marginTop": "20px",
                         "backgroundColor": "transparent",
-                        "color": COLORS["accent"],
-                        "border": f"1px solid {COLORS['accent']}",
-                        "borderRadius": "4px",
+                        "color": COLORS["text"],
+                        "border": f"1px solid {COLORS['card_border']}",
+                        "borderRadius": "8px",
                         "padding": "8px 12px",
                         "fontSize": "12px",
                         "fontWeight": "600",
@@ -101,7 +101,6 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
                         "width": "100%",
                         "textAlign": "center",
                         "textDecoration": "none",
-                        "transition": "all 0.2s",
                     },
                 ),
             ]
@@ -120,7 +119,32 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
                 dcc.Loading(
                     id="briefing-loading",
                     type="dot",
-                    color=COLORS["accent"],
+                    color=COLORS["text_muted"],
+                    custom_spinner=html.Div(
+                        style={
+                            "display": "flex",
+                            "flexDirection": "column",
+                            "alignItems": "center",
+                            "gap": "10px",
+                            "padding": "24px 0",
+                        },
+                        children=[
+                            html.Canvas(
+                                className="thinking-orb-mount",
+                                style={"width": "64px", "height": "64px"},
+                                **{"data-orb-state": "composing", "data-orb-size": "64"},
+                            ),
+                            html.Span(
+                                "Composing briefing…",
+                                style={
+                                    "fontFamily": "IBM Plex Mono, monospace",
+                                    "fontSize": "12px",
+                                    "color": COLORS["text_muted"],
+                                    "letterSpacing": "0.04em",
+                                },
+                            ),
+                        ],
+                    ),
                     children=html.Div(
                         id="briefing-content",
                         children=[
@@ -132,10 +156,10 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
                                 "Generate Briefing",
                                 id="generate-briefing-btn",
                                 style={
-                                    "backgroundColor": COLORS["accent"],
-                                    "color": "white",
+                                    "backgroundColor": COLORS["text"],
+                                    "color": COLORS["bg"],
                                     "border": "none",
-                                    "borderRadius": "6px",
+                                    "borderRadius": "8px",
                                     "padding": "10px 20px",
                                     "fontSize": "13px",
                                     "fontWeight": "600",
@@ -151,7 +175,7 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
     return html.Div(
         className="panel",
         children=[
-            html.H3("AI Daily Briefing", className="panel-title", style={"color": COLORS["accent"]}),
+            html.H3("AI Daily Briefing", className="panel-title", style={"color": COLORS["text"]}),
             content,
         ],
     )
