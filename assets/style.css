@@ -201,16 +201,6 @@ body {
 /* --------------------------------------------------------------------------
    Chart Panels (shared card style for gauge, trend, map, health bars)
    -------------------------------------------------------------------------- */
-/* Generic Panel Container */
-.panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
-    padding: 24px;
-    margin-bottom: 24px;
-    position: relative;
-}
-
 .chart-panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -256,10 +246,9 @@ body {
     border: 1px solid var(--border);
 }
 
-/* Top Row (Gauge & Trend): Frameless / "No Border" look per user request */
+/* Top Row (Gauge & Trend) */
 .hero-row .chart-panel {
-    border: 1px solid transparent;
-    /* Maintain layout spacing but hide line */
+    border: 1px solid var(--border);
 }
 
 /* Gauge score hover explanation */
@@ -907,7 +896,7 @@ body {
    ========================================================================== */
 
 .market-section-ticker {
-    background: var(--bg);
+    background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     padding: 12px 16px;
@@ -916,6 +905,8 @@ body {
     /* Hide the scrolling content */
     position: relative;
     white-space: nowrap;
+    mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
 /* The Scrolling Track */
@@ -946,36 +937,16 @@ body {
     /* Move half the width (the duplicate set) */
 }
 
-/* Header Item (Inside ticker) */
-.market-ticker-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-right: 24px;
-}
-
-.ticker-label {
-    font-size: 0.8rem;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    font-family: var(--font-mono);
-}
-
-.ticker-live-dot {
-    font-size: 0.7rem;
-    color: var(--tier-healthy);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
 /* Individual Ticker Items */
 .market-ticker-item {
     display: flex;
     align-items: baseline;
     gap: 12px;
+}
+
+.market-ticker-item + .market-ticker-item {
+    border-left: 1px solid var(--border);
+    padding-left: 12px;
 }
 
 .market-symbol {
@@ -1023,7 +994,7 @@ body {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    padding: 12px;
+    padding: 16px;
 
     display: flex;
     flex-direction: column;
@@ -1094,7 +1065,7 @@ body {
 
 .tech-meta-label {
     display: block;
-    font-size: 0.55rem;
+    font-size: 0.65rem;
     color: var(--text-faint);
     text-transform: uppercase;
     margin-bottom: 1px;
@@ -1142,39 +1113,6 @@ body {
     overflow: hidden;
     /* Clip any potential fill bleed */
     /* Push to bottom */
-}
-
-/* Corner Decorations */
-/* Corner Decorations (Legacy - Hidden in favor of standard ticks) */
-.tech-corner-tr,
-.tech-corner-bl {
-    display: none !important;
-}
-
-/* ── Newsletter Toast Animations ─────────────────────────────── */
-@keyframes toastIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes toastOut {
-    from {
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    to {
-        opacity: 0;
-        transform: translateY(20px);
-        pointer-events: none;
-    }
 }
 
 #newsletter-toast-inner:hover {
@@ -1254,6 +1192,7 @@ body {
 .modal-header,
 .modal-footer {
     border-color: var(--border) !important;
+    background: var(--surface) !important;
 }
 
 .modal-title {

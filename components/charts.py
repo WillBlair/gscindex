@@ -162,16 +162,7 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
 
     return html.Div(
         children=[
-            html.H3(
-                "Category Health",
-                style={
-                    "margin": "4px 0 16px",  # Reduced margin to align with Plotly title
-                    "fontSize": "14px",      # Matches Plotly
-                    "fontFamily": "Satoshi, sans-serif", # Matches Plotly
-                    "fontWeight": "500",     # Matches Plotly (Medium)
-                    "color": COLORS["text"],
-                },
-            ),
+            html.H3("Category Health", className="panel-title"),
             html.Div(className="health-bar-container", children=bars),
         ],
     )

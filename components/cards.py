@@ -280,10 +280,6 @@ def build_category_cards(
                         )
                     ]
                 ),
-                
-                # Corner decoration
-                html.Div(className="tech-corner-tr"),
-                html.Div(className="tech-corner-bl"),
             ],
         )
         cards.append(card)
