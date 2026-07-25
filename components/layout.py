@@ -122,7 +122,14 @@ def build_layout(
     if ai_score_summary:
         score_context = {**score_context, "summary": ai_score_summary}
     gauge_tooltip = build_score_tooltip(score_context)
-    category_cards = build_category_cards(current_scores, category_history, category_metadata)
+    default_profile = INDUSTRY_PROFILES[DEFAULT_PROFILE]
+    category_cards = build_category_cards(
+        current_scores,
+        category_history,
+        category_metadata,
+        active_weights=default_profile["weights"],
+        card_categories=default_profile.get("card_categories"),
+    )
     trend_fig = build_history_chart(category_history)
     health_panel = build_category_panel(current_scores)
     map_fig = build_world_map(map_markers)
@@ -150,30 +157,30 @@ def build_layout(
             html.Header(
                 className="dash-header",
                 children=[
-                    html.Div([
-                        html.H1(APP_TITLE, className="app-title"),
-                        html.P(
-                            (
-                                [
-                                    "by ",
-                                    html.A(
-                                        APP_SUBTITLE[3:],
-                                        href=APP_AUTHOR_URL,
-                                        target="_blank",
-                                        rel="noopener noreferrer",
-                                        className="app-subtitle",
-                                        style={"color": "inherit", "textDecoration": "none"},
-                                    ),
-                                ]
-                                if APP_SUBTITLE.lower().startswith("by ")
-                                else [APP_SUBTITLE]
-                            ),
-                            className="app-subtitle",
-                        ),
-                    ]),
                     html.Div(
-                        className="header-meta",
+                        className="header-brand",
                         children=[
+                            html.Div([
+                                html.H1(APP_TITLE, className="app-title"),
+                                html.P(
+                                    (
+                                        [
+                                            "by ",
+                                            html.A(
+                                                APP_SUBTITLE[3:],
+                                                href=APP_AUTHOR_URL,
+                                                target="_blank",
+                                                rel="noopener noreferrer",
+                                                className="app-subtitle",
+                                                style={"color": "inherit", "textDecoration": "none"},
+                                            ),
+                                        ]
+                                        if APP_SUBTITLE.lower().startswith("by ")
+                                        else [APP_SUBTITLE]
+                                    ),
+                                    className="app-subtitle",
+                                ),
+                            ]),
                             html.Div(
                                 className="profile-selector-wrapper",
                                 children=[
@@ -187,6 +194,11 @@ def build_layout(
                                     ),
                                 ],
                             ),
+                        ],
+                    ),
+                    html.Div(
+                        className="header-meta",
+                        children=[
                             html.Span(
                                 (
                                     f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
@@ -199,44 +211,36 @@ def build_layout(
                                 "Updating — refreshing in ~20s..." if is_provisional else "Auto-refreshes every 5 min",
                                 className="refresh-note",
                             ),
-                            
                             html.Span(
                                 data_age_str,
                                 className="system-stats",
                             ),
-                            
-                            # Docs Link
                             dbc.Button(
                                 "Docs",
                                 href="/docs",
                                 external_link=True,
                                 color="link",
                                 className="docs-btn-header",
-                                style={"color": "#9ca3af", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "15px"}
+                                style={"color": "#9ca3af", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
                             ),
-                            
-                            # API Button
                             dbc.Button(
                                 "API",
                                 id="api-btn",
                                 color="link",
                                 className="api-btn-header",
-                                style={"color": "#6366f1", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "10px"}
+                                style={"color": "#6366f1", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
                             ),
-
-                            # Newsletter Button
                             dbc.Button(
                                 "Newsletter",
                                 id="newsletter-btn",
                                 color="link",
                                 className="newsletter-btn-header",
-                                style={"color": "#10b981", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none", "marginLeft": "10px"}
+                                style={"color": "#10b981", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
                             ),
-                            
                             html.Span(
                                 "● Updating..." if is_provisional else "● Live",
                                 className="live-dot" if is_provisional else "live-dot pulsing",
-                                style={"color": "#00d97e", "marginLeft": "20px"} if not is_provisional else {"color": "#fbbf24", "marginLeft": "20px"},
+                                style={"color": "#00d97e"} if not is_provisional else {"color": "#fbbf24"},
                             ),
                         ],
                     ),

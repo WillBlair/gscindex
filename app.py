@@ -788,6 +788,7 @@ def create_app() -> dash.Dash:
         return build_category_cards(
             current_scores, category_history, category_metadata,
             active_weights=profile["weights"],
+            card_categories=profile.get("card_categories"),
         )
 
     return app

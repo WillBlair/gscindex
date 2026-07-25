@@ -138,10 +138,10 @@ CATEGORY_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Industry Profiles
 # ---------------------------------------------------------------------------
-# Each profile defines custom category weights and a list of industry-specific
-# data providers that supply additional signals beyond the default six.
-# Weights MUST sum to 1.0 per profile. The dropdown selector in the navbar
-# switches between profiles; the current selection is stored as a URL parameter.
+# Each profile defines custom category weights, which cards to show in the
+# dashboard row (`card_categories`), and optional industry-specific providers.
+# Weights MUST sum to 1.0 per profile. Switching profiles replaces the card
+# row (it does not append) while the gauge still uses the full weight set.
 # ---------------------------------------------------------------------------
 
 DEFAULT_PROFILE: str = "baseline"
@@ -158,6 +158,15 @@ INDUSTRY_PROFILES: dict[str, dict] = {
             "tariffs":        0.15,
             "geopolitical":   0.20,
         },
+        # Cards shown in the dashboard row (replaces on profile switch).
+        "card_categories": [
+            "weather",
+            "supply_chain",
+            "freight",
+            "energy",
+            "tariffs",
+            "geopolitical",
+        ],
         "providers": [],
     },
     "semiconductor": {
@@ -178,6 +187,16 @@ INDUSTRY_PROFILES: dict[str, dict] = {
             "chip_lead_times":    0.05,
             "chip_wafer_prices":  0.05,
         },
+        # Replace the baseline row with chip signals + the two highest-weight
+        # shared categories. Remaining weights still feed the composite gauge.
+        "card_categories": [
+            "chip_fab_util",
+            "chip_memory_prices",
+            "chip_lead_times",
+            "chip_wafer_prices",
+            "supply_chain",
+            "geopolitical",
+        ],
         "providers": ["silicon_analysts"],
     },
 }
