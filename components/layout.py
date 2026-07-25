@@ -221,26 +221,26 @@ def build_layout(
                                 external_link=True,
                                 color="link",
                                 className="docs-btn-header",
-                                style={"color": "#9ca3af", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
+                                style={"color": COLORS["text_muted"], "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
                             ),
                             dbc.Button(
                                 "API",
                                 id="api-btn",
                                 color="link",
                                 className="api-btn-header",
-                                style={"color": "#6366f1", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
+                                style={"color": COLORS["text_muted"], "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
                             ),
                             dbc.Button(
                                 "Newsletter",
                                 id="newsletter-btn",
                                 color="link",
                                 className="newsletter-btn-header",
-                                style={"color": "#10b981", "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
+                                style={"color": COLORS["text_muted"], "fontWeight": "600", "fontSize": "14px", "textDecoration": "none"}
                             ),
                             html.Span(
                                 "● Updating..." if is_provisional else "● Live",
-                                className="live-dot" if is_provisional else "live-dot pulsing",
-                                style={"color": "#00d97e"} if not is_provisional else {"color": "#fbbf24"},
+                                className="live-dot",
+                                style={"color": COLORS["yellow"] if is_provisional else COLORS["green"]},
                             ),
                         ],
                     ),
