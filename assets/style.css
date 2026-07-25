@@ -1186,3 +1186,36 @@ body {
 .modal-title {
     color: var(--text) !important;
 }
+
+/* --------------------------------------------------------------------------
+   Vendored effects — thinking-orbs, border-beam (pulse), metal-fx
+   See assets/vendor/ + frontend/ for provenance and build steps.
+   Used sparingly and tastefully per design brief: loading states + a single
+   restrained brand accent, not decoration.
+   -------------------------------------------------------------------------- */
+
+/* thinking-orbs: sized up front so canvases don't flash at the browser's
+   default 300x150 placeholder size before JS mounts them. */
+canvas.thinking-orb-mount {
+    display: block;
+    width: 20px;
+    height: 20px;
+}
+
+/* metal-fx: brand badge next to the app title. Sized/backed as a plain
+   circle up front so layout doesn't shift once the WebGL ring mounts. */
+.brand-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.brand-metal-badge {
+    position: relative;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+}

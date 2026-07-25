@@ -120,6 +120,31 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
                     id="briefing-loading",
                     type="dot",
                     color=COLORS["text_muted"],
+                    custom_spinner=html.Div(
+                        style={
+                            "display": "flex",
+                            "flexDirection": "column",
+                            "alignItems": "center",
+                            "gap": "10px",
+                            "padding": "24px 0",
+                        },
+                        children=[
+                            html.Canvas(
+                                className="thinking-orb-mount",
+                                style={"width": "64px", "height": "64px"},
+                                **{"data-orb-state": "composing", "data-orb-size": "64"},
+                            ),
+                            html.Span(
+                                "Composing briefing…",
+                                style={
+                                    "fontFamily": "IBM Plex Mono, monospace",
+                                    "fontSize": "12px",
+                                    "color": COLORS["text_muted"],
+                                    "letterSpacing": "0.04em",
+                                },
+                            ),
+                        ],
+                    ),
                     children=html.Div(
                         id="briefing-content",
                         children=[

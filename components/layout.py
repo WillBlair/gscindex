@@ -161,7 +161,20 @@ def build_layout(
                         className="header-brand",
                         children=[
                             html.Div([
-                                html.H1(APP_TITLE, className="app-title"),
+                                html.Div(
+                                    className="brand-title-row",
+                                    children=[
+                                        html.Div(
+                                            className="brand-metal-badge",
+                                            **{
+                                                "data-metal-preset": "silver",
+                                                "data-metal-size": "28",
+                                                "aria-hidden": "true",
+                                            },
+                                        ),
+                                        html.H1(APP_TITLE, className="app-title"),
+                                    ],
+                                ),
                                 html.P(
                                     (
                                         [
@@ -254,6 +267,12 @@ def build_layout(
                     html.Div(
                         className="chart-panel gauge-panel",
                         style={"minHeight": "340px", "position": "relative"},
+                        # border-beam pulse (mono, restrained) — see
+                        # assets/vendor/border-beam-pulse.css + -driver.js.
+                        # `data-active` set server-side so the 0.6s fade-in
+                        # keyframe (baked into the generated CSS) runs on
+                        # first paint without needing a JS state toggle.
+                        **{"data-beam": "gsci-gauge-beam", "data-active": ""},
                         children=[
                             dcc.Graph(
                                 id="gauge",
