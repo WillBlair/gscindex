@@ -1104,7 +1104,8 @@ body {
 
 /* Sparkline "Screen" */
 .tech-sparkline-container {
-    flex-grow: 1;
+    flex: 0 0 44px;
+    height: 44px;
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.2);
@@ -1113,6 +1114,41 @@ body {
     overflow: hidden;
     /* Clip any potential fill bleed */
     /* Push to bottom */
+}
+
+/* Inline SVG sparkline (server-rendered, fixed 0-100 y domain) */
+.spark-wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 40px;
+}
+
+.spark-wrap .spark-markdown,
+.spark-wrap .spark-markdown > p {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    display: block;
+}
+
+.spark-svg {
+    display: block;
+    width: 100%;
+    height: 40px;
+}
+
+.spark-caption {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-faint);
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 #newsletter-toast-inner:hover {
