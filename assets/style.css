@@ -7,6 +7,26 @@
    Reset & Base
    -------------------------------------------------------------------------- */
 
+:root {
+    --bg: #0a0a0b;
+    --surface: #111113;
+    --surface-raised: #18181b;
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #ececef;
+    --text-muted: #8b8b93;
+    --text-faint: #5c5c66;
+    --radius-panel: 10px;
+    --radius-control: 8px;
+    --radius-pill: 999px;
+    --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --tier-healthy: #3d9b6e;
+    --tier-stable: #c4a35a;
+    --tier-stressed: #c47a3a;
+    --tier-critical: #c44d5f;
+}
+
 *,
 *::before,
 *::after {
@@ -16,9 +36,9 @@
 body {
     margin: 0;
     padding: 0;
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0f1117;
-    color: #e1e4ea;
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
@@ -48,7 +68,7 @@ body {
     flex-wrap: wrap;
     gap: 12px 24px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #2a2d3a;
+    border-bottom: 1px solid var(--border);
 }
 
 .header-brand {
@@ -64,13 +84,13 @@ body {
     font-size: 2rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: #e1e4ea;
+    color: var(--text);
 }
 
 .app-subtitle {
     margin: 4px 0 0;
     font-size: 0.95rem;
-    color: #8a8f9e;
+    color: var(--text-muted);
     font-weight: 400;
 }
 
@@ -84,49 +104,31 @@ body {
 }
 
 .last-updated {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.70rem;
-    color: #4b5563;
+    color: var(--text-faint);
     letter-spacing: 0.05em;
 }
 
 .refresh-note {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.70rem;
-    color: #4b5563;
+    color: var(--text-faint);
     letter-spacing: 0.05em;
     padding-right: 12px;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    border-right: 1px solid var(--border);
 }
 
 .live-dot {
     font-size: 0.8rem;
-    color: #00d97e;
+    color: var(--tier-healthy);
     font-weight: 600;
 }
 
-.live-dot.pulsing {
-    animation: livePulse 2.5s infinite;
-}
-
-@keyframes livePulse {
-    0% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.4;
-    }
-
-    100% {
-        opacity: 1;
-    }
-}
-
 .system-stats {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.70rem;
-    color: #4b5563;
+    color: var(--text-faint);
     letter-spacing: 0.05em;
     padding-right: 0px;
     margin-right: -4px;
@@ -149,24 +151,21 @@ body {
    -------------------------------------------------------------------------- */
 /* Generic Panel Container */
 .panel {
-    background: #1a1d26;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
     padding: 24px;
     margin-bottom: 24px;
     position: relative;
 }
 
 .chart-panel {
-    background: #1a1d26;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    /* Thin, subtle border */
-    border-radius: 6px;
-    /* Slightly rounded */
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
     padding: 16px;
     overflow: hidden;
     position: relative;
-    /* For corner ticks */
 }
 
 .chart-panel .js-plotly-plot,
@@ -193,18 +192,16 @@ body {
 
 .hero-row .chart-panel,
 .charts-row .chart-panel {
-    border-radius: 6px;
-    /* Slightly rounded */
+    border-radius: var(--radius-panel);
     position: relative;
-    background: #1a1d26;
+    background: var(--surface);
     box-shadow: none;
     /* Flat, clean look */
 }
 
 /* Middle Row Charts (Health, Map) */
 .charts-row .chart-panel {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    /* Thin, subtle border */
+    border: 1px solid var(--border);
 }
 
 /* Top Row (Gauge & Trend): Frameless / "No Border" look per user request */
@@ -247,14 +244,14 @@ body {
     bottom: 0;
     width: 18px;
     height: 18px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    color: #8a8f9e;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 700;
     line-height: 16px;
     text-align: center;
-    background: rgba(15, 17, 23, 0.85);
+    background: var(--surface-raised);
     opacity: 0;
     transition: opacity 0.15s ease;
     pointer-events: none;
@@ -274,9 +271,9 @@ body {
     max-height: min(420px, 70vh);
     overflow-y: auto;
     padding: 14px 16px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background-color: #12151d;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border-strong);
+    background-color: var(--surface-raised);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
     opacity: 0;
     visibility: hidden;
@@ -291,7 +288,7 @@ body {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background-color: #12151d;
+    background-color: var(--surface-raised);
     z-index: -1;
 }
 
@@ -310,10 +307,10 @@ body {
 }
 
 .score-explanation-headline {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.82rem;
     font-weight: 700;
-    color: #e1e4ea;
+    color: var(--text);
     margin-bottom: 8px;
 }
 
@@ -321,76 +318,40 @@ body {
     margin: 0 0 10px;
     font-size: 0.84rem;
     line-height: 1.45;
-    color: #b8bcc8;
+    color: var(--text-muted);
 }
 
 .score-explanation-bullet {
     font-size: 0.78rem;
     line-height: 1.4;
-    color: #8a8f9e;
+    color: var(--text-muted);
     margin-top: 6px;
 }
 
-/* Corner Ticks (Standardized Viewfinder Style) */
-/* Disabled for "Thin Rounded" look */
-/*
-.charts-row .chart-panel::after,
-.panel::after,
-.tech-card::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-    z-index: 10;
-    border: 1px solid transparent;
-
-    background:
-        linear-gradient(to right, #71717a 1px, transparent 1px) 0 0,
-        linear-gradient(to bottom, #71717a 1px, transparent 1px) 0 0,
-
-        linear-gradient(to left, #71717a 1px, transparent 1px) 100% 0,
-        linear-gradient(to bottom, #71717a 1px, transparent 1px) 100% 0,
-
-        linear-gradient(to right, #71717a 1px, transparent 1px) 0 100%,
-        linear-gradient(to top, #71717a 1px, transparent 1px) 0 100%,
-
-        linear-gradient(to left, #71717a 1px, transparent 1px) 100% 100%,
-        linear-gradient(to top, #71717a 1px, transparent 1px) 100% 100% !important;
-
-    background-repeat: no-repeat;
-    background-size: 6px 6px;
-}
-*/
+/* legacy: .metric-card and friends below are unused by the current skeleton
+   layout — removed in the skeleton task (Task 6). Left in place until then
+   so nothing regresses if skeleton.py still references these classes. */
 
 /* --------------------------------------------------------------------------
    Individual Metric Card
    -------------------------------------------------------------------------- */
 
 .metric-card {
-    background: #1a1d26;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    /* Super thin */
-    border-radius: 6px;
-    /* Slightly rounded */
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
     padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.2s ease;
     overflow: hidden;
     position: relative;
-    /* For corner ticks */
     min-width: 0;
 }
 
-/* Corner Ticks handled by shared rule above */
-
 .metric-card:hover {
-    border-color: #3d4055;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border-color: var(--border-strong);
 }
 
 /* Card header: label + weight badge */
@@ -404,7 +365,7 @@ body {
 .card-label {
     font-size: 0.72rem;
     font-weight: 600;
-    color: #8a8f9e;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     line-height: 1.3;
@@ -414,10 +375,10 @@ body {
 .card-weight {
     font-size: 0.65rem;
     font-weight: 600;
-    color: #6366f1;
-    background: rgba(99, 102, 241, 0.12);
+    color: var(--text-muted);
+    background: var(--surface-raised);
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: var(--radius-pill);
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -430,14 +391,14 @@ body {
 }
 
 .card-score {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 1.75rem;
     font-weight: 700;
     line-height: 1;
 }
 
 .card-delta {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.8rem;
     font-weight: 600;
 }
@@ -516,24 +477,20 @@ body {
    -------------------------------------------------------------------------- */
 
 .panel {
-    background: #1a1d26;
+    background: var(--surface);
     border: 1px solid transparent;
     /* Maintain layout spacing but hide line */
-    border-radius: 6px;
-    /* Slightly rounded */
+    border-radius: var(--radius-panel);
     padding: 20px;
     height: 100%;
     position: relative;
-    /* For corner ticks */
 }
-
-/* Corner Ticks handled by shared rule above */
 
 .panel-title {
     margin: 0 0 16px;
     font-size: 1rem;
     font-weight: 600;
-    color: #e1e4ea;
+    color: var(--text);
 }
 
 /* --------------------------------------------------------------------------
@@ -580,20 +537,20 @@ body {
 
 .alert-time {
     font-size: 0.75rem;
-    color: #8a8f9e;
+    color: var(--text-muted);
 }
 
 .alert-title {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #e1e4ea;
+    color: var(--text);
     margin-bottom: 4px;
     line-height: 1.3;
 }
 
 .alert-body {
     font-size: 0.8rem;
-    color: #8a8f9e;
+    color: var(--text-muted);
     line-height: 1.5;
     margin: 0;
 }
@@ -609,14 +566,14 @@ body {
 }
 
 .disruptions-table thead {
-    border-bottom: 2px solid #2a2d3a;
+    border-bottom: 2px solid var(--border);
 }
 
 .disruptions-table th {
     padding: 8px 12px;
     text-align: left;
     font-weight: 600;
-    color: #8a8f9e;
+    color: var(--text-muted);
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -625,8 +582,8 @@ body {
 
 .disruptions-table td {
     padding: 10px 12px;
-    border-bottom: 1px solid #1e2130;
-    color: #e1e4ea;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
     vertical-align: top;
 }
 
@@ -641,7 +598,7 @@ body {
 
 .td-affected {
     font-size: 0.75rem;
-    color: #8a8f9e;
+    color: var(--text-muted);
     max-width: 160px;
 }
 
@@ -678,16 +635,12 @@ body {
     padding: 0 12px;
     width: 100%;
 
-    font-family: "JetBrains Mono", monospace;
-    /* Added font */
+    font-family: var(--font-mono);
     font-size: 0.9rem;
-    /* Matches Tech HUD */
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #9ca3af;
-    /* Zinc-400 (More Grey) */
+    color: var(--text-muted);
     font-weight: 700;
-    /* Matches Tech HUD */
 }
 
 .health-bar-label span:last-child {
@@ -712,21 +665,7 @@ body {
     border-radius: 2px;
     /* Sharper */
     transition: width 0.6s ease;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    /* Subtle inner glow */
     position: relative;
-}
-
-/* Add a "shine" effect to the bar */
-.health-bar-fill::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.15), transparent);
-    pointer-events: none;
 }
 
 /* --------------------------------------------------------------------------
@@ -736,12 +675,12 @@ body {
 .dash-footer {
     text-align: center;
     padding: 20px 0 0;
-    border-top: 1px solid #2a2d3a;
+    border-top: 1px solid var(--border);
 }
 
 .footer-text {
     font-size: 0.75rem;
-    color: #8a8f9e;
+    color: var(--text-muted);
     margin: 0;
 }
 
@@ -753,13 +692,13 @@ body {
     position: fixed;
     bottom: 24px;
     left: 24px;
-    background: rgba(15, 17, 23, 0.85);
+    background: var(--surface-raised);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
     padding: 12px;
     z-index: 1040;
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.65rem;
     pointer-events: none;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
@@ -777,13 +716,13 @@ body {
 
 .terminal-line {
     display: block;
-    color: #8a8f9e;
+    color: var(--text-muted);
     margin-bottom: 6px;
     opacity: 1;
 }
 
 .terminal-line.final {
-    color: #00d97e;
+    color: var(--tier-healthy);
     margin-bottom: 0;
 }
 
@@ -852,12 +791,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #2a2d3a;
+    background: var(--border-strong);
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #3d4055;
+    background: var(--text-faint);
 }
 
 /* --------------------------------------------------------------------------
@@ -1070,11 +1009,9 @@ body {
    ========================================================================== */
 
 .market-section-ticker {
-    background: #0f1117;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    /* Super thin */
-    border-radius: 6px;
-    /* Slightly rounded */
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
     padding: 12px 16px;
     margin-bottom: 24px;
     overflow: hidden;
@@ -1082,8 +1019,6 @@ body {
     position: relative;
     white-space: nowrap;
 }
-
-/* Corner Ticks handled by shared rule above */
 
 /* The Scrolling Track */
 .market-ticker-track {
@@ -1124,18 +1059,17 @@ body {
 .ticker-label {
     font-size: 0.8rem;
     font-weight: 700;
-    color: #8a8f9e;
+    color: var(--text-muted);
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
 }
 
 .ticker-live-dot {
     font-size: 0.7rem;
-    color: #00d97e;
+    color: var(--tier-healthy);
     font-weight: 700;
     text-transform: uppercase;
-    animation: pulse 2s infinite;
     letter-spacing: 0.05em;
 }
 
@@ -1149,20 +1083,20 @@ body {
 .market-symbol {
     font-size: 0.8rem;
     font-weight: 700;
-    color: #e1e4ea;
+    color: var(--text);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
 .market-value-price {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 1rem;
     font-weight: 600;
-    color: #fff;
+    color: var(--text);
 }
 
 .market-change-group {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.8rem;
     font-weight: 500;
     display: flex;
@@ -1178,31 +1112,9 @@ body {
    Skeleton Loading Animation
    ========================================================================== */
 .skeleton-pulse {
-    background: #2a2d3a;
+    background: var(--surface-raised);
     position: relative;
     overflow: hidden;
-}
-
-.skeleton-pulse::after {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    transform: translateX(-100%);
-    background-image: linear-gradient(90deg,
-            rgba(255, 255, 255, 0) 0,
-            rgba(255, 255, 255, 0.05) 20%,
-            rgba(255, 255, 255, 0.1) 60%,
-            rgba(255, 255, 255, 0));
-    animation: shimmer 2s infinite;
-    content: '';
-}
-
-@keyframes shimmer {
-    100% {
-        transform: translateX(100%);
-    }
 }
 
 /* ==========================================================================
@@ -1210,11 +1122,9 @@ body {
    ========================================================================== */
 
 .tech-card {
-    background: #11131a;
-    border: 1px solid #52525b;
-    /* Sharp Financial Zinc */
-    border-radius: 0;
-    /* Sharp corners */
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
     padding: 12px;
 
     display: flex;
@@ -1226,44 +1136,15 @@ body {
     min-height: 160px;
 }
 
-/* Corner Ticks for Tech Cards (Standardized) */
-.tech-card::after {
-    content: "";
-    position: absolute;
-    top: -1px;
-    left: -1px;
-    right: -1px;
-    bottom: -1px;
-    pointer-events: none;
-    z-index: 1;
-    background:
-        linear-gradient(to right, #fff 2px, transparent 2px) 0 0,
-        linear-gradient(to bottom, #fff 2px, transparent 2px) 0 0,
-        linear-gradient(to left, #fff 2px, transparent 2px) 100% 0,
-        linear-gradient(to bottom, #fff 2px, transparent 2px) 100% 0,
-        linear-gradient(to right, #fff 2px, transparent 2px) 0 100%,
-        linear-gradient(to top, #fff 2px, transparent 2px) 0 100%,
-        linear-gradient(to left, #fff 2px, transparent 2px) 100% 100%,
-        linear-gradient(to top, #fff 2px, transparent 2px) 100% 100%;
-    background-repeat: no-repeat;
-    background-size: 6px 6px;
-}
-
 .tech-card:hover {
-    border-color: #e1e4ea;
-    /* White hover instead of purple */
-    box-shadow: none;
+    border-color: var(--border-strong);
+    /* no transform, box-shadow, or filter */
 }
 
-/* Bezel decoration at top */
+/* Bezel decoration removed as part of HUD chrome cleanup; class hidden in
+   case markup still emits it (removed in the components task). */
 .tech-card-bezel {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 3px;
-    background: linear-gradient(90deg, #2a2d3a 0%, #3d4055 50%, #2a2d3a 100%);
-    opacity: 0.5;
+    display: none;
 }
 
 /* Header */
@@ -1279,10 +1160,10 @@ body {
 }
 
 .tech-label {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.7rem;
     font-weight: 700;
-    color: #8a8f9e;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     max-width: 75%;
@@ -1291,10 +1172,10 @@ body {
 }
 
 .tech-weight {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.65rem;
-    color: #4b5563;
-    border: 1px solid #2a2d3a;
+    color: var(--text-faint);
+    border: 1px solid var(--border);
     padding: 1px 4px;
     border-radius: 2px;
 }
@@ -1307,7 +1188,7 @@ body {
 }
 
 .tech-score {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 2.2rem;
     font-weight: 700;
     line-height: 1;
@@ -1322,14 +1203,14 @@ body {
 .tech-meta-label {
     display: block;
     font-size: 0.55rem;
-    color: #4b5563;
+    color: var(--text-faint);
     text-transform: uppercase;
     margin-bottom: 1px;
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
 }
 
 .tech-delta-value {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.85rem;
     font-weight: 600;
 }
@@ -1348,21 +1229,21 @@ body {
 .tech-grid-sep {
     width: 1px;
     height: 12px;
-    background: #2a2d3a;
+    background: var(--border);
 }
 
 .tech-meta-value {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--text-muted);
     font-weight: 500;
 }
 
 /* Sparkline "Screen" */
 .tech-sparkline-container {
     flex-grow: 1;
-    border-top: 1px solid #2a2d3a;
-    border-bottom: 1px solid #2a2d3a;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.2);
     position: relative;
     margin-top: auto;
@@ -1405,7 +1286,7 @@ body {
 }
 
 #newsletter-toast-inner:hover {
-    border-color: rgba(99, 102, 241, 0.3) !important;
+    border-color: var(--border-strong) !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -1417,10 +1298,10 @@ body {
 }
 
 #profile-selector {
-    background-color: #1a1d26 !important;
-    border: 1px solid #2a2d3a !important;
-    border-radius: 6px !important;
-    color: #e1e4ea !important;
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-control) !important;
+    color: var(--text) !important;
     font-size: 13px !important;
     font-weight: 500 !important;
     padding: 6px 10px !important;
@@ -1430,13 +1311,13 @@ body {
 }
 
 #profile-selector:focus {
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+    border-color: var(--border-strong) !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08) !important;
 }
 
 #profile-selector option {
-    background-color: #1a1d26 !important;
-    color: #e1e4ea !important;
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
     padding: 8px !important;
 }
 
@@ -1451,4 +1332,23 @@ body {
 .gauge-panel .dash-graph {
     height: 100% !important;
     width: 100% !important;
+}
+
+/* --------------------------------------------------------------------------
+   Modal + Bootstrap Overrides
+   -------------------------------------------------------------------------- */
+.modal-content {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-panel) !important;
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--border) !important;
+}
+
+.modal-title {
+    color: var(--text) !important;
 }
