@@ -211,9 +211,6 @@ def build_category_cards(
             n_clicks=0,
             style={"cursor": "pointer"}, # Indicate clickability
             children=[
-                # Top decorative bar (like a bezel)
-                html.Div(className="tech-card-bezel"),
-
                 # Header: Label + [Weight]
                 html.Div(
                     className="tech-card-header",
@@ -222,7 +219,7 @@ def build_category_cards(
                             html.Span(CATEGORY_LABELS[cat], className="tech-label"),
                             # Sub-label for context (e.g. "Matson")
                             html.Div(raw_label, className="tech-sublabel", style={
-                                "fontSize": "11px", "color": "#6b7280", "marginTop": "2px"
+                                "fontSize": "11px", "color": COLORS["text_faint"], "marginTop": "2px"
                             }) if raw_label else None
                         ]),
                         html.Div([

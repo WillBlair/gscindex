@@ -252,6 +252,7 @@ COLORS = {
     "card":         "#111113",
     "card_raised":  "#18181b",
     "card_border":  "rgba(255,255,255,0.10)",
+    "card_border_hex": "#2a2a2e",  # Plotly geo attrs need solid hex
     "text":         "#ececef",
     "text_muted":   "#8b8b93",
     "text_faint":   "#5c5c66",
