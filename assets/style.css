@@ -1206,10 +1206,10 @@ body {
    restrained brand accent, not decoration.
    -------------------------------------------------------------------------- */
 
-/* thinking-orbs: brand mark only — sized before JS mounts to avoid layout jump */
+/* thinking-orbs: brand mark — <ThinkingOrb state="working" size={64} /> */
 canvas.thinking-orb-mount.brand-orb {
     display: block;
-    width: 34px;
-    height: 34px;
+    width: 64px;
+    height: 64px;
     flex-shrink: 0;
 }
