@@ -62,10 +62,9 @@ body {
    -------------------------------------------------------------------------- */
 
 .dash-header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    flex-wrap: wrap;
     gap: 16px 32px;
     padding-bottom: 14px;
     border-bottom: 1px solid var(--border);
@@ -73,9 +72,8 @@ body {
 
 .header-brand {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: center;
+    justify-self: start;
     min-width: 0;
 }
 
@@ -83,6 +81,15 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+/* Center column: industry profile dropdown, front-and-center */
+.header-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: center;
+    width: min(240px, 100%);
 }
 
 .brand-text {
@@ -118,6 +125,7 @@ body {
     flex-direction: column;
     align-items: flex-end;
     justify-content: center;
+    justify-self: end;
     gap: 8px;
     margin-top: 0;
 }
@@ -779,9 +787,18 @@ body {
     }
 
     .dash-header {
-        flex-direction: column;
-        align-items: stretch;
+        grid-template-columns: 1fr;
         gap: 10px;
+    }
+
+    .header-brand,
+    .header-center,
+    .header-meta {
+        justify-self: stretch;
+    }
+
+    .header-center {
+        width: 100%;
     }
 
     .app-title {
@@ -1159,23 +1176,6 @@ body {
 /* --------------------------------------------------------------------------
    Dark Theme Dropdown (Industry Profile Selector)
    -------------------------------------------------------------------------- */
-.profile-selector-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: min(220px, 100%);
-}
-
-.profile-metal-badge {
-    position: relative;
-    flex-shrink: 0;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-}
-
 #profile-selector {
     background-color: var(--surface-raised) !important;
     border: 1px solid var(--border) !important;
