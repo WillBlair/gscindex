@@ -1267,18 +1267,13 @@ body {
     min-height: 40px;
 }
 
-.spark-wrap .spark-markdown,
-.spark-wrap .spark-markdown > p {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    display: block;
-}
-
 .spark-svg {
     display: block;
     width: 100%;
     height: 40px;
+    border: 0;
+    pointer-events: none;
+    user-select: none;
 }
 
 .spark-caption {
