@@ -358,21 +358,28 @@ def build_layout(
             # ── Hidden Data Stores ──────────────────────────────────
             dcc.Store(id="category-metadata-store", data=data.get("category_metadata", {})),
             dcc.Store(id="profile-store", data=DEFAULT_PROFILE),
-            
+
             # ── Detail Modal ────────────────────────────────────────
+            # Close uses a pattern-matching id so an empty ALL match while the
+            # modal is unmounted does not block the separate card-open callback.
             dbc.Modal(
                 [
                     dbc.ModalHeader(dbc.ModalTitle("Category Details"), id="modal-header"),
                     dbc.ModalBody(id="modal-body"),
                     dbc.ModalFooter(
-                        dbc.Button("Close", id="modal-close", className="ms-auto", n_clicks=0)
+                        dbc.Button(
+                            "Close",
+                            id={"type": "modal-dismiss", "index": "footer"},
+                            className="ms-auto",
+                            n_clicks=0,
+                        )
                     ),
                 ],
                 id="details-modal",
                 is_open=False,
                 size="lg",  # Large modal
                 centered=True,
-                className="dark-modal" # Custom class for dark theme styling
+                className="dark-modal",  # Custom class for dark theme styling
             ),
 
             # ── API Documentation Modal ─────────────────────────────

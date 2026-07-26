@@ -282,12 +282,13 @@ def build_category_cards(
             else None
         )
 
-        # Technical HUD Card
+        # Technical HUD Card — pattern-matching id so the modal callback
+        # fires for whichever profile's cards are currently mounted.
         card = html.Div(
             className="tech-card",
-            id=f"card-{cat}",
+            id={"type": "category-card", "index": cat},
             n_clicks=0,
-            style={"cursor": "pointer"}, # Indicate clickability
+            style={"cursor": "pointer"},  # Indicate clickability
             children=[
                 # Header: Label + [Weight]
                 html.Div(
