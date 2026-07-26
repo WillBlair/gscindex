@@ -51,15 +51,6 @@ def build_skeleton_layout():
                 className="header-meta",
                 children=[
                     html.Div(
-                        className="header-status",
-                        children=[
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "14px", "width": "220px", "borderRadius": "999px"},
-                            ),
-                        ],
-                    ),
-                    html.Div(
                         className="header-nav",
                         children=[
                             html.Div(

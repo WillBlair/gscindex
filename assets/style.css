@@ -130,14 +130,6 @@ body {
     margin-top: 0;
 }
 
-.header-status {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 10px 14px;
-}
-
 .header-nav {
     display: flex;
     align-items: center;
@@ -163,35 +155,31 @@ body {
     color: var(--tier-healthy) !important;
 }
 
-.last-updated {
-    font-family: var(--font-mono);
-    font-size: 0.70rem;
-    color: var(--text-faint);
-    letter-spacing: 0.05em;
-}
-
-.refresh-note {
-    font-family: var(--font-mono);
-    font-size: 0.70rem;
-    color: var(--text-faint);
-    letter-spacing: 0.05em;
-    padding-right: 12px;
-    border-right: 1px solid var(--border);
-}
-
 .live-dot {
     font-size: 0.8rem;
     color: var(--tier-healthy);
     font-weight: 600;
 }
 
-.system-stats {
-    font-family: var(--font-mono);
-    font-size: 0.70rem;
-    color: var(--text-faint);
-    letter-spacing: 0.05em;
-    padding-right: 0px;
-    margin-right: -4px;
+.live-dot.pulsing {
+    animation: livePulse 2.5s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-dot.pulsing {
+        animation: none;
+    }
 }
 
 /* --------------------------------------------------------------------------
@@ -923,7 +911,6 @@ body {
         gap: 10px;
     }
 
-    .header-status,
     .header-nav {
         justify-content: flex-start;
     }
