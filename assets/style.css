@@ -433,6 +433,119 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   AI Daily Briefing
+   -------------------------------------------------------------------------- */
+
+.daily-briefing-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.daily-briefing-card--empty {
+    text-align: center;
+}
+
+.briefing-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.briefing-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+}
+
+.briefing-marker {
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--text-faint);
+}
+
+.briefing-text {
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 400;
+    line-height: 1.55;
+    color: var(--text);
+}
+
+.briefing-report-link {
+    display: block;
+    margin-top: 16px;
+    padding: 9px 12px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    text-decoration: none;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+}
+
+.briefing-report-link:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.briefing-empty {
+    padding: 8px 0 4px;
+}
+
+.briefing-empty-copy {
+    margin: 0 0 14px;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.briefing-generate-btn {
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius-control);
+    padding: 10px 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+}
+
+.briefing-generate-btn:hover {
+    opacity: 0.92;
+}
+
+.briefing-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px 0;
+}
+
+.briefing-spinner-label {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------------------------------
    Alerts Feed
    -------------------------------------------------------------------------- */
 
@@ -897,6 +1010,18 @@ body {
     }
 
     .alerts-list {
+        max-height: 350px;
+    }
+
+    .briefing-item {
+        padding: 10px 12px;
+    }
+
+    .briefing-text {
+        font-size: 0.82rem;
+    }
+
+    .briefing-list {
         max-height: 350px;
     }
 }

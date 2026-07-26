@@ -524,17 +524,15 @@ def create_app() -> dash.Dash:
         result = get_on_demand_briefing()
         
         if result["success"] and result["briefing"]:
-            # Return formatted briefing content
-            return [
-                html.P(line, style={"marginBottom": "8px"}) 
-                for line in result["briefing"].split("\n") 
-                if line.strip()
-            ]
+            from components.feed import format_briefing_content
+
+            return format_briefing_content(result["briefing"])
         else:
             # Return error message
             return html.P(
                 result.get("error", "Failed to generate briefing. Please try again later."),
-                style={"color": COLORS["red"], "fontSize": "13px"}
+                className="briefing-empty-copy",
+                style={"color": COLORS["red"]},
             )
 
     # ── Modal Interaction Callback ──────────────────────────────────────
