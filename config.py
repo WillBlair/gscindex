@@ -131,7 +131,7 @@ CATEGORY_LABELS: dict[str, str] = {
     # Semiconductor-specific categories (industry profile mode)
     "chip_fab_util":       "Fab Utilization",
     "chip_memory_prices":  "Memory Prices",
-    "chip_lead_times":     "Component Lead Times",
+    "chip_lead_times":     "Lead Times",
     "chip_wafer_prices":   "Wafer Prices",
 }
 
