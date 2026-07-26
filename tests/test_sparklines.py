@@ -1,10 +1,8 @@
 """Coverage for the server-rendered SVG sparklines in components/cards.py.
 
 Plotly figures were replaced with SVG built as a string and served via an
-``html.Img`` data URI. ``dcc.Markdown(dangerously_allow_html=True)`` still
-strips ``<svg>`` (rehype sanitize), which left blank spark screens in
-production. These tests assert on wrapper classNames and the decoded SVG
-markup for each history-length state.
+``html.Img`` data URI. Y-axis zooms to the window (minimum span) so high
+scores still show movement; sparse points keep calendar x positions.
 """
 from __future__ import annotations
 
@@ -14,7 +12,13 @@ import pandas as pd
 import pytest
 from dash import html
 
-from components.cards import _sparkline, _SPARK_MIN_POINTS, _SPARK_VB_H
+from components.cards import (
+    _sparkline,
+    _SPARK_MIN_POINTS,
+    _SPARK_VB_H,
+    _SPARK_WINDOW,
+    _y_domain,
+)
 
 
 def _dates(n: int, end: str = "2026-07-25") -> pd.DatetimeIndex:
@@ -36,6 +40,11 @@ def _svg_markup(wrap: html.Div) -> str:
 def _caption(wrap: html.Div) -> str | None:
     span = next((c for c in wrap.children if isinstance(c, html.Span)), None)
     return span.children if span is not None else None
+
+
+def _stroke_ys(markup: str) -> list[float]:
+    line_path = markup.split('<path d="')[-1].split('"')[0]
+    return [float(p.split(",")[1]) for p in line_path.replace("M ", "").split(" L ")]
 
 
 class TestEmptySeries:
@@ -64,21 +73,29 @@ class TestEmptySeries:
 
 class TestShortSeries:
     @pytest.mark.parametrize("n", [1, 2, _SPARK_MIN_POINTS - 1])
-    def test_short_series_renders_dots_only(self, n):
+    def test_short_series_renders_dots_not_trend_path(self, n):
         series = pd.Series([60.0 + i for i in range(n)], index=_dates(n))
         wrap = _sparkline(series, "#3d9b6e")
 
         assert wrap.className == "spark-wrap spark-wrap--sparse"
         markup = _svg_markup(wrap)
         assert markup.count("<circle") == n
-        # Dots only — a connecting line/path would imply a trend shape
-        # that a handful of points cannot actually support.
         assert "<path" not in markup
+        assert "<line" in markup  # guide line so a lone point is visible
 
-    def test_short_series_caption_shows_count_over_30(self):
+    def test_short_series_caption_shows_count_over_window(self):
         series = pd.Series([60.0, 61.0, 62.0], index=_dates(3))
         wrap = _sparkline(series, "#3d9b6e")
-        assert _caption(wrap) == "3/30d"
+        assert _caption(wrap) == f"3/{_SPARK_WINDOW}d"
+
+    def test_sparse_point_uses_calendar_x_not_left_edge(self):
+        # One real observation on the last day of a longer NaN-padded window.
+        idx = _dates(30)
+        values = [float("nan")] * 29 + [53.5]
+        series = pd.Series(values, index=idx)
+        wrap = _sparkline(series, "#3d9b6e")
+        markup = _svg_markup(wrap)
+        assert 'cx="100.0"' in markup or 'cx="100"' in markup
 
 
 class TestFlatSeries:
@@ -113,35 +130,27 @@ class TestNormalSeries:
         assert 'fill="none"' in markup  # stroke path has no fill
         assert _caption(wrap) is None
 
-    def test_score_domain_is_fixed_0_100_not_data_min_max(self):
-        # A category pinned near the top of its own range (90-95) should
-        # still sit near the top of the fixed 0-100 viewBox, not be
-        # re-centered to fill the box (the old data-hugging behavior).
-        high_series = pd.Series([90.0, 92.0, 91.0, 95.0, 93.0], index=_dates(5))
+    def test_high_band_movement_uses_local_zoom(self):
+        # Weather-like band: fixed 0-100 used to flatten this against the top.
+        high_series = pd.Series(
+            [87.0, 89.0, 88.0, 92.0, 91.0, 90.0, 93.0, 94.0, 91.0, 95.5],
+            index=_dates(10),
+        )
         wrap = _sparkline(high_series, "#3d9b6e")
         markup = _svg_markup(wrap)
+        ys = _stroke_ys(markup)
+        assert max(ys) - min(ys) > _SPARK_VB_H * 0.35
 
-        # y=0 is the top of the viewBox; a score of ~90-95 maps close to it.
-        line_path = markup.split('<path d="')[2]
-        first_point = line_path.split('"')[0].split(" ")[1]
-        _, y = first_point.split(",")
-        assert float(y) < _SPARK_VB_H * 0.2
+    def test_y_domain_enforces_minimum_span(self):
+        lo, hi = _y_domain([73.5, 73.5])
+        assert hi - lo >= 15.0 - 1e-9
 
-    def test_only_last_30_points_are_used(self):
-        series = pd.Series(range(50), index=_dates(50)).astype(float)
+    def test_only_last_window_points_are_used(self):
+        series = pd.Series(range(120), index=_dates(120)).astype(float)
         wrap = _sparkline(series, "#3d9b6e")
         markup = _svg_markup(wrap)
-        # 30 points -> 30 "L "/"M " path commands in the stroke line path
-        line_path = markup.split('<path d="')[2].split('"')[0]
-        assert len(line_path.split(" L ")) == 30
-
-    def test_tier_bands_always_present(self):
-        from config import HEALTH_TIERS
-
-        series = pd.Series([50.0] * 10, index=_dates(10))
-        wrap = _sparkline(series, "#3d9b6e")
-        markup = _svg_markup(wrap)
-        assert markup.count("<rect") == len(HEALTH_TIERS)
+        line_path = markup.split('<path d="')[-1].split('"')[0]
+        assert len(line_path.split(" L ")) == _SPARK_WINDOW
 
 
 def test_trend_color_is_passed_through_to_stroke():
