@@ -535,162 +535,188 @@ def create_app() -> dash.Dash:
                 style={"color": COLORS["red"]},
             )
 
-    # ── Modal Interaction Callback ──────────────────────────────────────
+    # ── Modal Interaction Callbacks ─────────────────────────────────────
+    # Card clicks use pattern-matching ALL so the open callback only depends
+    # on cards that are actually mounted (baseline vs semiconductor). Fixed
+    # Input("card-chip_*") IDs for unmounted cards prevent the whole callback
+    # from firing under Dash's "all Inputs must be present" rule.
     from dash import ALL, ctx
     from config import CATEGORY_LABELS, COLORS, INDUSTRY_PROFILES
+    import traceback
 
-    # Collect all category IDs across all profiles so every card click is captured
-    _all_categories = set()
-    for prof in INDUSTRY_PROFILES.values():
-        _all_categories.update(prof["weights"].keys())
-    _all_category_list = sorted(_all_categories)
+    def _build_category_modal_body(cat: str, metadata: dict | None) -> tuple:
+        metadata = metadata or {}
+        meta = metadata.get(cat, {})
+        label = CATEGORY_LABELS.get(cat, cat.title())
+
+        tier = meta.get("tier", {}) or {}
+        score = meta.get("score", "N/A")
+        tier_color = tier.get("color", "#ffffff")
+        tier_label = tier.get("label", "Unknown")
+
+        progress_style = {
+            "width": f"{score}%" if isinstance(score, (int, float)) else "0%",
+            "height": "8px",
+            "backgroundColor": tier_color,
+            "borderRadius": "4px",
+            "marginTop": "5px",
+        }
+
+        content = html.Div([
+            html.Div([
+                html.Div([
+                    html.H6("Index Score", style={"color": "#9ca3af", "marginBottom": "0"}),
+                    html.H1(
+                        f"{score}",
+                        style={
+                            "fontWeight": "900",
+                            "fontSize": "48px",
+                            "color": tier_color,
+                            "margin": "0",
+                        },
+                    ),
+                    html.Div(style=progress_style),
+                ], style={"flex": "1"}),
+                html.Div([
+                    html.H6("Health Tier", style={"color": "#9ca3af", "marginBottom": "5px"}),
+                    dbc.Badge(
+                        tier_label,
+                        color="light",
+                        style={
+                            "backgroundColor": tier_color,
+                            "color": "#000" if tier_label in ["Healthy", "Stable"] else "#fff",
+                            "fontSize": "18px",
+                            "padding": "8px 12px",
+                        },
+                    ),
+                ], style={"flex": "1", "textAlign": "right"}),
+            ], style={
+                "display": "flex",
+                "alignItems": "center",
+                "marginBottom": "25px",
+                "paddingBottom": "20px",
+                "borderBottom": "1px solid #2a2d3a",
+            }),
+            html.H5(
+                "Underlying Data",
+                style={"color": "#fff", "fontWeight": "bold", "marginBottom": "15px"},
+            ),
+            html.Div([
+                html.Div([
+                    html.Span("Raw Value", style={"color": "#9ca3af", "fontSize": "14px"}),
+                    html.H3(
+                        meta.get("raw_value", "N/A"),
+                        style={"fontWeight": "bold", "marginTop": "5px"},
+                    ),
+                ], style={"flex": "1"}),
+                html.Div([
+                    html.Span("Data Source", style={"color": "#9ca3af", "fontSize": "14px"}),
+                    html.P(
+                        meta.get("source", "Unknown"),
+                        style={
+                            "fontWeight": "500",
+                            "marginTop": "5px",
+                            "color": COLORS["text"],
+                        },
+                    ),
+                ], style={"flex": "1"}),
+            ], style={
+                "display": "flex",
+                "gap": "20px",
+                "marginBottom": "20px",
+                "backgroundColor": COLORS["card_raised"],
+                "padding": "15px",
+                "borderRadius": "8px",
+            }),
+            html.H5(
+                "Analysis",
+                style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"},
+            ),
+            html.P(
+                meta.get("description", "No detailed description available."),
+                style={
+                    "fontSize": "15px",
+                    "lineHeight": "1.6",
+                    "color": COLORS["text_muted"],
+                    "marginBottom": "25px",
+                },
+            ),
+            html.H5(
+                "Scoring Logic",
+                style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"},
+            ),
+            html.Div(
+                html.Code(
+                    meta.get("calculation", "Calculation logic not available."),
+                    style={
+                        "color": COLORS["text"],
+                        "fontFamily": "IBM Plex Mono, monospace",
+                    },
+                ),
+                style={
+                    "backgroundColor": COLORS["card_raised"],
+                    "padding": "15px",
+                    "borderRadius": "8px",
+                    "border": f"1px solid {COLORS['card_border']}",
+                },
+            ),
+            html.Hr(style={"borderColor": COLORS["card_border_hex"], "marginTop": "20px"}),
+            html.Small(
+                f"Raw Label: {meta.get('raw_label', '')} | "
+                f"Last Updated: {meta.get('updated', 'Unknown')}",
+                style={"color": COLORS["text_faint"]},
+            ),
+        ])
+        return html.H5(f"{label} Details"), content
 
     @app.callback(
-        Output("details-modal", "is_open"),
+        Output("details-modal", "is_open", allow_duplicate=True),
         Output("modal-header", "children"),
         Output("modal-body", "children"),
-        Input("modal-close", "n_clicks"),
-        [Input(f"card-{cat}", "n_clicks") for cat in _all_category_list],
-        Input("category-metadata-store", "data"),
+        Input({"type": "category-card", "index": ALL}, "n_clicks"),
+        State("category-metadata-store", "data"),
         prevent_initial_call=True,
     )
-    def toggle_modal(close_clicks, *args):
-        # args = (card_click_1, ..., card_click_N, metadata)
-        # We need *args because the number of cards (and thus Inputs) is dynamic
-        # based on config.CATEGORY_WEIGHTS.
-        metadata = args[-1]
-        
-        import traceback
-        
+    def open_category_modal(n_clicks_list, metadata):
         try:
             triggered = ctx.triggered_id
-            
-            # If closed via button
-            if triggered == "modal-close":
-                return False, dash.no_update, dash.no_update
-                
-            # If clicked a card
-            # triggered will be "card-energy", "card-ports", etc.
-            if triggered and triggered.startswith("card-"):
-                # Ignore 0-clicks from dynamically recreated cards (profile switch).
-                # When cards are rebuilt via callback, n_clicks starts at 0 for
-                # the new components, which would falsely trigger the modal.
-                for trig_info in ctx.triggered:
-                    if trig_info["prop_id"] == f"{triggered}.n_clicks":
-                        if trig_info["value"] is None or trig_info["value"] == 0:
-                            return False, dash.no_update, dash.no_update
-                        break
-                # Safety check for metadata
-                if metadata is None:
-                    logging.error("Metadata is None in callback!")
-                    metadata = {}
+            if not isinstance(triggered, dict) or triggered.get("type") != "category-card":
+                raise dash.exceptions.PreventUpdate
 
-                cat = triggered.replace("card-", "")
-                meta = metadata.get(cat, {})
-                
-                label = CATEGORY_LABELS.get(cat, cat.title())
-                
-                # Build Metadata Content
-                tier = meta.get("tier", {})
-                score = meta.get("score", "N/A")
-                tier_color = tier.get("color", "#ffffff")
-                tier_label = tier.get("label", "Unknown")
+            # Ignore 0-clicks from dynamically recreated cards (profile switch).
+            click_val = None
+            for trig_info in ctx.triggered:
+                if trig_info.get("prop_id", "").endswith(".n_clicks"):
+                    click_val = trig_info.get("value")
+                    break
+            if click_val is None or click_val == 0:
+                raise dash.exceptions.PreventUpdate
 
-                # Progress bar style visual for score
-                progress_style = {
-                    "width": f"{score}%" if isinstance(score, (int, float)) else "0%",
-                    "height": "8px",
-                    "backgroundColor": tier_color,
-                    "borderRadius": "4px",
-                    "marginTop": "5px"
-                }
+            cat = triggered.get("index")
+            if not cat:
+                raise dash.exceptions.PreventUpdate
 
-                content = html.Div([
-                    # Top Section: Score & Tier
-                    html.Div([
-                        html.Div([
-                            html.H6("Index Score", style={"color": "#9ca3af", "marginBottom": "0"}),
-                            html.H1(f"{score}", style={"fontWeight": "900", "fontSize": "48px", "color": tier_color, "margin": "0"}),
-                            html.Div(style=progress_style),
-                        ], style={"flex": "1"}),
-                        
-                        html.Div([
-                            html.H6("Health Tier", style={"color": "#9ca3af", "marginBottom": "5px"}),
-                            dbc.Badge(tier_label, color="light", style={
-                                "backgroundColor": tier_color, 
-                                "color": "#000" if tier_label in ["Healthy", "Stable"] else "#fff",
-                                "fontSize": "18px", 
-                                "padding": "8px 12px"
-                            }),
-                        ], style={"flex": "1", "textAlign": "right"})
-                    ], style={"display": "flex", "alignItems": "center", "marginBottom": "25px", "paddingBottom": "20px", "borderBottom": "1px solid #2a2d3a"}),
-
-                    # Middle Section: Raw Data & Source
-                    html.H5("Underlying Data", style={"color": "#fff", "fontWeight": "bold", "marginBottom": "15px"}),
-                    html.Div([
-                        html.Div([
-                            html.Span("Raw Value", style={"color": "#9ca3af", "fontSize": "14px"}),
-                            html.H3(meta.get("raw_value", "N/A"), style={"fontWeight": "bold", "marginTop": "5px"}),
-                        ], style={"flex": "1"}),
-                        html.Div([
-                            html.Span("Data Source", style={"color": "#9ca3af", "fontSize": "14px"}),
-                            html.P(
-                                meta.get("source", "Unknown"),
-                                style={"fontWeight": "500", "marginTop": "5px", "color": COLORS["text"]},
-                            ),
-                        ], style={"flex": "1"})
-                    ], style={
-                        "display": "flex",
-                        "gap": "20px",
-                        "marginBottom": "20px",
-                        "backgroundColor": COLORS["card_raised"],
-                        "padding": "15px",
-                        "borderRadius": "8px",
-                    }),
-                    
-                    # Bottom Section: Reasoning
-                    html.H5("Analysis", style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"}),
-                    html.P(
-                        meta.get("description", "No detailed description available."),
-                        style={
-                            "fontSize": "15px",
-                            "lineHeight": "1.6",
-                            "color": COLORS["text_muted"],
-                            "marginBottom": "25px",
-                        },
-                    ),
-
-                    # Extra Bottom Section: Math / Calculation Logic
-                    html.H5("Scoring Logic", style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"}),
-                    html.Div(
-                        html.Code(
-                            meta.get("calculation", "Calculation logic not available."),
-                            style={"color": COLORS["text"], "fontFamily": "IBM Plex Mono, monospace"},
-                        ),
-                        style={
-                            "backgroundColor": COLORS["card_raised"],
-                            "padding": "15px",
-                            "borderRadius": "8px",
-                            "border": f"1px solid {COLORS['card_border']}",
-                        },
-                    ),
-                    
-                    html.Hr(style={"borderColor": COLORS["card_border_hex"], "marginTop": "20px"}),
-                    html.Small(
-                        f"Raw Label: {meta.get('raw_label', '')} | Last Updated: {meta.get('updated', 'Unknown')}",
-                        style={"color": COLORS["text_faint"]},
-                    )
-                ])
-                
-                # Use html.H5 instead of dbc.ModalTitle for safety
-                return True, html.H5(f"{label} Details"), content
-                
-            return False, dash.no_update, dash.no_update
-            
+            header, body = _build_category_modal_body(cat, metadata)
+            return True, header, body
+        except dash.exceptions.PreventUpdate:
+            raise
         except Exception as e:
-            logging.error(f"Callback Error: {e}")
+            logging.error("open_category_modal error: %s", e)
             logging.error(traceback.format_exc())
-            return False, dash.no_update, dash.no_update
+            raise dash.exceptions.PreventUpdate
+
+    @app.callback(
+        Output("details-modal", "is_open", allow_duplicate=True),
+        Input({"type": "modal-dismiss", "index": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def close_category_modal(dismiss_clicks):
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or triggered.get("type") != "modal-dismiss":
+            raise dash.exceptions.PreventUpdate
+        if not any(dismiss_clicks or []):
+            raise dash.exceptions.PreventUpdate
+        return False
 
     # ── API Modal Callback ──────────────────────────────────────────────
     @app.callback(
