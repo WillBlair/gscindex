@@ -24,7 +24,6 @@ Layout structure:
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
@@ -75,21 +74,6 @@ def build_layout(
     alerts = data["alerts"]
     disruptions = data["disruptions"]
     market_data = data.get("market_data", {})
-    display_last_updated = last_updated.astimezone(ZoneInfo("America/Denver")) if last_updated else None
-
-    # Compute data age for display
-    if last_updated:
-        age_seconds = (datetime.now(last_updated.tzinfo) - last_updated).total_seconds()
-        age_minutes = int(age_seconds // 60)
-        if age_minutes < 1:
-            data_age_str = "Data: <1m ago"
-        elif age_minutes < 60:
-            data_age_str = f"Data: {age_minutes}m ago"
-        else:
-            data_age_str = f"Data: {age_minutes // 60}h {age_minutes % 60}m ago"
-    else:
-        data_age_str = "Data: loading..."
-
     # Compute composite index and day-over-day delta
     composite = compute_composite_index(current_scores)
     
@@ -226,30 +210,6 @@ def build_layout(
                         className="header-meta",
                         children=[
                             html.Div(
-                                className="header-status",
-                                children=[
-                                    html.Span(
-                                        (
-                                            f"Last updated: {display_last_updated.strftime('%b %d, %Y %H:%M')}"
-                                            if display_last_updated
-                                            else (
-                                                "Last updated: provisional snapshot"
-                                                if is_provisional
-                                                else "Last updated: warming up..."
-                                            )
-                                        ),
-                                        className="last-updated",
-                                    ),
-                                    html.Span(
-                                        "Updating — refreshing in ~20s..."
-                                        if is_provisional
-                                        else "Auto-refreshes every 5 min",
-                                        className="refresh-note",
-                                    ),
-                                    html.Span(data_age_str, className="system-stats"),
-                                ],
-                            ),
-                            html.Div(
                                 className="header-nav",
                                 children=[
                                     dbc.Button(
@@ -273,7 +233,11 @@ def build_layout(
                                     ),
                                     html.Span(
                                         "● Updating..." if is_provisional else "● Live",
-                                        className="live-dot",
+                                        className=(
+                                            "live-dot"
+                                            if is_provisional
+                                            else "live-dot pulsing"
+                                        ),
                                         style={
                                             "color": (
                                                 COLORS["yellow"]
