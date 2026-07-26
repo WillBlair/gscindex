@@ -54,6 +54,31 @@ def _format_time_ago(iso_timestamp: str, *, now: datetime | None = None) -> str:
     return f"{int(total_seconds / 86400)}d ago"
 
 
+def format_briefing_content(briefing_text: str) -> list:
+    """Turn briefing text into styled bullet rows matching the alerts panel language.
+
+    Lines are split on newlines; leading bullet glyphs (``•``, ``-``, ``*``)
+    are stripped so CSS can render a consistent mono marker.
+    """
+    items = []
+    for line in briefing_text.split("\n"):
+        text = line.strip()
+        if not text:
+            continue
+        if text[:1] in {"•", "-", "*", "–", "—"}:
+            text = text[1:].strip()
+        items.append(
+            html.Div(
+                className="briefing-item",
+                children=[
+                    html.Span("▸", className="briefing-marker", **{"aria-hidden": "true"}),
+                    html.P(text, className="briefing-text"),
+                ],
+            )
+        )
+    return items
+
+
 def build_briefing_panel(briefing_text: str = "") -> html.Div:
     """Build the AI Daily Briefing panel.
 
@@ -67,112 +92,61 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
     html.Div
     """
     if briefing_text:
-        # Briefing exists - display it
         content = html.Div(
             className="daily-briefing-card",
-            style={
-                "backgroundColor": "transparent", # Blend into panel
-                "padding": "0",
-                "marginBottom": "0",
-            },
             children=[
                 html.Div(
                     id="briefing-content",
-                    style={"fontSize": "16px", "lineHeight": "1.6", "color": "#d1d5db"},
-                    children=[html.P(line, style={"marginBottom": "8px"}) for line in briefing_text.split("\n") if line.strip()]
+                    className="briefing-list",
+                    children=format_briefing_content(briefing_text),
                 ),
-                # Hidden button placeholder
+                # Hidden button placeholder (keeps the on-demand callback wired)
                 html.Button(id="generate-briefing-btn", style={"display": "none"}),
-                
-                # Full Report Link
                 html.A(
                     "Read Full Report →",
                     href="/report",
                     target="_blank",
-                    style={
-                        "display": "block",
-                        "marginTop": "20px",
-                        "backgroundColor": "transparent",
-                        "color": COLORS["text"],
-                        "border": f"1px solid {COLORS['card_border']}",
-                        "borderRadius": "8px",
-                        "padding": "8px 12px",
-                        "fontSize": "12px",
-                        "fontWeight": "600",
-                        "cursor": "pointer",
-                        "width": "100%",
-                        "textAlign": "center",
-                        "textDecoration": "none",
-                    },
+                    className="briefing-report-link",
                 ),
-            ]
+            ],
         )
     else:
-        # No briefing yet - show generate button
         content = html.Div(
-            className="daily-briefing-card",
-            style={
-                "backgroundColor": "transparent",
-                "padding": "0",
-                "marginBottom": "0",
-                "textAlign": "center",
-            },
+            className="daily-briefing-card daily-briefing-card--empty",
             children=[
                 dcc.Loading(
                     id="briefing-loading",
                     type="dot",
                     color=COLORS["text_muted"],
                     custom_spinner=html.Div(
-                        style={
-                            "display": "flex",
-                            "flexDirection": "column",
-                            "alignItems": "center",
-                            "gap": "10px",
-                            "padding": "24px 0",
-                        },
+                        className="briefing-spinner",
                         children=[
-                            html.Span(
-                                "Composing briefing…",
-                                style={
-                                    "fontFamily": "IBM Plex Mono, monospace",
-                                    "fontSize": "12px",
-                                    "color": COLORS["text_muted"],
-                                    "letterSpacing": "0.04em",
-                                },
-                            ),
+                            html.Span("Composing briefing…", className="briefing-spinner-label"),
                         ],
                     ),
                     children=html.Div(
                         id="briefing-content",
+                        className="briefing-empty",
                         children=[
                             html.P(
                                 "Click to generate an AI-powered summary of today's supply chain news.",
-                                style={"color": COLORS["text_muted"], "marginBottom": "12px", "fontSize": "13px"}
+                                className="briefing-empty-copy",
                             ),
                             html.Button(
                                 "Generate Briefing",
                                 id="generate-briefing-btn",
-                                style={
-                                    "backgroundColor": COLORS["text"],
-                                    "color": COLORS["bg"],
-                                    "border": "none",
-                                    "borderRadius": "8px",
-                                    "padding": "10px 20px",
-                                    "fontSize": "13px",
-                                    "fontWeight": "600",
-                                    "cursor": "pointer",
-                                },
+                                className="briefing-generate-btn",
                             ),
-                        ]
-                    )
+                        ],
+                    ),
                 ),
-            ]
+            ],
         )
 
     return html.Div(
         className="panel",
         children=[
-            html.H3("AI Daily Briefing", className="panel-title", style={"color": COLORS["text"]}),
+            html.H3("AI Daily Briefing", className="panel-title"),
             content,
         ],
     )
