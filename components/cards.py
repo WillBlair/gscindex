@@ -19,7 +19,6 @@ from config import (
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     COLORS,
-    HEALTH_TIERS,
     hex_to_rgba,
 )
 from scoring import get_health_tier
@@ -28,7 +27,10 @@ from scoring import get_health_tier
 # visible amplitude; the wrapper CSS stretches it to the card's screen height.
 _SPARK_VB_W = 100
 _SPARK_VB_H = 32
+_SPARK_WINDOW = 90  # match HISTORY_DAYS so monthly series can show steps
 _SPARK_MIN_POINTS = 5  # below this, real chart shape is not meaningful — plot dots only
+_SPARK_MIN_Y_SPAN = 15.0  # zoom floor so 87→96 weather movement is visible
+_SPARK_Y_PAD = 0.12  # fraction of data range added as headroom
 
 # NOTE ON IMPLEMENTATION: `dash.html` has no Svg/Path/Circle/Rect/Line
 # components (plotly/dash#219). `dcc.Markdown(dangerously_allow_html=True)`
@@ -37,29 +39,32 @@ _SPARK_MIN_POINTS = 5  # below this, real chart shape is not meaningful — plot
 # dash-svg, still server-rendered.
 
 
-def _tier_band_svg() -> str:
-    """Faint background bands for each health tier, fixed to the 0-100 domain.
+def _y_domain(scores: list[float]) -> tuple[float, float]:
+    """Local y-domain so within-band movement is readable.
 
-    Gives every sparkline the same visual reference frame (e.g. "this line
-    is sitting in the Stressed band") regardless of the category's own
-    min/max, which is the whole point of a fixed 0-100 y domain.
+    Fixed 0–100 made Weather (~90s) look flatlined at the top of the card
+    even when it moved ~8 points. Zoom to the window with a minimum span.
     """
-    parts = []
-    for tier in HEALTH_TIERS:
-        y_top = _SPARK_VB_H - (tier["max"] / 100.0) * _SPARK_VB_H
-        y_bottom = _SPARK_VB_H - (tier["min"] / 100.0) * _SPARK_VB_H
-        parts.append(
-            f'<rect x="0" y="{y_top:.2f}" width="{_SPARK_VB_W}" '
-            f'height="{(y_bottom - y_top):.2f}" '
-            f'fill="{hex_to_rgba(tier["color"], 0.07)}" stroke="none"></rect>'
-        )
-    return "".join(parts)
+    lo = float(min(scores))
+    hi = float(max(scores))
+    span = hi - lo
+    pad = max(span * _SPARK_Y_PAD, 0.75)
+    lo -= pad
+    hi += pad
+    if hi - lo < _SPARK_MIN_Y_SPAN:
+        mid = (hi + lo) / 2.0
+        lo = mid - _SPARK_MIN_Y_SPAN / 2.0
+        hi = mid + _SPARK_MIN_Y_SPAN / 2.0
+    return lo, hi
 
 
-def _score_to_y(value: float) -> float:
-    """Map a 0-100 score to an SVG y-coordinate (0 = top of the viewBox)."""
-    clamped = max(0.0, min(100.0, value))
-    return round(_SPARK_VB_H - (clamped / 100.0) * _SPARK_VB_H, 2)
+def _score_to_y(value: float, y_min: float, y_max: float) -> float:
+    """Map a score into the SVG y-axis (0 = top of the viewBox)."""
+    if y_max <= y_min:
+        return round(_SPARK_VB_H / 2.0, 2)
+    t = (float(value) - y_min) / (y_max - y_min)
+    t = max(0.0, min(1.0, t))
+    return round(_SPARK_VB_H - t * _SPARK_VB_H, 2)
 
 
 def _wrap_svg(inner: str) -> str:
@@ -82,18 +87,36 @@ def _spark_img(svg_markup: str) -> html.Img:
     )
 
 
+def _spark_points(window: pd.Series) -> tuple[list[tuple[float, float]], list[float]]:
+    """Build (x, score) points using calendar position in the window.
+
+    Sparse series (e.g. geopolitical with one stored day) keep their day
+    index so today's point sits on the right, not packed to x=0.
+    """
+    n_slots = len(window)
+    denom = max(n_slots - 1, 1)
+    points: list[tuple[float, float]] = []
+    scores: list[float] = []
+    for i, value in enumerate(window.to_numpy(dtype=float, copy=False)):
+        if pd.isna(value):
+            continue
+        score = float(value)
+        points.append((round((i / denom) * _SPARK_VB_W, 2), score))
+        scores.append(score)
+    return points, scores
+
+
 def _sparkline(series: pd.Series, color: str) -> html.Div:
     """Build a tiny server-rendered SVG sparkline for a category card.
 
-    Unlike a Plotly figure with a data-hugging y-axis, this always maps the
-    fixed 0-100 score domain onto the viewBox, so a card sitting at 90 always
-    looks near the top and a card at 20 always looks near the bottom —
-    comparable across every category at a glance.
+    Y-axis zooms to the window (with a minimum span) so small real moves in
+    high-scoring categories stay visible. X uses the calendar slot in the
+    trailing window so sparse history is not jammed to the left edge.
 
     Parameters
     ----------
     series : pd.Series
-        History to display (last 30 points are used).
+        History to display (last ``_SPARK_WINDOW`` points are used).
     color : str
         Line color (hex) — green if trending up, red if trending down.
 
@@ -103,21 +126,18 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
         A ``.spark-wrap`` div containing an SVG ``img`` (data URI) and an
         optional caption for sparse/empty history.
     """
-    # Drop NaN: history may legitimately be short (real measurements only
-    # accumulate day by day), and NaN breaks the polyline/fill path.
-    recent = series.tail(30).dropna()
-    n = len(recent)
-
-    bands = _tier_band_svg()
+    window = series.tail(_SPARK_WINDOW)
+    points, scores = _spark_points(window)
+    n = len(scores)
 
     if n == 0:
-        mid_y = _score_to_y(50.0)
+        mid_y = round(_SPARK_VB_H / 2.0, 2)
         line = (
             f'<line x1="0" y1="{mid_y}" x2="{_SPARK_VB_W}" y2="{mid_y}" '
             f'stroke="{COLORS["text_faint"]}" stroke-width="1" '
             f'stroke-dasharray="3,3"></line>'
         )
-        svg_markup = _wrap_svg(bands + line)
+        svg_markup = _wrap_svg(line)
         return html.Div(
             className="spark-wrap spark-wrap--empty",
             children=[
@@ -126,33 +146,35 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
             ],
         )
 
-    x_step = _SPARK_VB_W / max(n - 1, 1)
-    points = [
-        (round(i * x_step, 2), _score_to_y(float(v)))
-        for i, v in enumerate(recent.values)
-    ]
+    y_min, y_max = _y_domain(scores)
+    plotted = [(px, _score_to_y(score, y_min, y_max)) for px, score in points]
 
     if n < _SPARK_MIN_POINTS:
-        # Too few real measurements to imply a trend shape — show discrete
-        # dots (never a connecting line, which would fabricate a slope).
-        dots = "".join(
-            f'<circle cx="{px}" cy="{py}" r="1.8" fill="{color}"></circle>'
-            for px, py in points
+        # Too few real measurements to imply a trend shape — larger dots at
+        # true calendar x, plus a guide line so a single geo point is visible.
+        guide_y = plotted[-1][1]
+        guide = (
+            f'<line x1="0" y1="{guide_y}" x2="{_SPARK_VB_W}" y2="{guide_y}" '
+            f'stroke="{hex_to_rgba(color, 0.35)}" stroke-width="1" '
+            f'stroke-dasharray="2,3"></line>'
         )
-        svg_markup = _wrap_svg(bands + dots)
+        dots = "".join(
+            f'<circle cx="{px}" cy="{py}" r="2.6" fill="{color}"></circle>'
+            for px, py in plotted
+        )
+        svg_markup = _wrap_svg(guide + dots)
         return html.Div(
             className="spark-wrap spark-wrap--sparse",
             children=[
                 _spark_img(svg_markup),
-                html.Span(f"{n}/30d", className="spark-caption"),
+                html.Span(f"{n}/{_SPARK_WINDOW}d", className="spark-caption"),
             ],
         )
 
-    line_d = "M " + " L ".join(f"{px},{py}" for px, py in points)
-    # Filled-to-bottom polygon: line points, then back along the baseline.
+    line_d = "M " + " L ".join(f"{px},{py}" for px, py in plotted)
     fill_d = (
-        "M " + " L ".join(f"{px},{py}" for px, py in points)
-        + f" L {points[-1][0]},{_SPARK_VB_H} L {points[0][0]},{_SPARK_VB_H} Z"
+        "M " + " L ".join(f"{px},{py}" for px, py in plotted)
+        + f" L {plotted[-1][0]},{_SPARK_VB_H} L {plotted[0][0]},{_SPARK_VB_H} Z"
     )
 
     fill_path = f'<path d="{fill_d}" fill="{hex_to_rgba(color, 0.15)}" stroke="none"></path>'
@@ -161,7 +183,7 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
         f'stroke-linejoin="round" stroke-linecap="round" '
         f'vector-effect="non-scaling-stroke"></path>'
     )
-    svg_markup = _wrap_svg(bands + fill_path + line_path)
+    svg_markup = _wrap_svg(fill_path + line_path)
 
     return html.Div(
         className="spark-wrap",
