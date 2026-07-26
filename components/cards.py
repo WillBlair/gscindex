@@ -10,8 +10,10 @@ Renders a row of cards, one per supply-chain category, each showing:
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import pandas as pd
-from dash import dcc, html
+from dash import html
 
 from config import (
     CATEGORY_LABELS,
@@ -29,14 +31,10 @@ _SPARK_VB_H = 32
 _SPARK_MIN_POINTS = 5  # below this, real chart shape is not meaningful — plot dots only
 
 # NOTE ON IMPLEMENTATION: `dash.html` has no Svg/Path/Circle/Rect/Line
-# components — SVG was never added to core Dash (see plotly/dash#219); the
-# only Python wrapper for real SVG *components* is the third-party
-# `dash-svg` package, which this task explicitly avoids. The Dash-native
-# way to render raw markup without a callback round-trip is `dcc.Markdown`
-# with `dangerously_allow_html=True`, which passes an HTML/SVG string
-# through to the browser unescaped. We build the SVG as a plain string
-# below and hand it to `dcc.Markdown` — still server-rendered, still no
-# Plotly figure, still no extra package.
+# components (plotly/dash#219). `dcc.Markdown(dangerously_allow_html=True)`
+# still strips <svg> via rehype sanitize, which left blank spark screens in
+# production. Serve the SVG as an <img> data URI instead — no Plotly, no
+# dash-svg, still server-rendered.
 
 
 def _tier_band_svg() -> str:
@@ -65,9 +63,22 @@ def _score_to_y(value: float) -> float:
 
 
 def _wrap_svg(inner: str) -> str:
+    # xmlns is required for data:image/svg+xml img sources to render.
     return (
-        f'<svg class="spark-svg" viewBox="0 0 {_SPARK_VB_W} {_SPARK_VB_H}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" class="spark-svg" '
+        f'viewBox="0 0 {_SPARK_VB_W} {_SPARK_VB_H}" '
         f'preserveAspectRatio="none">{inner}</svg>'
+    )
+
+
+def _spark_img(svg_markup: str) -> html.Img:
+    """Render SVG markup via a data URI so browsers actually paint it."""
+    return html.Img(
+        src="data:image/svg+xml;charset=utf-8," + quote(svg_markup),
+        className="spark-svg",
+        draggable="false",
+        alt="",
+        **{"aria-hidden": "true"},
     )
 
 
@@ -89,9 +100,8 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
     Returns
     -------
     html.Div
-        A ``.spark-wrap`` div containing an inline SVG (via
-        ``dcc.Markdown(dangerously_allow_html=True)``) and an optional
-        caption for sparse/empty history.
+        A ``.spark-wrap`` div containing an SVG ``img`` (data URI) and an
+        optional caption for sparse/empty history.
     """
     # Drop NaN: history may legitimately be short (real measurements only
     # accumulate day by day), and NaN breaks the polyline/fill path.
@@ -111,7 +121,7 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
         return html.Div(
             className="spark-wrap spark-wrap--empty",
             children=[
-                dcc.Markdown(svg_markup, dangerously_allow_html=True, className="spark-markdown"),
+                _spark_img(svg_markup),
                 html.Span("No history", className="spark-caption"),
             ],
         )
@@ -133,7 +143,7 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
         return html.Div(
             className="spark-wrap spark-wrap--sparse",
             children=[
-                dcc.Markdown(svg_markup, dangerously_allow_html=True, className="spark-markdown"),
+                _spark_img(svg_markup),
                 html.Span(f"{n}/30d", className="spark-caption"),
             ],
         )
@@ -155,7 +165,7 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
 
     return html.Div(
         className="spark-wrap",
-        children=[dcc.Markdown(svg_markup, dangerously_allow_html=True, className="spark-markdown")],
+        children=[_spark_img(svg_markup)],
     )
 
 
