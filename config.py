@@ -122,7 +122,7 @@ DEFAULT_FALLBACK_SCORES: dict[str, float] = {
 }
 
 CATEGORY_LABELS: dict[str, str] = {
-    "weather":             "Weather Disruptions",
+    "weather":             "Weather",  # Shortened to fit on one line
     "supply_chain":        "Supply Chain", # Shortened to fit on one line
     "freight":             "Freight Flow",
     "energy":              "Energy & Fuel",
