@@ -482,7 +482,7 @@ body {
     letter-spacing: 0.02em;
     color: var(--text-muted);
     background: var(--surface-raised);
-    border: 1px solid #e1e4ea;
+    border: 1px solid rgba(255,255,255,0.3);
     border-radius: var(--radius-control);
 }
 
