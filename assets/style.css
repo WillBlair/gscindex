@@ -251,6 +251,8 @@ body {
 .gauge-panel {
     overflow: visible;
     z-index: 4;
+    border: none;
+    background: transparent;
 }
 
 .gauge-panel:has(.gauge-score-hover-zone:hover),
