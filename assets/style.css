@@ -1355,7 +1355,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   Vendored effects — thinking-orbs, border-beam (pulse), metal-fx
+   Vendored effects — thinking-orbs, metal-fx
    See assets/vendor/ + frontend/ for provenance and build steps.
    Used sparingly and tastefully per design brief: loading states + a single
    restrained brand accent, not decoration.

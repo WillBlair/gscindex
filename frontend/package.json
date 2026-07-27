@@ -2,13 +2,12 @@
   "name": "gscindex-vendor-effects",
   "private": true,
   "version": "1.0.0",
-  "description": "Build-time only workspace. Vendors three npm-distributed React effect packages (thinking-orbs, border-beam, metal-fx) into framework-free browser bundles / static CSS consumed by the Python Dash app's assets/ folder. Nothing here ships to the browser as-is — `npm run build` regenerates assets/vendor/*.js and assets/vendor/border-beam-pulse.css, which ARE committed to git (the Dash app has no client build step in production).",
+  "description": "Build-time only workspace. Vendors two npm-distributed React effect packages (thinking-orbs, metal-fx) into framework-free browser bundles consumed by the Python Dash app's assets/ folder. Nothing here ships to the browser as-is — `npm run build` regenerates assets/vendor/*.js, which ARE committed to git (the Dash app has no client build step in production).",
   "type": "module",
   "scripts": {
-    "build": "node scripts/build-thinking-orbs.mjs && node scripts/build-metal-fx.mjs && node scripts/generate-border-beam-css.mjs"
+    "build": "node scripts/build-thinking-orbs.mjs && node scripts/build-metal-fx.mjs"
   },
   "dependencies": {
-    "border-beam": "^1.3.0",
     "metal-fx": "^1.0.4",
     "thinking-orbs": "^0.1.1"
   },
