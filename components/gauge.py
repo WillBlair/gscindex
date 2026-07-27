@@ -81,7 +81,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
                     "tickfont": {"size": 11, "color": COLORS["text_muted"]},
                 },
                 "bar": {"color": tier["color"], "thickness": 0.3},
-                "bgcolor": COLORS["card"],
+                "bgcolor": "#111113",
                 "borderwidth": 0,
                 "steps": [
                     {"range": [t["min"], t["max"] + 1], "color": hex_to_rgba(t["color"], 0.1)}
