@@ -157,8 +157,9 @@ body {
 
 .live-dot {
     font-size: 0.8rem;
-    color: var(--tier-healthy);
-    font-weight: 600;
+    color: #4ade80;
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
 }
 
 .live-dot.pulsing {
@@ -169,10 +170,12 @@ body {
     0%,
     100% {
         opacity: 1;
+        text-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
     }
 
     50% {
-        opacity: 0.4;
+        opacity: 0.7;
+        text-shadow: 0 0 4px rgba(74, 222, 128, 0.25);
     }
 }
 
