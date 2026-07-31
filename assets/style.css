@@ -1308,7 +1308,7 @@ body {
     cursor: pointer !important;
     height: auto !important;
     min-height: 36px !important;
-    width: 100% !important;
+    width: 260px !important;
     flex: 1;
     min-width: 0;
 }
