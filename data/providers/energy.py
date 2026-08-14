@@ -77,20 +77,38 @@ class EnergyProvider(BaseProvider):
         # 2. Diesel leg — latest weekly DOE retail price scored against its own range.
         diesel_hist = fetch_fred_series(self._DIESEL_SERIES)
         diesel_price = float(diesel_hist.iloc[-1])
+        diesel_note = ""
+        diesel_source = "DOE Diesel (GASDESW)"
+        try:
+            from data.providers.api_ninjas import get_commodity_quote
+
+            ho = get_commodity_quote("heating_oil")
+            if ho and ho.get("change_24h") is not None:
+                # Apply today's heating-oil move to the weekly retail print.
+                # Do not mix absolute futures and retail levels — only the day change.
+                ho_change = float(ho["change_24h"])
+                diesel_price = diesel_price + ho_change
+                diesel_note = (
+                    f" Diesel nowcasted {ho_change:+.3f}/gal from API Ninjas "
+                    "heating oil vs the prior session."
+                )
+                diesel_source = "DOE Diesel (GASDESW) + API Ninjas heating_oil"
+        except Exception as exc:
+            logger.warning("Heating-oil nowcast skipped: %s", exc)
         diesel_score = inverse_percentile_value(diesel_price, diesel_hist)
 
         # 3. Blend: equal-weight average of the two oil-complex legs.
         score = round((crude_score + diesel_score) / 2.0, 1)
 
         return score, {
-            "source": "WTI Crude (CL=F) + DOE Diesel (GASDESW)",
+            "source": f"WTI Crude (CL=F) + {diesel_source}",
             "raw_value": f"${crude_price:.0f} oil / ${diesel_price:.2f} diesel",
             "raw_label": f"Crude & Diesel{crude_change}",
             "description": (
                 f"WTI crude is ${crude_price:.2f}/bbl{crude_change} and US retail diesel "
                 f"is ${diesel_price:.2f}/gal. This category blends both legs of the oil "
                 "complex into one fuel-cost-pressure gauge. It measures energy cost "
-                "pressure on supply chains, not demand-side health."
+                f"pressure on supply chains, not demand-side health.{diesel_note}"
             ),
             "calculation": (
                 "Score = average of two inverse percentiles (crude price and diesel price, "

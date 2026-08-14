@@ -1,9 +1,9 @@
 """
 Aerospace & Manufacturing Data Provider
 =======================================
-Sector scores for the Aerospace industry profile. All series come from
-FRED (existing ``FRED_API_KEY``) plus an optional daily aluminum-futures
-nowcast via yfinance (no key).
+Sector scores for the Aerospace industry profile. Monthly FRED series
+anchor the scores. Live metals nowcast prefers API Ninjas aluminum/nickel
+when those slugs are in this week's free set; otherwise COMEX ``ALI=F``.
 
 Returns four category scores from one fetch:
   - aero_metals       Aluminum + nickel cost pressure (inverse percentile)
@@ -25,6 +25,7 @@ import pandas as pd
 
 from config import FRED_SCORE_LOOKBACK_DAYS, HISTORY_DAYS, INDUSTRY_PROVIDER_CACHE_TTL
 from data.cache import get_cached, set_cached
+from data.providers.api_ninjas import fetch_commodity_snapshot, usd_per_metric_ton
 from data.providers.fred_client import (
     direct_percentile_value,
     fetch_fred_series,
@@ -35,12 +36,15 @@ from data.providers.fred_client import (
 
 logger = logging.getLogger(__name__)
 
-# Daily aluminum futures (COMEX) scored against their own 2-year window,
-# then blended as a minority nowcast so metals move between monthly IMF prints.
-_ALUMINUM_FUTURES = "ALI=F"
+# Live metals nowcast (API Ninjas when Al/Ni are in this week's free set,
+# otherwise COMEX aluminum via yfinance). Minority blend so monthly IMF
+# prints still anchor the score.
 _METALS_PROXY_WEIGHT = 0.30
+_ALUMINUM_FUTURES = "ALI=F"
 _ALUMINUM_CACHE_KEY = "ali_futures_daily_v1"
 _ALUMINUM_CACHE_TTL = 3600
+# Aerospace mixes monthly FRED with a daily nowcast — 1h is enough.
+_AERO_CACHE_TTL = min(int(INDUSTRY_PROVIDER_CACHE_TTL), 3600)
 
 # Aircraft new orders are lumpy (a single widebody order can 3x a month).
 # Smooth before percentile ranking so one print does not pin the score.
@@ -103,6 +107,37 @@ def _smooth_monthly(series: pd.Series, months: int) -> pd.Series:
     return series.rolling(months, min_periods=months).mean().dropna()
 
 
+def _ninjas_metals_nowcast(
+    alum: pd.Series, nickel: pd.Series
+) -> tuple[float | None, str]:
+    """Score live Al/Ni quotes against the matching FRED USD/mt windows.
+
+    Returns (score, note) or (None, "") when this week's free set has neither
+    metal. Units are converted to USD/mt so the live print sits on the same
+    scale as PALUMUSDM / PNICKUSDM — unlike ALI=F, which has its own window.
+    """
+    quotes = fetch_commodity_snapshot()
+    parts: list[float] = []
+    notes: list[str] = []
+    for slug, series, label in (
+        ("aluminum", alum, "Al"),
+        ("nickel", nickel, "Ni"),
+    ):
+        quote = quotes.get(slug)
+        if not quote:
+            continue
+        try:
+            usd_mt = usd_per_metric_ton(quote)
+        except (ValueError, TypeError, KeyError) as exc:
+            logger.warning("API Ninjas %s quote unusable: %s", slug, exc)
+            continue
+        parts.append(inverse_percentile_value(usd_mt, series))
+        notes.append(f"{label} ${usd_mt:,.0f}/mt live")
+    if not parts:
+        return None, ""
+    return sum(parts) / len(parts), ", ".join(notes)
+
+
 def _score_metals() -> tuple[float, dict, pd.Series]:
     """Inverse-percentile blend of IMF aluminum and nickel prices."""
     alum = fetch_fred_series("PALUMUSDM")
@@ -122,33 +157,55 @@ def _score_metals() -> tuple[float, dict, pd.Series]:
     proxy_note = ""
     blend_weight = 0.0
     score = fred_score
-    try:
-        futures = _fetch_aluminum_futures()
-        proxy_score = inverse_percentile_value(float(futures.iloc[-1]), futures)
+    source_tag = "FRED PALUMUSDM + PNICKUSDM"
+    calc_extra = ""
+
+    ninjas_score, ninjas_note = _ninjas_metals_nowcast(alum, nickel)
+    if ninjas_score is not None:
         blend_weight = _METALS_PROXY_WEIGHT
-        score = (1 - blend_weight) * fred_score + blend_weight * proxy_score
-        proxy_hist = normalize_series_inverse(futures)
-        aligned = fred_hist.index.union(proxy_hist.index)
-        fred_hist = (
-            (1 - blend_weight) * fred_hist.reindex(aligned).ffill()
-            + blend_weight * proxy_hist.reindex(aligned).ffill()
-        )
+        score = (1 - blend_weight) * fred_score + blend_weight * ninjas_score
+        source_tag = "FRED PALUMUSDM + PNICKUSDM + API Ninjas"
         proxy_note = (
-            f" Blended with COMEX aluminum futures ({_ALUMINUM_FUTURES} "
-            f"${float(futures.iloc[-1]):.0f}) at {blend_weight:.0%} weight "
-            "so this category moves between monthly IMF prints."
+            f" Blended with live API Ninjas metals ({ninjas_note}) at "
+            f"{blend_weight:.0%} weight so this category moves between monthly "
+            "IMF prints."
         )
-    except Exception as exc:
-        logger.warning("Aluminum futures nowcast failed (using 100%% FRED metals): %s", exc)
+        calc_extra = (
+            f", blended {blend_weight:.0%} with live API Ninjas aluminum/nickel "
+            "converted to USD/mt and scored against the same FRED windows"
+        )
+    else:
+        try:
+            futures = _fetch_aluminum_futures()
+            proxy_score = inverse_percentile_value(float(futures.iloc[-1]), futures)
+            blend_weight = _METALS_PROXY_WEIGHT
+            score = (1 - blend_weight) * fred_score + blend_weight * proxy_score
+            proxy_hist = normalize_series_inverse(futures)
+            aligned = fred_hist.index.union(proxy_hist.index)
+            fred_hist = (
+                (1 - blend_weight) * fred_hist.reindex(aligned).ffill()
+                + blend_weight * proxy_hist.reindex(aligned).ffill()
+            )
+            source_tag = "FRED PALUMUSDM + PNICKUSDM + ALI=F"
+            proxy_note = (
+                f" Blended with COMEX aluminum futures ({_ALUMINUM_FUTURES} "
+                f"${float(futures.iloc[-1]):.0f}) at {blend_weight:.0%} weight "
+                "so this category moves between monthly IMF prints. API Ninjas "
+                "aluminum/nickel were not in this week's free commodity set."
+            )
+            calc_extra = (
+                f", blended {blend_weight:.0%} with COMEX aluminum futures "
+                "scored against their own 2-year range"
+            )
+        except Exception as exc:
+            logger.warning(
+                "Aluminum futures nowcast failed (using 100%% FRED metals): %s", exc
+            )
 
     alum_val = float(alum.iloc[-1])
     nickel_val = float(nickel.iloc[-1])
     meta = {
-        "source": (
-            "FRED PALUMUSDM + PNICKUSDM + ALI=F"
-            if blend_weight
-            else "FRED PALUMUSDM + PNICKUSDM"
-        ),
+        "source": source_tag,
         "raw_value": f"${alum_val:,.0f} Al / ${nickel_val:,.0f} Ni",
         "raw_label": "Al & Ni (USD/mt)",
         "description": (
@@ -160,12 +217,7 @@ def _score_metals() -> tuple[float, dict, pd.Series]:
         "calculation": (
             "Score = average of two inverse percentiles (aluminum, nickel) "
             f"within the trailing {FRED_SCORE_LOOKBACK_DAYS}-day window"
-            + (
-                f", blended {blend_weight:.0%} with COMEX aluminum futures "
-                "scored the same way against their own 2-year range"
-                if blend_weight
-                else ""
-            )
+            + calc_extra
             + ". Cheaper than most of the window = high score."
         ),
         "updated": _now_stamp(),
@@ -284,7 +336,7 @@ class AerospaceProvider:
         if self._scores is None or self._cache_time is None:
             return True
         age = (datetime.now(timezone.utc) - self._cache_time).total_seconds()
-        return age >= INDUSTRY_PROVIDER_CACHE_TTL
+        return age >= _AERO_CACHE_TTL
 
     def _compute(self) -> None:
         if not self._expired():

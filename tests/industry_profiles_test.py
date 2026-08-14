@@ -112,9 +112,10 @@ class AerospaceAdapterTests(unittest.TestCase):
         values = catalogs[series_id]
         return _monthly_series(values)
 
+    @patch("data.providers.aerospace.fetch_commodity_snapshot", return_value={})
     @patch("data.providers.aerospace._fetch_aluminum_futures", side_effect=RuntimeError("offline"))
     @patch("data.providers.aerospace.fetch_fred_series")
-    def test_adapter_packs_additional_scores_and_history(self, mock_fred, _mock_futures):
+    def test_adapter_packs_additional_scores_and_history(self, mock_fred, _mock_futures, _mock_ninjas):
         mock_fred.side_effect = self._fred_series
         provider = AeroMetalsProvider()
         score, meta = provider.fetch_current()
@@ -139,9 +140,10 @@ class AerospaceAdapterTests(unittest.TestCase):
         metals_hist = provider.fetch_history(90)
         self.assertGreater(len(metals_hist.dropna()), 0)
 
+    @patch("data.providers.aerospace.fetch_commodity_snapshot", return_value={})
     @patch("data.providers.aerospace._fetch_aluminum_futures", side_effect=RuntimeError("offline"))
     @patch("data.providers.aerospace.fetch_fred_series", side_effect=RuntimeError("fred down"))
-    def test_adapter_falls_back_when_fred_fails(self, _mock_fred, _mock_futures):
+    def test_adapter_falls_back_when_fred_fails(self, _mock_fred, _mock_futures, _mock_ninjas):
         get_aerospace_provider()  # ensure singleton exists
         score, meta = AeroMetalsProvider().fetch_current()
         self.assertEqual(score, 50.0)
@@ -149,6 +151,26 @@ class AerospaceAdapterTests(unittest.TestCase):
         for extra_score, extra_meta in meta["additional_scores"].values():
             self.assertEqual(extra_score, 50.0)
             self.assertTrue(extra_meta.get("is_fallback"))
+
+    @patch("data.providers.aerospace._fetch_aluminum_futures", side_effect=RuntimeError("offline"))
+    @patch("data.providers.aerospace.fetch_fred_series")
+    @patch("data.providers.aerospace.fetch_commodity_snapshot")
+    def test_ninjas_aluminum_nowcast_beats_yfinance_fallback(
+        self, mock_snapshot, mock_fred, _mock_futures
+    ):
+        mock_fred.side_effect = self._fred_series
+        mock_snapshot.return_value = {
+            "aluminum": {
+                "value": "aluminum",
+                "price": 2200.0,
+                "unit": "metric_ton",
+                "currency_unit": "USD",
+            }
+        }
+        score, meta = AeroMetalsProvider().fetch_current()
+        self.assertIn("API Ninjas", meta["source"])
+        self.assertNotIn("ALI=F", meta["source"])
+        self.assertTrue(0.0 <= score <= 100.0)
 
 
 if __name__ == "__main__":
