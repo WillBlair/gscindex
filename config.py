@@ -296,7 +296,7 @@ COLORS = {
     "text_muted":   "#8b8b93",
     "text_faint":   "#5c5c66",
     "accent":       "#a1a1aa",  # quiet focus / link hover — not indigo
-    "green":        "#3d9b6e",
+    "green":        "#4ade80",
     "yellow":       "#c4a35a",
     "orange":       "#c47a3a",
     "red":          "#c44d5f",

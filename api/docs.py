@@ -441,7 +441,7 @@ flowchart LR
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Supply Chain Activity <span class="card-badge">20%</span></h3>
+        <h3>Supply Chain Activity <span class="card-badge">25%</span></h3>
         <div class="step-list">
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> NY Fed Weekly Economic Index (<span class="code-inline">WEI</span>) via FRED.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Composite of 10 high-frequency indicators — rail traffic, fuel sales, steel production, staffing.</div></div>
@@ -480,6 +480,14 @@ flowchart LR
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Continuous deductions for <span class="highlight-red">wind, precipitation, temperature extremes, and WMO condition codes</span>.</div></div>
         </div>
     </div>
+    <div class="p-card">
+        <h3>Freight Flow <span class="card-badge">10%</span></h3>
+        <div class="step-list">
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> BTS Freight Transportation Services Index (monthly), blended with a daily dry-bulk freight-rate proxy (<span class="code-inline">BDRY</span>).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Physical throughput across trucking, rail, air, and waterborne freight — are goods actually moving?</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Year-over-year growth mapped to a 0–100 health score — <span class="highlight-amber">contraction lowers the score, expansion raises it</span>.</div></div>
+        </div>
+    </div>
 </div>
 
 <div class="section-heading"><span class="section-num">3.</span><h2>Scoring Engine</h2></div>
@@ -488,11 +496,12 @@ flowchart LR
 
 | Category | Weight | Primary Source | Normalization |
 |:---|:---|:---|:---|
-| **Supply Chain Activity** | 20% | NY Fed WEI (FRED) | Fixed calibration (WEI × 12.5 + 50) |
+| **Supply Chain Activity** | 25% | NY Fed WEI (FRED) | Fixed calibration (WEI × 12.5 + 50) |
 | **Energy & Fuel** | 20% | WTI Crude (CL=F) + DOE Diesel (GASDESW) | Average inverse percentile vs trailing 2-year range |
 | **Geopolitical Risk** | 20% | RSS + Gemini AI | Severity deductions from baseline |
 | **Trade & Tariffs** | 15% | EPU Index (FRED) | Inverse against trailing range |
 | **Port Weather** | 10% | Open-Meteo | Continuous weather deductions |
+| **Freight Flow** | 10% | BTS Freight TSI + BDRY proxy | YoY growth mapped to 0–100 |
 
 <div class="math-block">
     <code>

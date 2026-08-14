@@ -265,12 +265,6 @@ def build_layout(
                     html.Div(
                         className="chart-panel gauge-panel",
                         style={"minHeight": "340px", "position": "relative"},
-                        # border-beam pulse (mono, restrained) — see
-                        # assets/vendor/border-beam-pulse.css + -driver.js.
-                        # `data-active` set server-side so the 0.6s fade-in
-                        # keyframe (baked into the generated CSS) runs on
-                        # first paint without needing a JS state toggle.
-                        **{"data-beam": "gsci-gauge-beam", "data-active": ""},
                         children=[
                             dcc.Graph(
                                 id="gauge",

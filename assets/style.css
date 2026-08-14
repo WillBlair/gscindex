@@ -21,7 +21,7 @@
     --radius-pill: 999px;
     --font-sans: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-    --tier-healthy: #3d9b6e;
+    --tier-healthy: #4ade80;
     --tier-stable: #c4a35a;
     --tier-stressed: #c47a3a;
     --tier-critical: #c44d5f;
@@ -157,8 +157,9 @@ body {
 
 .live-dot {
     font-size: 0.8rem;
-    color: var(--tier-healthy);
-    font-weight: 600;
+    color: #4ade80;
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
 }
 
 .live-dot.pulsing {
@@ -169,10 +170,12 @@ body {
     0%,
     100% {
         opacity: 1;
+        text-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
     }
 
     50% {
-        opacity: 0.4;
+        opacity: 0.7;
+        text-shadow: 0 0 4px rgba(74, 222, 128, 0.25);
     }
 }
 
@@ -251,6 +254,8 @@ body {
 .gauge-panel {
     overflow: visible;
     z-index: 4;
+    border: none;
+    background: transparent;
 }
 
 .gauge-panel:has(.gauge-score-hover-zone:hover),
@@ -482,7 +487,7 @@ body {
     letter-spacing: 0.02em;
     color: var(--text-muted);
     background: var(--surface-raised);
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255,255,255,0.5);
     border-radius: var(--radius-control);
 }
 
@@ -1303,7 +1308,7 @@ body {
     cursor: pointer !important;
     height: auto !important;
     min-height: 36px !important;
-    width: 100% !important;
+    width: 260px !important;
     flex: 1;
     min-width: 0;
 }
@@ -1338,7 +1343,7 @@ body {
 .modal-content {
     background: var(--surface) !important;
     color: var(--text) !important;
-    border: 1px solid var(--border) !important;
+    border: 1px solid rgba(255,255,255,0.5) !important;
     border-radius: var(--radius-panel) !important;
 }
 
@@ -1353,7 +1358,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   Vendored effects — thinking-orbs, border-beam (pulse), metal-fx
+   Vendored effects — thinking-orbs, metal-fx
    See assets/vendor/ + frontend/ for provenance and build steps.
    Used sparingly and tastefully per design brief: loading states + a single
    restrained brand accent, not decoration.

@@ -5,7 +5,6 @@
  * Placement:
  *   - thinking-orbs: once — header brand mark
  *     (React equiv: <ThinkingOrb state="working" size={64} />)
- *   - border-beam (pulse): hero gauge panel (CSS + border-beam-pulse-driver.js)
  */
 (function () {
   "use strict";
