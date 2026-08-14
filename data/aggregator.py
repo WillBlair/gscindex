@@ -87,30 +87,6 @@ def _fetch_market_data() -> dict:
         except Exception as e:
             logger.warning(f"Market data fetch failed for {sym}: {e}")
             
-    try:
-        from data.providers.api_ninjas import get_commodity_quote
-
-        gold = get_commodity_quote("gold")
-        if gold and gold.get("price") is not None:
-            current = float(gold["price"])
-            if gold.get("previous_close") is not None:
-                prev = float(gold["previous_close"])
-            elif gold.get("change_24h") is not None:
-                prev = current - float(gold["change_24h"])
-            else:
-                prev = current
-            change_pct = gold.get("change_24h_percent")
-            if change_pct is None and prev:
-                change_pct = ((current - prev) / prev) * 100
-            data["Gold"] = {
-                "price": current,
-                "prev": prev,
-                "symbol": "API Ninjas",
-                "change_pct": float(change_pct or 0.0),
-            }
-    except Exception as exc:
-        logger.warning("API Ninjas gold overlay skipped: %s", exc)
-
     if data: 
         set_cached(cache_key, data)
         

@@ -11,7 +11,7 @@ Real-time supply chain health dashboard built with Python/Dash. Aggregates data 
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 8 gthreads)
 - **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers + daily score history
-- **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Google Generative AI, API Ninjas (optional commodities)
+- **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Google Generative AI
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes, 1-hour default TTL
 - **Rate limiting:** Flask-Limiter (2000/day, 500/hour)
@@ -33,7 +33,6 @@ NEWSAPI_KEY         # Required — geopolitical scoring + alerts
 DATABASE_URL        # PostgreSQL (omit for SQLite fallback)
 ADMIN_TOKEN         # Protects /api/v1/newsletter-data
 GEMINI_API_KEY      # Optional — AI briefing + news analysis
-API_NINJAS_KEY      # Optional — live commodity nowcast (free tier: 7 rotating names/week)
 PORT                # Server port (default 10000)
 ```
 
