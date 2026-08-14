@@ -111,6 +111,36 @@ def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Serie
     return series
 
 
+def _as_naive_daily_index(index: pd.Index) -> pd.DatetimeIndex:
+    """Normalize a history index to naive UTC calendar dates.
+
+    Providers mix tz-aware stamps (yfinance, ``Timestamp.now(tz='UTC')``)
+    with naive FRED dates. ``reindex`` against the aggregator's naive
+    ``dates`` range raises if those dtypes are mixed.
+    """
+    idx = pd.DatetimeIndex(index)
+    if idx.tz is not None:
+        idx = idx.tz_convert("UTC").tz_localize(None)
+    return idx.normalize()
+
+
+def _align_history_to_dates(
+    hist_series: pd.Series,
+    dates: pd.DatetimeIndex,
+    score: float,
+) -> pd.Series:
+    """Forward-fill a provider series onto the dashboard date index.
+
+    Dates before the first real observation stay NaN. Today's point is
+    forced to the live score so sparklines do not show yesterday's close.
+    """
+    hist = hist_series.copy()
+    hist.index = _as_naive_daily_index(hist.index)
+    aligned = hist.reindex(dates, method="ffill")
+    aligned.iloc[-1] = score
+    return aligned
+
+
 def get_safe_fallback_data() -> dict:
     """Return a completely safe, neutral dataset to ensure dashboard starts."""
     current_scores = {cat: 50.0 for cat in CATEGORY_WEIGHTS}
@@ -702,9 +732,9 @@ def aggregate_data(status_callback=None) -> dict:
                                 else None
                             )
                             if add_hist is not None and not getattr(add_hist, "empty", True):
-                                aligned = add_hist.reindex(dates, method="ffill")
-                                aligned.iloc[-1] = add_score
-                                category_history[add_cat] = aligned
+                                category_history[add_cat] = _align_history_to_dates(
+                                    add_hist, dates, add_score
+                                )
                             else:
                                 category_history[add_cat] = _make_fallback_series(
                                     HISTORY_DAYS, add_cat, add_score
@@ -719,14 +749,9 @@ def aggregate_data(status_callback=None) -> dict:
                         # Reindex fills gaps by ffill. Dates BEFORE the first real
                         # observation stay NaN — backfilling them with today's
                         # score would paint history that was never measured.
-                        aligned = hist_series.reindex(dates, method="ffill")
-
-                        # CRITICAL FIX: Overwrite the last data point (today) with the LIVE score.
-                        # This ensures the sparkline/delta calculation uses the real current value,
-                        # not yesterday's close (which ffill would do).
-                        aligned.iloc[-1] = score
-
-                        category_history[cat] = aligned
+                        category_history[cat] = _align_history_to_dates(
+                            hist_series, dates, score
+                        )
                     else:
                         # Fallback if history fetch failed: today's point only
                         category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)

@@ -66,14 +66,56 @@ Return a JSON object with port names as exact keys matching the input list.
 
 
 
-def _normalize_summaries(raw: dict, port_names: list[str]) -> dict[str, dict]:
+def _coerce_port_payload(raw) -> dict:
+    """Turn Gemini's JSON into ``{port_name: payload}``.
+
+    The model is asked for an object, but it often returns a list of
+    ``{"port": ..., "summary": ...}`` rows, a list of single-key objects,
+    or a one-key wrapper like ``{"ports": {...}}``.
+    """
+    if isinstance(raw, dict):
+        looks_like_ports = any(
+            isinstance(value, dict) and ("summary" in value or "disruption_penalty" in value)
+            for value in raw.values()
+        ) or any(isinstance(value, str) for value in raw.values())
+        if looks_like_ports:
+            return raw
+        for wrap_key in ("ports", "summaries", "data", "results"):
+            inner = raw.get(wrap_key)
+            if isinstance(inner, (dict, list)):
+                return _coerce_port_payload(inner)
+        return raw
+
+    if isinstance(raw, list):
+        out: dict = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name") or item.get("port") or item.get("port_name")
+            if name:
+                out[str(name)] = item
+                continue
+            if len(item) == 1:
+                key, value = next(iter(item.items()))
+                out[str(key)] = value
+        return out
+
+    return {}
+
+
+def _normalize_summaries(raw, port_names: list[str]) -> dict[str, dict]:
     """Reconcile Gemini's response keys with our canonical port names.
 
-    Handles three common failure modes:
+    Handles four common failure modes:
       1. Gemini returns a *string* instead of ``{"summary": ..., "disruption_penalty": ...}``
       2. Gemini uses slightly different casing, accents, or whitespace in key names
       3. Gemini omits some ports entirely
+      4. Gemini returns a JSON *list* instead of an object
     """
+    raw = _coerce_port_payload(raw)
+    if not isinstance(raw, dict):
+        return {}
+
     # Build a lookup: lowered/stripped → canonical name
     canonical = {name.lower().strip(): name for name in port_names}
 
@@ -129,7 +171,11 @@ def generate_port_summaries() -> dict[str, dict]:
     cached = get_cached(CACHE_KEY, ttl=CACHE_TTL)
     if cached:
         logger.info("Using cached port summaries (updated %s)", cached.get("_updated", "unknown"))
-        return cached.get("summaries", {})
+        summaries = cached.get("summaries", {})
+        if not isinstance(summaries, dict):
+            port_names = [name for name, _, _, _ in MAJOR_PORTS]
+            summaries = _normalize_summaries(summaries, port_names)
+        return summaries if isinstance(summaries, dict) else {}
 
     if not api_key:
         logger.warning("GEMINI_API_KEY not set. Using fallback summaries.")
