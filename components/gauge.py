@@ -55,7 +55,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
             mode="gauge+number+delta" if show_delta else "gauge+number",
             value=composite,
             number={
-                "font": {"size": 48, "color": tier["color"], "family": "IBM Plex Mono, monospace"},
+                "font": {"size": 48, "color": tier["color"], "family": "Geist Mono, monospace"},
                 "suffix": "",
             },
             delta=(
@@ -64,7 +64,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
                     "relative": False,
                     "increasing": {"color": COLORS["green"]},
                     "decreasing": {"color": COLORS["red"]},
-                    "font": {"size": 16, "family": "IBM Plex Mono, monospace"},
+                    "font": {"size": 16, "family": "Geist Mono, monospace"},
                 }
                 if show_delta
                 else {}
@@ -78,7 +78,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
                     "range": [0, 100],
                     "tickwidth": 1,
                     "tickcolor": COLORS["text_muted"],
-                    "tickfont": {"size": 11, "color": COLORS["text_muted"]},
+                    "tickfont": {"size": 11, "color": COLORS["text_muted"], "family": "Geist Mono, monospace"},
                 },
                 "bar": {"color": tier["color"], "thickness": 0.3},
                 "bgcolor": "#111113",

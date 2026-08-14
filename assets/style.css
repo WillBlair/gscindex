@@ -20,7 +20,7 @@
     --radius-control: 8px;
     --radius-pill: 999px;
     --font-sans: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
-    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
     --tier-healthy: #4ade80;
     --tier-stable: #c4a35a;
     --tier-stressed: #c47a3a;
@@ -1097,6 +1097,7 @@ body {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text);
+    font-variant-numeric: tabular-nums lining-nums;
 }
 
 .market-change-group {
@@ -1188,9 +1189,11 @@ body {
 .tech-score {
     font-family: var(--font-mono);
     font-size: 2.2rem;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1;
-    letter-spacing: -0.05em;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
 /* Daily Delta Box */
