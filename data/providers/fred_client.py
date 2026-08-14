@@ -179,3 +179,37 @@ def normalize_series_inverse(
     # weeks of a series, which the 90-day display tail never reaches.
     pct = series.rolling(f"{days}D", min_periods=12).rank(pct=True)
     return ((1 - pct) * 100).round(1).clip(0.0, 100.0)
+
+
+def direct_percentile_value(
+    value: float,
+    series: pd.Series,
+    lookback_days: int | None = None,
+) -> float:
+    """Score a single value by its percentile within the trailing window.
+
+    Higher raw value → higher score. Mirror of ``inverse_percentile_value``
+    for series where more is healthier (orders, industrial production).
+    """
+    window = _score_window(series, lookback_days)
+    if window.empty:
+        return 50.0
+    pct = float((window <= value).mean())
+    return round(max(0.0, min(100.0, pct * 100)), 1)
+
+
+def normalize_series_direct(
+    series: pd.Series,
+    lookback_days: int | None = None,
+) -> pd.Series:
+    """Normalize a series where HIGHER raw values = HIGHER health score.
+
+    Each point is scored by its percentile rank within a trailing time
+    window (default 2 years). Same window and min_periods as the inverse
+    helper so monthly FRED series still get a usable year of observations.
+    """
+    if series.empty:
+        return series
+    days = lookback_days if lookback_days is not None else FRED_SCORE_LOOKBACK_DAYS
+    pct = series.rolling(f"{days}D", min_periods=12).rank(pct=True)
+    return (pct * 100).round(1).clip(0.0, 100.0)

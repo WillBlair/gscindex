@@ -41,19 +41,21 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
     """
     fig = go.Figure()
 
-    for cat in CATEGORY_WEIGHTS:
-        series = category_history[cat]
+    for cat, series in category_history.items():
+        if series is None or getattr(series, "empty", False):
+            continue
         color = CATEGORY_COLORS.get(cat, COLORS["text_muted"])
+        label = CATEGORY_LABELS.get(cat, cat.replace("_", " ").title())
 
         fig.add_trace(
             go.Scatter(
                 x=series.index,
                 y=series.values,
-                name=CATEGORY_LABELS[cat],
+                name=label,
                 mode="lines",
                 line={"color": color, "width": 2},
                 fill="none",
-                hovertemplate=f"<b>{CATEGORY_LABELS[cat]}</b><br>"
+                hovertemplate=f"<b>{label}</b><br>"
                               "%{x|%b %d}<br>"
                               "Score: %{y:.1f}<extra></extra>",
             )

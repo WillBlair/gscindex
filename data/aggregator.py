@@ -31,6 +31,7 @@ from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain
 from data.providers.supply_chain import SupplyChainProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
+from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
 from data.port_analyst import generate_port_summaries
 from scoring import get_health_tier
@@ -46,6 +47,7 @@ _PROVIDERS = [
     TariffsProvider(),
     GeopoliticalProvider(),
     ChipFabUtilProvider(),
+    AeroMetalsProvider(),
 ]
 
 def _fetch_market_data() -> dict:
@@ -675,19 +677,39 @@ def aggregate_data(status_callback=None) -> dict:
                     category_metadata[cat] = meta
 
                     # Handle industry providers that pack additional category
-                    # scores in metadata (SiliconAnalystsProvider returns 4
-                    # categories under the primary chip_fab_util key).
-                    if meta and meta.get("additional_scores"):
-                        for add_cat, (add_score, add_meta) in meta["additional_scores"].items():
-                            if math.isfinite(add_score):
-                                current_scores[add_cat] = float(add_score)
+                    # scores in metadata (SiliconAnalysts / Aerospace adapters
+                    # return 4 categories under one primary key). Pop so the
+                    # packed Series/tuples never leak into card modals or cache.
+                    additional_scores = meta.pop("additional_scores", None) if meta else None
+                    additional_history = meta.pop("additional_history", None) if meta else None
+                    if additional_scores:
+                        for add_cat, (add_score, add_meta) in additional_scores.items():
+                            if not math.isfinite(add_score):
+                                continue
+                            current_scores[add_cat] = float(add_score)
+                            if add_meta:
                                 add_meta["score"] = round(add_score, 1)
                                 add_meta["tier"] = get_health_tier(add_score)
-                                category_metadata[add_cat] = add_meta
+                            else:
+                                add_meta = {
+                                    "score": round(add_score, 1),
+                                    "tier": get_health_tier(add_score),
+                                }
+                            category_metadata[add_cat] = add_meta
+                            add_hist = (
+                                additional_history.get(add_cat)
+                                if additional_history
+                                else None
+                            )
+                            if add_hist is not None and not getattr(add_hist, "empty", True):
+                                aligned = add_hist.reindex(dates, method="ffill")
+                                aligned.iloc[-1] = add_score
+                                category_history[add_cat] = aligned
+                            else:
                                 category_history[add_cat] = _make_fallback_series(
                                     HISTORY_DAYS, add_cat, add_score
                                 )
-                                logger.info("Loaded %s (via %s): %.1f", add_cat, cat, add_score)
+                            logger.info("Loaded %s (via %s): %.1f", add_cat, cat, add_score)
 
                     if err:
                         provider_errors[cat] = err

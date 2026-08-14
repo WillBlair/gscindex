@@ -114,7 +114,12 @@ def build_layout(
         active_weights=default_profile["weights"],
         card_categories=default_profile.get("card_categories"),
     )
-    trend_fig = build_history_chart(category_history)
+    trend_history = {
+        cat: category_history[cat]
+        for cat in default_profile["weights"]
+        if cat in category_history
+    }
+    trend_fig = build_history_chart(trend_history)
     health_panel = build_category_panel(current_scores)
     map_fig = build_world_map(map_markers)
     briefing = data.get("briefing", "")
