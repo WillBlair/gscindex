@@ -133,6 +133,11 @@ CATEGORY_LABELS: dict[str, str] = {
     "chip_memory_prices":  "Memory Prices",
     "chip_lead_times":     "Lead Times",
     "chip_wafer_prices":   "Wafer Prices",
+    # Aerospace-specific categories (industry profile mode)
+    "aero_metals":         "Aero Metals",
+    "aero_orders":         "Aircraft Orders",
+    "aero_production":     "Aero Production",
+    "aero_ppi":            "Aircraft PPI",
 }
 
 # ---------------------------------------------------------------------------
@@ -199,6 +204,36 @@ INDUSTRY_PROFILES: dict[str, dict] = {
         ],
         "providers": ["silicon_analysts"],
     },
+    "aerospace": {
+        "label": "Aerospace & Manufacturing",
+        "description": (
+            "Aerospace industrial base — aluminum/nickel cost pressure, "
+            "Census aircraft orders, Fed aerospace production, and aircraft PPI"
+        ),
+        "weights": {
+            "weather":          0.05,
+            "supply_chain":     0.10,
+            "freight":          0.10,
+            "energy":           0.10,
+            "tariffs":          0.10,
+            "geopolitical":     0.15,
+            "aero_metals":      0.15,
+            "aero_orders":      0.10,
+            "aero_production":  0.10,
+            "aero_ppi":         0.05,
+        },
+        # Replace the baseline row with aero signals + the two highest-weight
+        # shared categories. Remaining weights still feed the composite gauge.
+        "card_categories": [
+            "aero_metals",
+            "aero_orders",
+            "aero_production",
+            "aero_ppi",
+            "geopolitical",
+            "supply_chain",
+        ],
+        "providers": ["aerospace"],
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -240,6 +275,10 @@ CATEGORY_COLORS: dict[str, str] = {
     "chip_memory_prices":  "#7d7394",
     "chip_lead_times":     "#5a8f86",
     "chip_wafer_prices":   "#9c6b7a",
+    "aero_metals":         "#6a8494",
+    "aero_orders":         "#7a6e8a",
+    "aero_production":     "#5f8a72",
+    "aero_ppi":            "#a07a62",
 }
 
 # ---------------------------------------------------------------------------

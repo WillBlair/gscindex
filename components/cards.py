@@ -295,7 +295,7 @@ def build_category_cards(
                     className="tech-card-header",
                     children=[
                         html.Div([
-                            html.Span(CATEGORY_LABELS[cat], className="tech-label"),
+                            html.Span(CATEGORY_LABELS.get(cat, cat.replace("_", " ").title()), className="tech-label"),
                             # Sub-label for context (e.g. "Matson")
                             html.Div(raw_label, className="tech-sublabel", style={
                                 "fontSize": "11px", "color": COLORS["text_faint"], "marginTop": "2px"
