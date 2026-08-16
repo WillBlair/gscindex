@@ -230,7 +230,7 @@ def build_skeleton_layout():
                         children="Initializing system...",
                         style={
                             "color": COLORS["text"],
-                            "fontFamily": "Geist Mono, ui-monospace, monospace",
+                            "fontFamily": "Satoshi, IBM Plex Sans, sans-serif",
                             "fontSize": "16px",
                             "fontWeight": "600",
                             "textAlign": "center",

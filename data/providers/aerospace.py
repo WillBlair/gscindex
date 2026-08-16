@@ -47,6 +47,12 @@ _AERO_CACHE_TTL = min(int(INDUSTRY_PROVIDER_CACHE_TTL), 3600)
 # Smooth before percentile ranking so one print does not pin the score.
 _ORDERS_SMOOTH_MONTHS = 3
 
+# PPI levels grind higher with inflation, so inverse-percentile of the INDEX
+# pins the latest print at 0 whenever it is the high of the window — which is
+# almost always. Score the year-over-year rate instead.
+_PPI_YOY_PERIODS = 12
+_PPI_YOY_FALLBACK_PERIODS = 3
+
 _PPI_SERIES_CANDIDATES = (
     "PCU336411336411",  # PPI: Aircraft manufacturing
     "PCU3364133641",    # PPI: Aerospace product and parts manufacturing
@@ -102,6 +108,13 @@ def _smooth_monthly(series: pd.Series, months: int) -> pd.Series:
     if len(series) < months:
         return series
     return series.rolling(months, min_periods=months).mean().dropna()
+
+
+def _period_pct_change(series: pd.Series, periods: int) -> pd.Series:
+    """Percent change vs ``periods`` observations ago (12 = YoY on monthly FRED)."""
+    series = series.sort_index().astype(float)
+    changed = series.pct_change(periods) * 100.0
+    return changed.dropna()
 
 
 def _score_metals() -> tuple[float, dict, pd.Series]:
@@ -232,7 +245,13 @@ def _score_production() -> tuple[float, dict, pd.Series]:
 
 
 def _score_ppi() -> tuple[float, dict, pd.Series]:
-    """Inverse percentile of aircraft manufacturing producer prices."""
+    """Inverse percentile of aircraft manufacturing PPI inflation, not the level.
+
+    Aircraft PPI is a price *index* that almost only rises. Ranking the level
+    inside a 2-year window therefore scores every new high as 0 (Critical),
+    even when inflation is slowing. The scored series is the year-over-year
+    percent change; slower producer-price growth reads healthier.
+    """
     last_error: Exception | None = None
     raw = None
     series_id = _PPI_SERIES_CANDIDATES[0]
@@ -248,22 +267,34 @@ def _score_ppi() -> tuple[float, dict, pd.Series]:
     if raw is None or raw.empty:
         raise last_error or ValueError("No aerospace PPI series available")
 
-    latest = float(raw.iloc[-1])
-    score = inverse_percentile_value(latest, raw)
-    history = normalize_series_inverse(raw).rename("aero_ppi")
+    latest_level = float(raw.iloc[-1])
+    inflation = _period_pct_change(raw, _PPI_YOY_PERIODS)
+    window_label = "year-over-year"
+    if len(inflation) < 12:
+        inflation = _period_pct_change(raw, _PPI_YOY_FALLBACK_PERIODS)
+        window_label = "3-month"
+    if inflation.empty:
+        raise ValueError(f"PPI series {series_id} is too short to score")
+
+    latest_inflation = float(inflation.iloc[-1])
+    score = inverse_percentile_value(latest_inflation, inflation)
+    history = normalize_series_inverse(inflation).rename("aero_ppi")
     meta = {
         "source": f"FRED {series_id} (BLS PPI)",
-        "raw_value": f"{latest:.1f}",
+        "raw_value": f"{latest_level:.1f} ({latest_inflation:+.1f}% YoY)",
         "raw_label": "Aircraft PPI",
         "description": (
-            f"Producer Price Index for aircraft manufacturing ({series_id}) is "
-            f"{latest:.1f}. This is a cost-pressure gauge: elevated producer "
-            "prices squeeze airframe and engine supply chains. Cheaper than "
-            "the trailing window reads healthier."
+            f"Aircraft manufacturing PPI ({series_id}) is {latest_level:.1f}, "
+            f"{latest_inflation:+.1f}% {window_label}. This is a cost-pressure "
+            "gauge of inflation, not the index level: a high but slowing PPI is "
+            "less stressful than accelerating producer prices. Faster PPI "
+            "growth squeezes airframe and engine supply chains."
         ),
         "calculation": (
-            f"Score = inverse percentile of {series_id} within the trailing "
-            f"{FRED_SCORE_LOOKBACK_DAYS}-day window. Lower PPI = higher score."
+            f"Score = inverse percentile of the {window_label} change in "
+            f"{series_id} within the trailing {FRED_SCORE_LOOKBACK_DAYS}-day "
+            "window. Slower PPI inflation = higher score. The index level is "
+            "not ranked — a steadily rising PPI would otherwise pin at 0."
         ),
         "updated": _now_stamp(),
         "is_fallback": False,

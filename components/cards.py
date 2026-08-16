@@ -248,16 +248,32 @@ def build_category_cards(
         min_val = min(float(recent.min()), score) if not recent.empty else score
         max_val = max(float(recent.max()), score) if not recent.empty else score
 
-        # Daily change from the last two real observations
+        # Daily change from the last two real observations. Monthly series
+        # (tariffs, freight) ffill the same print across many days, so the
+        # last two calendar points are often identical — that is a flat day,
+        # not a green "up 0.0".
         valid_history = history.dropna()
         if len(valid_history) >= 2:
             delta = round(float(valid_history.iloc[-1] - valid_history.iloc[-2]), 1)
         else:
             delta = 0.0
 
-        delta_color = COLORS["green"] if delta >= 0 else COLORS["red"]
-        delta_arrow = "▲" if delta >= 0 else "▼"
-        sparkline_color = delta_color  # Match sparkline to trend
+        if abs(delta) < 0.05:
+            delta_label = "—"
+            delta_color = COLORS["text_faint"]
+        elif delta > 0:
+            delta_label = f"▲ {delta:.1f}"
+            delta_color = COLORS["green"]
+        else:
+            delta_label = f"▼ {abs(delta):.1f}"
+            delta_color = COLORS["red"]
+
+        # Color the spark by the window trend, not the (often-zero) 24h print.
+        if len(valid_history) >= 2:
+            window_delta = float(valid_history.iloc[-1] - valid_history.iloc[0])
+            sparkline_color = COLORS["green"] if window_delta >= 0 else COLORS["red"]
+        else:
+            sparkline_color = COLORS["text_muted"]
 
         weight_pct = int(active_weights.get(cat, CATEGORY_WEIGHTS.get(cat, 0.0)) * 100)
 
@@ -322,7 +338,7 @@ def build_category_cards(
                             children=[
                                 html.Span("24H Δ", className="tech-meta-label"),
                                 html.Span(
-                                    f"{delta_arrow} {abs(delta):.1f}", 
+                                    delta_label,
                                     className="tech-delta-value",
                                     style={"color": delta_color}
                                 )

@@ -11,6 +11,7 @@ import pandas as pd
 from config import CATEGORY_COLORS, CATEGORY_LABELS, INDUSTRY_PROFILES
 from data.providers.aerospace import (
     AeroMetalsProvider,
+    _period_pct_change,
     _smooth_monthly,
     get_aerospace_provider,
 )
@@ -89,6 +90,14 @@ class AerospaceHelperTests(unittest.TestCase):
         series = _monthly_series([10.0, 20.0])
         self.assertTrue(_smooth_monthly(series, 3).equals(series))
 
+    def test_period_pct_change_is_year_over_year_on_monthly(self):
+        values = [100.0 + i for i in range(15)]
+        series = _monthly_series(values)
+        yoy = _period_pct_change(series, 12)
+        self.assertEqual(len(yoy), 3)
+        expected = (values[-1] / values[-13] - 1.0) * 100.0
+        self.assertAlmostEqual(float(yoy.iloc[-1]), expected)
+
 
 class AerospaceAdapterTests(unittest.TestCase):
     def setUp(self):
@@ -107,7 +116,7 @@ class AerospaceAdapterTests(unittest.TestCase):
             "PNICKUSDM": list(range(15000, 15024)),
             "ANAPNO": list(range(8000, 8024)),
             "IPG3364S": [90.0 + i * 0.2 for i in range(24)],
-            "PCU336411336411": [100.0 + i * 0.4 for i in range(24)],
+            "PCU336411336411": [100.0 + i * 0.4 for i in range(36)],
         }
         values = catalogs[series_id]
         return _monthly_series(values)
@@ -138,6 +147,22 @@ class AerospaceAdapterTests(unittest.TestCase):
 
         metals_hist = provider.fetch_history(90)
         self.assertGreater(len(metals_hist.dropna()), 0)
+
+    @patch("data.providers.aerospace._fetch_aluminum_futures", side_effect=RuntimeError("offline"))
+    @patch("data.providers.aerospace.fetch_fred_series")
+    def test_steadily_rising_ppi_does_not_pin_at_zero(self, mock_fred, _mock_futures):
+        """A grinding-higher PPI level used to score 0. YoY of a steady pace should not."""
+        mock_fred.side_effect = self._fred_series
+        provider = AeroMetalsProvider()
+        _, meta = provider.fetch_current()
+        ppi_score, ppi_meta = meta["additional_scores"]["aero_ppi"]
+        self.assertGreater(
+            ppi_score,
+            15.0,
+            f"steadily rising PPI pinned at {ppi_score}; expected YoY scoring",
+        )
+        self.assertIn("% YoY", ppi_meta["raw_value"])
+        self.assertIn("inflation", ppi_meta["calculation"].lower())
 
     @patch("data.providers.aerospace._fetch_aluminum_futures", side_effect=RuntimeError("offline"))
     @patch("data.providers.aerospace.fetch_fred_series", side_effect=RuntimeError("fred down"))
