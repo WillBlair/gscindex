@@ -378,7 +378,8 @@ def build_layout(
                 is_open=False,
                 size="lg",  # Large modal
                 centered=True,
-                className="dark-modal",  # Custom class for dark theme styling
+                className="dark-modal",
+                content_class_name="gsc-modal-content",
             ),
 
             # ── API Documentation Modal ─────────────────────────────
@@ -411,6 +412,7 @@ def build_layout(
                 is_open=False,
                 size="lg",
                 centered=True,
+                content_class_name="gsc-modal-content",
             ),
 
             # ── Newsletter Modal ──────────────────────────────────────────
@@ -490,6 +492,7 @@ def build_layout(
                 is_open=False,
                 size="md",
                 centered=True,
+                content_class_name="gsc-modal-content",
                 style={
                     "--bs-modal-bg": COLORS["card"],
                     "--bs-modal-border-color": COLORS["card_border"],

@@ -343,7 +343,7 @@ class SiliconAnalystsProvider:
         """
         current = self.fetch_all_current()
         score, _ = current.get("chip_fab_util", (50.0, {}))
-        today = pd.Timestamp.now(tz="UTC").normalize()
+        today = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
         return pd.Series([float(score)], index=[today], name="chip_fab_util")
 
 

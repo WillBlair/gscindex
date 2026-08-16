@@ -21,6 +21,7 @@
     --radius-pill: 999px;
     --font-sans: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --font-numbers: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
     --tier-healthy: #4ade80;
     --tier-stable: #c4a35a;
     --tier-stressed: #c47a3a;
@@ -690,10 +691,11 @@ body {
 }
 
 .health-bar-label span:last-child {
+    font-family: var(--font-numbers);
     font-size: 0.9rem;
-    font-weight: 700;
+    font-weight: 600;
     color: #fff;
-    /* Score pops out */
+    font-variant-numeric: tabular-nums lining-nums;
 }
 
 .health-bar-track {
@@ -1093,10 +1095,11 @@ body {
 }
 
 .market-value-price {
-    font-family: var(--font-mono);
+    font-family: var(--font-numbers);
     font-size: 1rem;
     font-weight: 600;
     color: var(--text);
+    font-variant-numeric: tabular-nums lining-nums;
 }
 
 .market-change-group {
@@ -1128,14 +1131,18 @@ body {
 .tech-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-panel);
+    border-radius: 12px;
     padding: 16px;
 
     display: flex;
     flex-direction: column;
     gap: 8px;
     position: relative;
-    overflow: hidden;
+    /* overflow:hidden on the same box as the border squares off the radius
+       (Bootswatch Darkly + WebKit clip the border to a padding-box). */
+    overflow: visible;
+    isolation: isolate;
+    background-clip: padding-box;
     transition: border-color 0.2s;
     min-height: 160px;
 }
@@ -1186,11 +1193,13 @@ body {
 }
 
 .tech-score {
-    font-family: var(--font-mono);
+    font-family: var(--font-numbers);
     font-size: 2.2rem;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1;
-    letter-spacing: -0.05em;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1, "zero" 0;
 }
 
 /* Daily Delta Box */
@@ -1208,9 +1217,10 @@ body {
 }
 
 .tech-delta-value {
-    font-family: var(--font-mono);
+    font-family: var(--font-numbers);
     font-size: 0.85rem;
     font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
 }
 
 /* Secondary Stats Grid (Min/Max) */
@@ -1220,7 +1230,7 @@ body {
     gap: 12px;
     background: rgba(255, 255, 255, 0.02);
     padding: 4px 8px;
-    border-radius: 2px;
+    border-radius: 6px;
     margin-top: 4px;
 }
 
@@ -1231,10 +1241,11 @@ body {
 }
 
 .tech-meta-value {
-    font-family: var(--font-mono);
+    font-family: var(--font-numbers);
     font-size: 0.75rem;
     color: var(--text-muted);
     font-weight: 500;
+    font-variant-numeric: tabular-nums lining-nums;
 }
 
 /* Sparkline "Screen" */
@@ -1340,17 +1351,30 @@ body {
 /* --------------------------------------------------------------------------
    Modal + Bootstrap Overrides
    -------------------------------------------------------------------------- */
-.modal-content {
+.modal-content,
+.gsc-modal-content {
     background: var(--surface) !important;
     color: var(--text) !important;
-    border: 1px solid rgba(255,255,255,0.5) !important;
-    border-radius: var(--radius-panel) !important;
+    border: 1px solid var(--border) !important;
+    --bs-modal-border-radius: 12px;
+    border-radius: 12px !important;
+    overflow: hidden !important;
 }
 
 .modal-header,
 .modal-footer {
     border-color: var(--border) !important;
     background: var(--surface) !important;
+}
+
+.modal-header {
+    border-top-left-radius: 12px !important;
+    border-top-right-radius: 12px !important;
+}
+
+.modal-footer {
+    border-bottom-left-radius: 12px !important;
+    border-bottom-right-radius: 12px !important;
 }
 
 .modal-title {

@@ -248,7 +248,7 @@ def create_app() -> dash.Dash:
         external_stylesheets=[
             dbc.themes.DARKLY,
             "https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap",
-            "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
+            "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
         ],
         suppress_callback_exceptions=True,
     )
@@ -567,9 +567,10 @@ def create_app() -> dash.Dash:
                 html.Div([
                     html.H6("Index Score", style={"color": "#9ca3af", "marginBottom": "0"}),
                     html.H1(
-                        f"{score}",
+                        f"{score:.1f}" if isinstance(score, (int, float)) else f"{score}",
+                        className="tech-score",
                         style={
-                            "fontWeight": "900",
+                            "fontWeight": "600",
                             "fontSize": "48px",
                             "color": tier_color,
                             "margin": "0",
@@ -650,7 +651,7 @@ def create_app() -> dash.Dash:
                     meta.get("calculation", "Calculation logic not available."),
                     style={
                         "color": COLORS["text"],
-                        "fontFamily": "IBM Plex Mono, monospace",
+                        "fontFamily": "IBM Plex Mono, ui-monospace, monospace",
                     },
                 ),
                 style={
