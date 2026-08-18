@@ -33,6 +33,7 @@ from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
+from data.providers.hormuz import HormuzStraitProvider
 from data.port_analyst import generate_port_summaries
 from scoring import get_health_tier
 
@@ -48,6 +49,7 @@ _PROVIDERS = [
     GeopoliticalProvider(),
     ChipFabUtilProvider(),
     AeroMetalsProvider(),
+    HormuzStraitProvider(),
 ]
 
 def _fetch_market_data() -> dict:

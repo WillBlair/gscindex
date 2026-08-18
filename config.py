@@ -132,12 +132,14 @@ CATEGORY_LABELS: dict[str, str] = {
     "chip_fab_util":       "Fab Utilization",
     "chip_memory_prices":  "Memory Prices",
     "chip_lead_times":     "Lead Times",
-    "chip_wafer_prices":   "Wafer Prices",
+"chip_wafer_prices":   "Wafer Prices",
     # Aerospace-specific categories (industry profile mode)
     "aero_metals":         "Aero Metals",
     "aero_orders":         "Aircraft Orders",
     "aero_production":     "Aero Production",
     "aero_ppi":            "Aircraft PPI",
+    # Strait of Hormuz chokepoint monitor (additional signal)
+    "hormuz_oil_flow":     "Hormuz Oil Flow",
 }
 
 # ---------------------------------------------------------------------------
