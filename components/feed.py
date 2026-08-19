@@ -209,7 +209,7 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
                                         "color": COLORS["text_muted"],
                                         "backgroundColor": COLORS["card"],
                                         "padding": "2px 8px",
-                                        "borderRadius": "4px",
+                                        "borderRadius": "var(--radius)",
                                         "border": f"1px solid {COLORS['card_border']}",
                                     },
                                 ),

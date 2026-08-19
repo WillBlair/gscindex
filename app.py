@@ -558,7 +558,7 @@ def create_app() -> dash.Dash:
             "width": f"{score}%" if isinstance(score, (int, float)) else "0%",
             "height": "8px",
             "backgroundColor": tier_color,
-            "borderRadius": "4px",
+            "borderRadius": "var(--radius)",
             "marginTop": "5px",
         }
 
@@ -627,7 +627,7 @@ def create_app() -> dash.Dash:
                 "marginBottom": "20px",
                 "backgroundColor": COLORS["card_raised"],
                 "padding": "15px",
-                "borderRadius": "8px",
+                "borderRadius": "var(--radius)",
             }),
             html.H5(
                 "Analysis",
@@ -657,7 +657,7 @@ def create_app() -> dash.Dash:
                 style={
                     "backgroundColor": COLORS["card_raised"],
                     "padding": "15px",
-                    "borderRadius": "8px",
+                    "borderRadius": "var(--radius)",
                     "border": f"1px solid {COLORS['card_border']}",
                 },
             ),

@@ -75,7 +75,7 @@ _DOCS_TEMPLATE = """
             color: #6366f1;
             background: rgba(99, 102, 241, 0.1);
             padding: 4px 10px;
-            border-radius: 20px;
+            border-radius: 6px;
             letter-spacing: 0.04em;
         }
 
@@ -156,7 +156,7 @@ _DOCS_TEMPLATE = """
         .p-card {
             background: #1a1d26;
             border: 1px solid rgba(255, 255, 255, 0.07);
-            border-radius: 10px;
+            border-radius: 6px;
             padding: 24px;
             display: flex;
             flex-direction: column;
@@ -181,7 +181,7 @@ _DOCS_TEMPLATE = """
             font-weight: 600;
             color: #6b7280;
             padding: 2px 8px;
-            border-radius: 4px;
+            border-radius: 6px;
             margin-left: auto;
             white-space: nowrap;
         }
@@ -244,14 +244,14 @@ _DOCS_TEMPLATE = """
             color: #a5b4fc;
             background: rgba(99, 102, 241, 0.1);
             padding: 2px 7px;
-            border-radius: 4px;
+            border-radius: 6px;
         }
 
         /* ── Visual Math Block ────────────────────────────────── */
         .math-block {
             background: #111827;
             border: 1px solid #1e293b;
-            border-radius: 10px;
+            border-radius: 6px;
             padding: 32px;
             text-align: center;
             margin: 32px 0 40px;
@@ -276,7 +276,7 @@ _DOCS_TEMPLATE = """
         .mermaid {
             background: #111827;
             border: 1px solid #1e293b;
-            border-radius: 10px;
+            border-radius: 6px;
             padding: 32px;
             margin-bottom: 40px;
             display: flex;
@@ -290,7 +290,7 @@ _DOCS_TEMPLATE = """
             margin-bottom: 32px;
             font-size: 13.5px;
             background: #111827;
-            border-radius: 10px;
+            border-radius: 6px;
             overflow: hidden;
             border: 1px solid #1e293b;
         }
@@ -320,7 +320,7 @@ _DOCS_TEMPLATE = """
         .callout {
             background: rgba(99, 102, 241, 0.06);
             border: 1px solid rgba(99, 102, 241, 0.15);
-            border-radius: 8px;
+            border-radius: 6px;
             padding: 20px 24px;
             margin: 24px 0 40px;
             display: flex;

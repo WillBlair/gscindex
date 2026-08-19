@@ -286,7 +286,7 @@ def build_category_cards(
                 style={
                     "color": COLORS["orange"],
                     "border": f"1px solid {COLORS['orange']}",
-                    "borderRadius": "3px",
+                    "borderRadius": "var(--radius)",
                     "padding": "0 4px",
                     "fontSize": "9px",
                     "fontWeight": "700",

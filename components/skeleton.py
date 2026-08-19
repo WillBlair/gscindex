@@ -26,11 +26,11 @@ def build_skeleton_layout():
                                 children=[
                                     html.Div(
                                         className="skeleton-pulse",
-                                        style={"height": "26px", "width": "280px", "borderRadius": "8px"},
+                                        style={"height": "26px", "width": "280px", "borderRadius": "var(--radius)"},
                                     ),
                                     html.Div(
                                         className="skeleton-pulse",
-                                        style={"height": "14px", "width": "120px", "borderRadius": "8px", "marginTop": "6px"},
+                                        style={"height": "14px", "width": "120px", "borderRadius": "var(--radius)", "marginTop": "6px"},
                                     ),
                                 ],
                             ),
@@ -43,7 +43,7 @@ def build_skeleton_layout():
                 children=[
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "34px", "width": "200px", "borderRadius": "8px", "margin": "0 auto"},
+                        style={"height": "34px", "width": "200px", "borderRadius": "var(--radius)", "margin": "0 auto"},
                     ),
                 ],
             ),
@@ -55,7 +55,7 @@ def build_skeleton_layout():
                         children=[
                             html.Div(
                                 className="skeleton-pulse",
-                                style={"height": "28px", "width": "160px", "borderRadius": "8px"},
+                                style={"height": "28px", "width": "160px", "borderRadius": "var(--radius)"},
                             ),
                         ],
                     ),
@@ -73,7 +73,7 @@ def build_skeleton_layout():
                 children=[
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
                     )
                 ],
             ),
@@ -83,7 +83,7 @@ def build_skeleton_layout():
                 children=[
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
                     )
                 ],
             ),
@@ -95,7 +95,7 @@ def build_skeleton_layout():
         children=[
             html.Div(
                 className="skeleton-pulse",
-                style={"height": "40px", "width": "100%", "borderRadius": "8px"},
+                style={"height": "40px", "width": "100%", "borderRadius": "var(--radius)"},
             )
         ],
     )
@@ -111,21 +111,21 @@ def build_skeleton_layout():
                         children=[
                             html.Div(
                                 className="skeleton-pulse",
-                                style={"height": "12px", "width": "60px", "borderRadius": "4px"},
+                                style={"height": "12px", "width": "60px", "borderRadius": "var(--radius)"},
                             ),
                             html.Div(
                                 className="skeleton-pulse",
-                                style={"height": "12px", "width": "30px", "borderRadius": "999px"},
+                                style={"height": "12px", "width": "30px", "borderRadius": "var(--radius)"},
                             ),
                         ],
                     ),
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "32px", "width": "80px", "borderRadius": "6px", "marginBottom": "4px"},
+                        style={"height": "32px", "width": "80px", "borderRadius": "var(--radius)", "marginBottom": "4px"},
                     ),
                     html.Div(
                         className="skeleton-pulse",
-                        style={"marginTop": "auto", "height": "40px", "width": "100%", "borderRadius": "6px"},
+                        style={"marginTop": "auto", "height": "40px", "width": "100%", "borderRadius": "var(--radius)"},
                     ),
                 ],
             )
@@ -145,7 +145,7 @@ def build_skeleton_layout():
                         children=[
                             html.Div(
                                 className="skeleton-pulse",
-                                style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                                style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
                             )
                         ],
                     )
@@ -160,7 +160,7 @@ def build_skeleton_layout():
                         children=[
                             html.Div(
                                 className="skeleton-pulse",
-                                style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                                style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
                             )
                         ],
                     )
@@ -178,7 +178,7 @@ def build_skeleton_layout():
                 children=[
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
                     )
                 ],
             ),
@@ -188,7 +188,7 @@ def build_skeleton_layout():
                 children=[
                     html.Div(
                         className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "10px"},
+                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
                     )
                 ],
             ),
@@ -215,7 +215,7 @@ def build_skeleton_layout():
                     "transform": "translate(-50%, -50%)",
                     "backgroundColor": COLORS["card"],
                     "border": f"1px solid {COLORS['card_border']}",
-                    "borderRadius": "10px",
+                    "borderRadius": "var(--radius)",
                     "padding": "20px 40px",
                     "zIndex": "9999",
                     "minWidth": "300px",

@@ -158,7 +158,7 @@ _REPORT_TEMPLATE = """
         .prose code {
             background: rgba(255,255,255,0.05);
             padding: 2px 6px;
-            border-radius: 4px;
+            border-radius: 6px;
             font-size: 14px;
             color: #a5b4fc;
         }

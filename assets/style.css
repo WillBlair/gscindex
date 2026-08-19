@@ -16,9 +16,16 @@
     --text: #ececef;
     --text-muted: #8b8b93;
     --text-faint: #5c5c66;
-    --radius-panel: 10px;
-    --radius-control: 8px;
-    --radius-pill: 999px;
+    --radius: 6px;
+    --radius-panel: var(--radius);
+    --radius-control: var(--radius);
+    --radius-pill: var(--radius);
+    --bs-border-radius: var(--radius);
+    --bs-border-radius-sm: var(--radius);
+    --bs-border-radius-lg: var(--radius);
+    --bs-border-radius-xl: var(--radius);
+    --bs-border-radius-2xl: var(--radius);
+    --bs-border-radius-pill: var(--radius);
     --font-sans: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --font-numbers: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
@@ -555,7 +562,7 @@ body {
     padding: 14px 16px;
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
     transition: background 0.15s ease;
 }
 
@@ -1131,7 +1138,7 @@ body {
 .tech-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 16px;
 
     display: flex;
@@ -1230,7 +1237,7 @@ body {
     gap: 12px;
     background: rgba(255, 255, 255, 0.02);
     padding: 4px 8px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     margin-top: 4px;
 }
 
@@ -1356,8 +1363,8 @@ body {
     background: var(--surface) !important;
     color: var(--text) !important;
     border: 1px solid var(--border) !important;
-    --bs-modal-border-radius: 12px;
-    border-radius: 12px !important;
+    --bs-modal-border-radius: var(--radius);
+    border-radius: var(--radius) !important;
     overflow: hidden !important;
 }
 
@@ -1368,13 +1375,25 @@ body {
 }
 
 .modal-header {
-    border-top-left-radius: 12px !important;
-    border-top-right-radius: 12px !important;
+    border-top-left-radius: var(--radius) !important;
+    border-top-right-radius: var(--radius) !important;
 }
 
 .modal-footer {
-    border-bottom-left-radius: 12px !important;
-    border-bottom-right-radius: 12px !important;
+    border-bottom-left-radius: var(--radius) !important;
+    border-bottom-right-radius: var(--radius) !important;
+}
+
+.form-control,
+.form-select,
+.btn,
+.badge,
+.rounded,
+.rounded-1,
+.rounded-2,
+.rounded-3,
+.rounded-pill {
+    border-radius: var(--radius) !important;
 }
 
 .modal-title {

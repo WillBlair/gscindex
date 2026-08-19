@@ -390,10 +390,10 @@ def build_layout(
                         children=[
                             html.P("Access the Global Supply Chain Index programmatically for your own dashboards or research."),
                             html.H5("Endpoint", style={"marginTop": "20px"}),
-                            html.Code("GET https://gscindex.com/api/v1/latest", style={"display": "block", "padding": "10px", "backgroundColor": "#111", "borderRadius": "5px", "color": "#a5b4fc"}),
+                            html.Code("GET https://gscindex.com/api/v1/latest", style={"display": "block", "padding": "10px", "backgroundColor": "#111", "borderRadius": "var(--radius)", "color": "#a5b4fc"}),
                             
                             html.H5("Usage Example (curl)", style={"marginTop": "20px"}),
-                            html.Code("curl -X GET https://gscindex.com/api/v1/latest", style={"display": "block", "padding": "10px", "backgroundColor": "#111", "borderRadius": "5px", "color": "#22c55e"}),
+                            html.Code("curl -X GET https://gscindex.com/api/v1/latest", style={"display": "block", "padding": "10px", "backgroundColor": "#111", "borderRadius": "var(--radius)", "color": "#22c55e"}),
                             
                             html.H5("Rate Limits", style={"marginTop": "20px"}),
                             html.Ul([
@@ -446,7 +446,7 @@ def build_layout(
                                     "backgroundColor": COLORS["bg"],
                                     "color": COLORS["text"],
                                     "border": f"1px solid {COLORS['card_border']}",
-                                    "borderRadius": "8px",
+                                    "borderRadius": "var(--radius)",
                                     "padding": "12px 14px",
                                     "marginBottom": "14px",
                                     "fontSize": "14px",
@@ -459,7 +459,7 @@ def build_layout(
                                     "backgroundColor": COLORS["text"],
                                     "color": COLORS["bg"],
                                     "border": "none",
-                                    "borderRadius": "8px",
+                                    "borderRadius": "var(--radius)",
                                     "padding": "10px",
                                     "fontWeight": "600",
                                     "fontSize": "14px",
@@ -477,7 +477,7 @@ def build_layout(
                                 "backgroundColor": "transparent",
                                 "border": f"1px solid {COLORS['card_border']}",
                                 "color": COLORS["text_muted"],
-                                "borderRadius": "8px",
+                                "borderRadius": "var(--radius)",
                                 "fontSize": "13px",
                             },
                         ),
@@ -539,7 +539,7 @@ def build_layout(
                         "width": "320px",
                         "background": COLORS["card"],
                         "border": f"1px solid {COLORS['card_border']}",
-                        "borderRadius": "10px",
+                        "borderRadius": "var(--radius)",
                         "padding": "16px 20px",
                         "zIndex": 1050,
                         "cursor": "pointer",
