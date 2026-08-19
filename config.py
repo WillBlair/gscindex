@@ -306,6 +306,13 @@ COLORS = {
     "grid":         "#1e1e22",
 }
 
+# Keep in sync with --font-* tokens in assets/style.css.
+# Plotly SVG ignores CSS variables, so Python must pass the same stacks.
+# FONT_NUMBERS is the only face for meter/score figures (gauge + category cards).
+FONT_SANS = "Satoshi, 'IBM Plex Sans', sans-serif"
+FONT_MONO = "IBM Plex Mono, ui-monospace, monospace"
+FONT_NUMBERS = "Satoshi, 'IBM Plex Sans', sans-serif"
+
 
 def hex_to_rgba(hex_color: str, alpha: float) -> str:
     """Convert a hex color string to an rgba() CSS string.

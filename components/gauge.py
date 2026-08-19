@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from config import COLORS, HEALTH_TIERS, hex_to_rgba
+from config import COLORS, FONT_NUMBERS, FONT_SANS, HEALTH_TIERS, hex_to_rgba
 from dash import html
 from scoring import get_health_tier
 
@@ -55,8 +55,9 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
             mode="gauge+number+delta" if show_delta else "gauge+number",
             value=composite,
             number={
-                "font": {"size": 48, "color": tier["color"], "family": "Satoshi, IBM Plex Sans, sans-serif"},
+                "font": {"size": 48, "color": tier["color"], "family": FONT_NUMBERS},
                 "suffix": "",
+                "valueformat": ".1f",
             },
             delta=(
                 {
@@ -64,21 +65,22 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
                     "relative": False,
                     "increasing": {"color": COLORS["green"]},
                     "decreasing": {"color": COLORS["red"]},
-                    "font": {"size": 16, "family": "Satoshi, IBM Plex Sans, sans-serif"},
+                    "font": {"size": 16, "family": FONT_NUMBERS},
+                    "valueformat": ".1f",
                 }
                 if show_delta
                 else {}
             ),
             title={
                 "text": f"Supply Chain Health Index<br><span style='font-size:14px;color:{tier['color']}'>{tier['label']}</span>",
-                "font": {"size": 16, "color": COLORS["text"], "family": "Satoshi"},
+                "font": {"size": 16, "color": COLORS["text"], "family": FONT_SANS},
             },
             gauge={
                 "axis": {
                     "range": [0, 100],
                     "tickwidth": 1,
                     "tickcolor": COLORS["text_muted"],
-                    "tickfont": {"size": 11, "color": COLORS["text_muted"], "family": "Satoshi, IBM Plex Sans, sans-serif"},
+                    "tickfont": {"size": 11, "color": COLORS["text_muted"], "family": FONT_NUMBERS},
                 },
                 "bar": {"color": tier["color"], "thickness": 0.3},
                 "bgcolor": "#111113",
@@ -99,7 +101,7 @@ def build_gauge_figure(composite: float, delta: float, show_delta: bool = True) 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Satoshi"},
+        font={"family": FONT_SANS},
         margin={"t": 40, "b": 10, "l": 30, "r": 30},
         height=250,
     )

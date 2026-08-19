@@ -26,6 +26,8 @@
     --bs-border-radius-xl: var(--radius);
     --bs-border-radius-2xl: var(--radius);
     --bs-border-radius-pill: var(--radius);
+    /* Satoshi: UI text + every meter/score figure. IBM Plex Sans: fallback.
+       IBM Plex Mono: chrome only (badges, timestamps, code) — never scores. */
     --font-sans: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --font-numbers: "Satoshi", "IBM Plex Sans", system-ui, sans-serif;
@@ -275,6 +277,16 @@ body {
 .gauge-panel .plotly,
 .gauge-panel .plot-container {
     pointer-events: none;
+}
+
+/* Plotly SVG ignores CSS variables; force the same stack/weight as .tech-score. */
+.gauge-panel .js-plotly-plot .numbers text,
+.gauge-panel .js-plotly-plot .delta text,
+.gauge-panel .js-plotly-plot .gauge text {
+    font-family: var(--font-numbers) !important;
+    font-weight: 600 !important;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.03em;
 }
 
 .gauge-score-hover-zone {
@@ -1110,12 +1122,13 @@ body {
 }
 
 .market-change-group {
-    font-family: var(--font-mono);
+    font-family: var(--font-numbers);
     font-size: 0.8rem;
     font-weight: 500;
     display: flex;
     align-items: center;
     gap: 4px;
+    font-variant-numeric: tabular-nums lining-nums;
 }
 
 .market-arrow {
