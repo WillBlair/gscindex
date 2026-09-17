@@ -22,3 +22,7 @@ test_*.py
 # assets/vendor/*.js + assets/vendor/border-beam-pulse.css, which ARE
 # committed — see frontend/package.json). Only node_modules is excluded.
 frontend/node_modules/
+
+# Local preview diagnostics
+app_errors.log
+.pytest_cache/

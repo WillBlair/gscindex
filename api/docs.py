@@ -37,8 +37,8 @@ _DOCS_TEMPLATE = """
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #0f1117;
-            color: #c8ccd4;
+            background-color: #0c1216;
+            color: #d6e1de;
             line-height: 1.7;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -49,7 +49,7 @@ _DOCS_TEMPLATE = """
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(15, 17, 23, 0.88);
+            background: rgba(12, 18, 22, 0.96);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -262,7 +262,7 @@ _DOCS_TEMPLATE = """
             color: #818cf8;
             font-weight: 700;
         }
-        .math-block span.operator { color: #c8ccd4; margin: 0 8px; }
+        .math-block span.operator { color: #d6e1de; margin: 0 8px; }
         .math-block span.variable { color: #60a5fa; }
         .math-caption {
             display: block;

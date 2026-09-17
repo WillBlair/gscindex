@@ -7,9 +7,8 @@ Entry point. Run with:
 
 Then open http://127.0.0.1:8050 in your browser.
 
-The dashboard auto-refreshes every 5 minutes by reloading the page
-with fresh data from all providers. Cached data (1-hour TTL) prevents
-unnecessary API calls during rapid reloads.
+The dashboard refreshes its panels in place every five minutes. Provider
+fetches run in the background; UI callbacks only read the cached snapshot.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -244,6 +244,7 @@ def create_app() -> dash.Dash:
         title=APP_TITLE,
         meta_tags=[
             {"name": "viewport", "content": "width=device-width, initial-scale=1"},
+            {"name": "description", "content": "Independent global supply chain intelligence: health scores, port conditions, industry signals and the news behind them."},
         ],
         external_stylesheets=[
             dbc.themes.DARKLY,
@@ -251,12 +252,13 @@ def create_app() -> dash.Dash:
             "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
         ],
         suppress_callback_exceptions=True,
+        assets_ignore=r"(metal-fx|thinking-orbs)\.min\.js|zzz-effects-init\.js",
     )
 
     # ── Custom Index String (Prevents White Flash) ──────────────────────
     app.index_string = '''
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
         <head>
             {%metas%}
             <title>{%title%}</title>
@@ -264,7 +266,7 @@ def create_app() -> dash.Dash:
             {%css%}
             <style>
                 body {
-                    background-color: #0a0a0b;
+                    background-color: #0c1216;
                     color: #ececef;
                     margin: 0;
                 }
@@ -380,13 +382,6 @@ def create_app() -> dash.Dash:
         # - memory still has startup placeholder news
         # - memory timestamp is stale
         # - disk has a strictly newer snapshot
-        # TODO: TOCTOU race condition — between reading _LAST_UPDATE under the first
-        # lock and writing disk_data under the second lock, the background thread may
-        # have already updated _DATA_CACHE with fresher data. The disk_is_newer check
-        # compares against the stale `last_update` read above, not the current
-        # _LAST_UPDATE, so a fresh background-thread result can be clobbered by older
-        # disk data. Fix: re-read _LAST_UPDATE under the write lock and abort if it's
-        # newer than disk_last_update.
         from data.cache import get_cached_dashboard
         try:
             disk_data = get_cached_dashboard()
@@ -414,12 +409,12 @@ def create_app() -> dash.Dash:
                 )
                 if needs_disk_refresh:
                     with _LOCK:
-                        _DATA_CACHE = disk_data
-                        _LAST_UPDATE = disk_last_update or datetime.now(timezone.utc)
-                        _DATA_IS_FRESH = disk_is_fresh
-                    data = disk_data
-                    is_fresh = disk_is_fresh
-                    last_update = _LAST_UPDATE
+                        # Never overwrite a newer background fetch with older disk data.
+                        if _LAST_UPDATE is None or (disk_last_update and disk_last_update >= _LAST_UPDATE):
+                            _DATA_CACHE = disk_data
+                            _LAST_UPDATE = disk_last_update
+                            _DATA_IS_FRESH = disk_is_fresh
+                        data, is_fresh, last_update = _DATA_CACHE, _DATA_IS_FRESH, _LAST_UPDATE
         except Exception as e:
             logging.getLogger(__name__).warning(f"Lazy load from disk failed: {e}")
 
@@ -428,28 +423,13 @@ def create_app() -> dash.Dash:
 
         # Build the actual dashboard.
         # When data is provisional (from fallback/cache, not a live fetch),
-        # use a 20-second refresh so the page auto-reloads once the
-        # background thread finishes (~50-60s).  Once fresh, back to 5 min.
+        # poll the snapshot every 20 seconds until providers finish.
+        # Once fresh, panels update in place every five minutes.
         layout = build_layout(data, is_provisional=not is_fresh, last_updated=last_update)
         return layout
 
     app.layout = serve_layout
     
-    # Client-side auto-refresh (reload page) every 5 minutes 
-    # to pick up the new data from the backend
-    app.clientside_callback(
-        """
-        function(n) {
-            if (n > 0) {
-                window.location.reload();
-            }
-            return '';
-        }
-        """,
-        Output("refresh-trigger", "children"),
-        Input("refresh-interval", "n_intervals"),
-    )
-
     # ── Boot Sequence: Polling & Reload ─────────────────────────────────
     # This callback handles the "Loading..." screen updates and triggers
     # a reload once data is ready.
@@ -492,21 +472,6 @@ def create_app() -> dash.Dash:
         prevent_initial_call=True
     )
     
-    # Callback to auto-reload the page once data is ready (replaces "boot-check")
-    # We use the same interval-based polling pattern, but now hidden in the skeleton
-    # Actually, the skeleton doesn't have the interval component by default.
-    # We should inject it into the skeleton or keep a global interval.
-    # The simplest way is to add the poller to the skeleton layout components/skeleton.py,
-    # OR better: Add it here to index_string or layout wrapper? 
-    # For now, let's just make sure the skeleton layout INCLUDES the poller.
-    # I'll rely on the user manually refreshing or adds a simple meta-refresh for now to keep it simple,
-    # OR I'll add a client-side interval to the skeleton in a future step if needed. 
-    # Wait, the previous code had dcc.Interval(id="boot-check"). 
-    # The skeleton layout purely replacing HTML means we LOSE that interval.
-    # I should wrap the return.
-    
-
-
     # ── Generate Briefing On-Demand (Option 5: User-Triggered) ───────────
     @app.callback(
         Output("briefing-content", "children"),
@@ -759,91 +724,25 @@ def create_app() -> dash.Dash:
         prevent_initial_call=True,
     )
     def handle_newsletter_submit(n_clicks, email):
-        if not email or "@" not in email:
+        email = str(email or "").strip().lower()
+        if len(email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
             return "Please enter a valid email address.", {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
         
         from data.database import add_subscriber
         result = add_subscriber(email)
         
         if result.get("success"):
-            return "Successfully subscribed! Check your inbox tomorrow morning.", {"color": "#10b981", "marginTop": "15px", "fontSize": "14px"}, ""
+            return "You're subscribed to the daily briefing.", {"color": "#10b981", "marginTop": "15px", "fontSize": "14px"}, ""
         else:
             return result.get("message", "An error occurred."), {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
 
-    # ── Industry Profile Callbacks ──────────────────────────────────────
-    from config import DEFAULT_PROFILE, INDUSTRY_PROFILES
-    from components.gauge import build_gauge_figure
-    from components.charts import build_history_chart
-    from components.cards import build_category_cards
-    from scoring import compute_composite_index
+    from components.workspace_callbacks import register_workspace_callbacks
 
-    @app.callback(
-        Output("profile-store", "data"),
-        Input("profile-selector", "value"),
-    )
-    def update_profile_store(profile_key):
-        return profile_key or DEFAULT_PROFILE
-
-    @app.callback(
-        Output("gauge", "figure"),
-        [Input("profile-store", "data"),
-         Input("refresh-interval", "n_intervals")],
-    )
-    def update_gauge_for_profile(profile_key, n_intervals):
+    def get_snapshot():
         with _LOCK:
-            data = _DATA_CACHE
-            is_fresh = _DATA_IS_FRESH
-        if not data or not data.get("current_scores"):
-            raise dash.exceptions.PreventUpdate
-        profile = INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES["baseline"])
-        current_scores = data["current_scores"]
-        composite = compute_composite_index(current_scores, weights=profile["weights"])
-        from data.database import get_previous_daily_score
-        try:
-            previous = get_previous_daily_score()
-            delta = round(composite - previous, 1) if previous is not None else 0.0
-        except Exception:
-            delta = 0.0
-        show_delta = is_fresh and not data.get("degraded", True)
-        return build_gauge_figure(composite, delta, show_delta=show_delta)
+            return _DATA_CACHE, _DATA_IS_FRESH
 
-    @app.callback(
-        Output("trend-chart", "figure"),
-        [Input("profile-store", "data"),
-         Input("refresh-interval", "n_intervals")],
-    )
-    def update_chart_for_profile(profile_key, n_intervals):
-        with _LOCK:
-            data = _DATA_CACHE
-        if not data or not data.get("category_history"):
-            raise dash.exceptions.PreventUpdate
-        profile = INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES["baseline"])
-        history = data["category_history"]
-        filtered_history = {}
-        for cat in profile["weights"]:
-            if cat in history:
-                filtered_history[cat] = history[cat]
-        return build_history_chart(filtered_history)
-
-    @app.callback(
-        Output("cards-container", "children"),
-        [Input("profile-store", "data"),
-         Input("refresh-interval", "n_intervals")],
-    )
-    def update_cards_for_profile(profile_key, n_intervals):
-        with _LOCK:
-            data = _DATA_CACHE
-        if not data or not data.get("current_scores"):
-            raise dash.exceptions.PreventUpdate
-        profile = INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES["baseline"])
-        current_scores = data["current_scores"]
-        category_history = data.get("category_history", {})
-        category_metadata = data.get("category_metadata", {})
-        return build_category_cards(
-            current_scores, category_history, category_metadata,
-            active_weights=profile["weights"],
-            card_categories=profile.get("card_categories"),
-        )
+    register_workspace_callbacks(app, get_snapshot)
 
     return app
 
@@ -891,5 +790,5 @@ if __name__ == "__main__":
 
 # When running via Gunicorn (Production):
 # WERKZEUG_RUN_MAIN is not set. We just start it.
-else:
+elif os.environ.get("GSC_DISABLE_BACKGROUND") != "1":
     start_background_thread()
