@@ -1,8 +1,15 @@
 # Operating on Render Starter (512 MB)
 
-Start command: `gunicorn app:server -c gunicorn.conf.py`.
+Start command: `env -u GUNICORN_CMD_ARGS gunicorn app:server -c gunicorn.conf.py --access-logfile -`.
 Use the checked-in configuration: one worker, four request threads. Extra
 workers each load their own dashboard, provider libraries and background jobs.
+
+Render can inject `--preload` through `GUNICORN_CMD_ARGS`. Clear that inherited
+option at startup: this application starts its updater when imported, so
+preloading runs the updater in the master instead of the request worker.
+That retains provider memory in the master, leaves worker health reporting
+`starting`, and prevents worker recycling from recycling the updater.
+The explicit access-log option preserves request logging.
 
 ## Memory safeguards
 
