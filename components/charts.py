@@ -181,17 +181,31 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
 
 
 def _port_hover_text(marker: dict) -> str:
-    """Restore port context in the hover, preserving lines but not publisher HTML."""
+    """Wrap semantic paragraphs once, removing legacy pre-wrapped line breaks."""
     score = marker.get("score", 100)
-    heading = f"<b>{escape(marker['name'])}</b><br>{score:.1f} / 100 · {get_health_tier(score)['label']}"
-    lines = []
+    heading = f"<b>{escape(plain_text(marker['name']))}</b><br>{score:.1f} / 100 · {get_health_tier(score)['label']}"
+    sections = []
     for raw in re.split(r"<br\s*/?>", str(marker.get("description") or ""), flags=re.IGNORECASE):
         text = plain_text(raw)
-        # The current score is already displayed in the hover heading.
-        if not text or text.startswith("Score:"):
+        if not text or text.startswith("Score:") or not text.strip("─—-_ "):
             continue
-        lines.extend(escape(line) for line in wrap(text, width=48))
-    return heading + "<br>" + ("<br>".join(lines) or "Port context unavailable.")
+        # Field labels and severity tags start sections; all other breaks were
+        # inserted by the aggregator to fit its old, smaller hover label.
+        starts_section = re.match(r"^(?:Region|Structural risk|Top risk|AI Status|AI Penalty|Global alert|Global):|^\[(?:HIGH|MEDIUM|LOW)\]", text)
+        if starts_section or not sections:
+            sections.append(text)
+        else:
+            sections[-1] += " " + text
+
+    paragraphs = []
+    for section in sections:
+        section = section.replace("AI Status:", "Port update:", 1)
+        lines = [escape(line) for line in wrap(section, width=44, break_long_words=False, break_on_hyphens=False)]
+        if lines and ":" in lines[0]:
+            label, rest = lines[0].split(":", 1)
+            lines[0] = f"<b>{label}:</b>{rest}"
+        paragraphs.append("<br>".join(lines))
+    return heading + "<br><br>" + ("<br><br>".join(paragraphs) or "Port context unavailable.")
 
 
 def build_world_map(map_markers: list[dict]) -> go.Figure:
@@ -254,9 +268,9 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         uirevision="port-map-fill",
         dragmode="pan",
         hoverlabel={
-            "bgcolor": "#121c2a",
-            "bordercolor": "#6f87a5",
-            "font": {"family": "Satoshi", "size": 12, "color": COLORS["text"]},
+            "bgcolor": "#101923",
+            "bordercolor": "#9ab0c8",
+            "font": {"family": "Arial, sans-serif", "size": 14, "color": "#f4f7fb"},
             "align": "left",
             "namelength": -1,
         },

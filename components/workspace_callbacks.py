@@ -17,6 +17,7 @@ def register_workspace_callbacks(app, get_snapshot):
         "function(n, clicks) { return Date.now(); }",
         Output("refresh-request", "data"),
         Input("refresh-interval", "n_intervals"), Input("refresh-btn", "n_clicks"),
+        prevent_initial_call=True,
     )
 
     @app.callback(Output("profile-store", "data"), Input("profile-selector", "value"))
@@ -54,7 +55,7 @@ def register_workspace_callbacks(app, get_snapshot):
         return build_history_chart({c: history[c].tail(days) for c in profile["weights"] if c in history})
 
     @app.callback(Output("world-map", "figure"), Output("map-count", "children"),
-                  Input("refresh-request", "data"))
+                  Input("refresh-request", "data"), prevent_initial_call=True)
     def update_map(_):
         data, _ = get_snapshot()
         if not data:

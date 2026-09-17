@@ -97,12 +97,24 @@ def test_map_hover_restores_conditions_and_news_without_active_html():
     marker = {"name": "Test port", "lat": 1, "lon": 2, "score": 43.0,
               "description": '<b>Region:</b> East Asia<br><b>AI Status:</b> Delays after storm.<br><b>[HIGH]</b> Terminal closure reported<br><script>bad()</script><img src=x onerror=bad()>'}
     hover = build_world_map([marker]).data[0].text[0]
-    assert "Region: East Asia" in hover
+    assert "Region: East Asia" in plain_text(hover)
     assert "Delays after storm." in hover
     assert "Terminal closure reported" in hover
     assert "43.0 / 100" in hover
     assert "Click to inspect" not in hover
     assert "<script>" not in hover and "<img" not in hover and "bad()" not in hover
+
+
+def test_port_hover_joins_legacy_wrapping_before_reflowing():
+    marker = {"name": "Shanghai", "lat": 1, "lon": 2, "score": 60.9,
+              "description": "Score: 61/100<br>────────────<br><b>Region:</b> China<br>"
+              "<b>AI Status:</b> <i>Maintaining global lead in capacity<br>despite<br>"
+              "manufacturing slowdowns; newbuild<br>orders remain strong.</i>"}
+    hover = build_world_map([marker]).data[0].text[0]
+    assert "<br>despite<br>" not in hover
+    assert "────────" not in hover
+    assert "Maintaining global lead in capacity despite manufacturing slowdowns; newbuild orders remain strong." in plain_text(hover)
+    assert "<b>Port update:</b>" in hover
 
 
 def test_map_hover_keeps_all_supplied_context_and_handles_absence():
