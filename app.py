@@ -253,6 +253,9 @@ def create_app() -> dash.Dash:
             {%metas%}
             <title>{%title%}</title>
             {%favicon%}
+            <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
+            <link rel="preconnect" href="https://tiles.basemaps.cartocdn.com" crossorigin>
+            <link rel="preload" href="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json" as="fetch" crossorigin>
             {%css%}
             <style>
                 body {
