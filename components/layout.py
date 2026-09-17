@@ -47,7 +47,7 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
                 html.Div([html.Div(build_overview(data, provisional=is_provisional), id="overview-summary"), html.Div(build_drivers(data), id="pressure-drivers")], className="overview-card"),
                 html.Div([
                     html.Div([html.H2("Ports"), html.Span("Drag to move · scroll to zoom", className="map-hint")], className="panel-heading map-heading"),
-                    dcc.Graph(id="world-map", responsive=True, style={"height": "310px"}, figure=build_world_map(markers), config={"displayModeBar": True, "displaylogo": False, "responsive": True, "scrollZoom": True, "modeBarButtons": [["panGeo", "zoomInGeo", "zoomOutGeo", "resetGeo"]]}),
+                    dcc.Graph(id="world-map", responsive=True, style={"height": "310px"}, figure=build_world_map(markers), config={"displayModeBar": True, "displaylogo": False, "responsive": True, "scrollZoom": True, "modeBarButtons": [["pan2d", "zoomInGeo", "zoomOutGeo", "resetGeo"]]}),
                     html.Div([html.Span(f"{len(markers)} ports", id="map-count"), html.Div([html.Span("Higher relative risk"), html.I(className="risk-gradient"), html.Span("Lower")], className="map-legend")], className="map-footer"),
                 ], className="network-card"),
             ], className="overview-grid"),
