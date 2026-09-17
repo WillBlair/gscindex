@@ -5,10 +5,16 @@ All Plotly figures and Dash panels that appear in the main dashboard body:
 
     - ``build_history_chart``  — 90-day multi-line trend of every category
     - ``build_category_panel`` — Horizontal health bars for each category
-    - ``build_world_map``      — Scatter-geo map with regional risk dots
+    - ``build_world_map``      — Responsive tile map with regional risk dots
 """
 
 from __future__ import annotations
+
+from html import escape
+import re
+from textwrap import wrap
+
+from components.workspace import plain_text
 
 import plotly.graph_objects as go
 from dash import html
@@ -19,6 +25,7 @@ from config import (
     CATEGORY_WEIGHTS,
     COLORS,
     HEALTH_TIERS,
+    MAP_RISK_SCALE,
 )
 from scoring import get_health_tier
 
@@ -52,7 +59,9 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
                 x=series.index,
                 y=series.values,
                 name=label,
-                mode="lines",
+                mode="lines+markers" if series.count() < 5 else "lines",
+                connectgaps=False,
+                marker={"size": 6},
                 line={"color": color, "width": 2},
                 fill="none",
                 hovertemplate=f"<b>{label}</b><br>"
@@ -63,7 +72,7 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
 
     fig.update_layout(
         title={
-            "text": "90-Day Category Trends",
+            "text": "",
             "font": {"size": 14, "color": COLORS["text"], "family": "Satoshi"},
             "x": 0,
             "xanchor": "left",
@@ -71,33 +80,34 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"family": "Satoshi", "color": COLORS["text_muted"]},
-        margin={"t": 40, "b": 40, "l": 45, "r": 16},
-        height=300,
+        margin={"t": 42, "b": 25, "l": 32, "r": 10},
+        height=320,
         dragmode=False,  # Disable drag interactions (pan/zoom selection)
         yaxis={
             "range": [0, 100],
             "gridcolor": COLORS["grid"],
             "zeroline": False,
-            "tickfont": {"size": 10},
+            "tickfont": {"size": 11},
             "title": None,
             "fixedrange": True,  # Disable y-axis zoom/pan
         },
         xaxis={
             "gridcolor": COLORS["grid"],
             "zeroline": False,
-            "tickfont": {"size": 10},
+            "tickfont": {"size": 11},
             "title": None,
             "fixedrange": True,  # Disable x-axis zoom/pan
         },
         legend={
             "orientation": "h",
-            "yanchor": "top",
-            "y": -0.15,
-            "xanchor": "center",
-            "x": 0.5,
-            "font": {"size": 10},
+            "yanchor": "bottom",
+            "y": 1.04,
+            "xanchor": "left",
+            "x": 0,
+            "font": {"size": 12},
         },
         hovermode="x unified",
+        uirevision="category-trends",
     )
 
     return fig
@@ -170,36 +180,22 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
     )
 
 
+def _port_hover_text(marker: dict) -> str:
+    """Restore port context in the hover, preserving lines but not publisher HTML."""
+    score = marker.get("score", 100)
+    heading = f"<b>{escape(marker['name'])}</b><br>{score:.1f} / 100 · {get_health_tier(score)['label']}"
+    lines = []
+    for raw in re.split(r"<br\s*/?>", str(marker.get("description") or ""), flags=re.IGNORECASE):
+        text = plain_text(raw)
+        # The current score is already displayed in the hover heading.
+        if not text or text.startswith("Score:"):
+            continue
+        lines.extend(escape(line) for line in wrap(text, width=48))
+    return heading + "<br>" + ("<br>".join(lines) or "Port context unavailable.")
+
+
 def build_world_map(map_markers: list[dict]) -> go.Figure:
-    """Build a scatter-geo map showing every major shipping port.
-
-    Dots are color-coded by **relative rank** among today's ports rather than
-    by an absolute score band. Because composite port scores tend to cluster
-    in a narrow range, absolute coloring washed the whole map orange/red. With
-    rank-based coloring the worst few ports always read red, the best few read
-    green, and the rest spread smoothly across the middle:
-
-        green   top ~10% of ports today (healthiest relative to the rest)
-        yellow  the broad middle of the pack
-        red     bottom ~10% of ports today (most stressed relative to the rest)
-
-    Absolute guardrails keep the relative hue honest at the extremes: a
-    genuinely Critical port can never render green, and a genuinely Healthy
-    port always stays green, no matter how it ranks on a given day. Only the
-    Stressed/Stable middle keeps its full relative spread.
-
-    Marker size and the hover tooltip still use each port's real absolute
-    score, so the underlying numbers remain honest — only the hue is relative.
-
-    Hovering shows a rich tooltip with news headlines, VADER sentiment
-    scores, and any stressed global factors that explain the score.
-
-    Parameters
-    ----------
-    map_markers : list[dict]
-        Dicts with keys ``name``, ``lat``, ``lon``, ``score``, ``description``.
-        ``description`` is pre-built HTML from the aggregator.
-    """
+    """Show relative port risk with source-provided conditions directly on hover."""
     lats: list[float] = []
     lons: list[float] = []
     scores: list[float] = []
@@ -218,59 +214,16 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         lons.append(marker["lon"])
         scores.append(score)
 
-        # Risk-based sizing: troubled ports are huge, healthy ports are tiny.
-        # Score 100 -> 4px, Score 80 -> ~8.8px (30% smaller than previous 11.6px)
-        sizes.append(max(3, 21 - score * 0.18))
+        sizes.append(11 + (100 - score) * 0.07)
 
-        hover_texts.append(
-            f"<b>{marker['name']}</b><br>{marker['description']}"
-        )
+        hover_texts.append(_port_hover_text(marker))
 
-    # ── Relative (rank-based) coloring ───────────────────────────────────
-    # Absolute scores tend to cluster (e.g. everything 40–60), which made the
-    # whole map read orange/red. Instead, color each port by its RANK among
-    # today's ports: the worst few are red, the best few are green, and the
-    # rest spread smoothly across the middle. Sizing and the tooltip still use
-    # the real absolute score, so the numbers stay honest.
-    n = len(scores)
-    if n > 1 and len(set(scores)) > 1:
-        score_series = pd.Series(scores)
-        # Average rank handles ties; normalize to 0.0 (worst) … 1.0 (best).
-        ranks = score_series.rank(method="average")
-        color_values = ((ranks - 1) / (n - 1)).tolist()
-    else:
-        # All identical (or single port): park everyone in the neutral middle.
-        color_values = [0.5] * n
-
-    # Color-scale anchors over rank fraction (0 = worst, 1 = best). The same
-    # anchors are reused by the guardrails below so the two never drift apart.
-    _ORANGE_ANCHOR = 0.12   # bottom ~12% by rank trends orange
-    _GREEN_ANCHOR = 0.88    # top ~12% by rank trends green
-    _colorscale = [
-        [0.00, COLORS["red"]],            # worst port — solid red
-        [_ORANGE_ANCHOR, COLORS["orange"]],  # bottom band — orange
-        [0.50, COLORS["yellow"]],         # middle of the pack — yellow
-        [_GREEN_ANCHOR, COLORS["green"]],    # top band — green
-        [1.00, COLORS["green"]],          # best port — solid green
-    ]
-
-    # ── Absolute guardrails on the relative hue ──────────────────────────
-    # Pure relative coloring can lie about the extremes (a green dot on a
-    # globally awful day, or a red dot when a port is objectively fine).
-    # Clamp so a genuinely Critical port can NEVER render green and a
-    # genuinely Healthy port ALWAYS stays green, regardless of today's rank.
-    # The Stressed/Stable middle (40–79) keeps its full relative spread.
-    _critical_max = max(t["max"] for t in HEALTH_TIERS if t["label"] == "Critical")
-    _healthy_min = min(t["min"] for t in HEALTH_TIERS if t["label"] == "Healthy")
-    color_values = [
-        min(cv, _ORANGE_ANCHOR) if sc <= _critical_max
-        else max(cv, _GREEN_ANCHOR) if sc >= _healthy_min
-        else cv
-        for cv, sc in zip(color_values, scores)
-    ]
+    # Ties share a hue; identical readings stay neutral.
+    ranks = pd.Series(scores, dtype=float).rank(method="average")
+    colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist() if len(set(scores)) > 1 else [0.5] * len(scores)
 
     fig = go.Figure(
-        go.Scattergeo(
+        go.Scattermap(
             lat=lats,
             lon=lons,
             text=hover_texts,
@@ -278,13 +231,10 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             mode="markers",
             marker={
                 "size": sizes,
-                "color": color_values,
-                "colorscale": _colorscale,
-                "cmin": 0,
-                "cmax": 1,
+                "color": colors,
+                "colorscale": MAP_RISK_SCALE,
+                "cmin": 0, "cmax": 1,
                 "showscale": False,
-                # Use solid dark background color for the border to create a sharp cutout effect
-                "line": {"width": 1.5, "color": COLORS["bg"]},
                 "opacity": 1.0,  # Full opacity for maximum contrast
             },
         )
@@ -292,35 +242,28 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
 
     fig.update_layout(
         title={
-            "text": "Major Shipping Ports & Risk Status",
+            "text": "",
             "font": {"size": 14, "color": COLORS["text"], "family": "Satoshi"},
             "x": 0,
             "xanchor": "left",
         },
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin={"t": 25, "b": 0, "l": 0, "r": 0},
-        height=310,
+        margin={"t": 0, "b": 0, "l": 0, "r": 0},
+        autosize=True,
+        uirevision="port-map-fill",
+        dragmode="pan",
         hoverlabel={
-            "bgcolor": COLORS["card"],
-            "bordercolor": COLORS["card_border_hex"],
+            "bgcolor": "#121c2a",
+            "bordercolor": "#6f87a5",
             "font": {"family": "Satoshi", "size": 12, "color": COLORS["text"]},
             "align": "left",
             "namelength": -1,
         },
-        geo={
-            "bgcolor": "rgba(0,0,0,0)",
-            "showframe": False,
-            "showcoastlines": True,
-            "coastlinecolor": COLORS["card_border_hex"],
-            "showland": True,
-            "landcolor": COLORS["card"],
-            "showocean": True,
-            "oceancolor": COLORS["bg"],
-            "showlakes": False,
-            "showcountries": True,
-            "countrycolor": COLORS["card_border_hex"],
-            "projection": {"type": "natural earth"},
+        map={
+            "style": "carto-darkmatter",
+            "fitbounds": "locations",
+            "uirevision": "port-map-fill",
         },
     )
 

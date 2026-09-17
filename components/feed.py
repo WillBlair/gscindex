@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from dash import html, dcc
 
 from config import CATEGORY_LABELS, COLORS, hex_to_rgba
+from components.workspace import plain_text, safe_url
 
 
 # Soft pills: tinted background + tier-colored text/border, no harsh
@@ -143,12 +144,10 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
             ],
         )
 
-    return html.Div(
-        className="panel",
-        children=[
-            html.H3("AI Daily Briefing", className="panel-title"),
-            content,
-        ],
+    return html.Details(
+        className="panel briefing-disclosure",
+        open=True,
+        children=[html.Summary("Briefing", title="Automated summary of recent reporting"), content],
     )
 
 
@@ -170,7 +169,7 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
             children=[
                 html.H3("Recent Alerts", className="panel-title"),
                 html.P(
-                    "No alerts available.",
+                    "No matching articles.",
                     className="alert-body",
                     style={"color": COLORS["text_muted"], "padding": "20px 0"},
                 ),
@@ -230,13 +229,14 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
                     ],
                 ),
                 html.A(
-                    alert["title"],
-                    href=alert.get("url", "#"),
+                    plain_text(alert.get("title", "Untitled article")),
+                    href=safe_url(alert.get("url")),
+                    rel="noopener noreferrer",
                     target="_blank",
                     className="alert-title",
                     style={"display": "block", "textDecoration": "none", "color": "inherit", "fontWeight": "600", "marginBottom": "4px"},
                 ),
-                html.P(alert["body"], className="alert-body"),
+                html.Details([html.Summary("Details"), html.P(plain_text(alert.get("body", "")), className="alert-body")], className="news-detail") if plain_text(alert.get("body", "")) else None,
             ],
         )
         items.append(item)

@@ -86,7 +86,7 @@ class TestShortSeries:
     def test_short_series_caption_shows_count_over_window(self):
         series = pd.Series([60.0, 61.0, 62.0], index=_dates(3))
         wrap = _sparkline(series, "#3d9b6e")
-        assert _caption(wrap) == f"3/{_SPARK_WINDOW}d"
+        assert _caption(wrap) == "3 recorded days"
 
     def test_sparse_point_uses_calendar_x_not_left_edge(self):
         # One real observation on the last day of a longer NaN-padded window.

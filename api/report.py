@@ -30,8 +30,8 @@ _REPORT_TEMPLATE = """
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #0a0b0f;
-            color: #c8ccd4;
+            background-color: #0c1216;
+            color: #d6e1de;
             line-height: 1.7;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -42,7 +42,7 @@ _REPORT_TEMPLATE = """
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(10, 11, 15, 0.85);
+            background: rgba(12, 18, 22, 0.96);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border-bottom: 1px solid rgba(255,255,255,0.06);

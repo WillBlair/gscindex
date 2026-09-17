@@ -19,9 +19,11 @@ from config import (
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     COLORS,
+    MAP_HEALTH_COLORS,
     hex_to_rgba,
 )
 from scoring import get_health_tier
+from components.workspace import finite_score
 
 # SVG viewBox for every sparkline. Height is small (32) so the line has
 # visible amplitude; the wrapper CSS stretches it to the card's screen height.
@@ -167,7 +169,7 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
             className="spark-wrap spark-wrap--sparse",
             children=[
                 _spark_img(svg_markup),
-                html.Span(f"{n}/{_SPARK_WINDOW}d", className="spark-caption"),
+                html.Span(f"{n} recorded day" + ("s" if n != 1 else ""), className="spark-caption"),
             ],
         )
 
@@ -227,7 +229,8 @@ def build_category_cards(
     categories = card_categories or list(active_weights.keys())
     cards = []
     for cat in categories:
-        score = current_scores.get(cat, 0.0)
+        available = finite_score(current_scores.get(cat))
+        score = current_scores.get(cat) if available else 0.0
         tier = get_health_tier(score)
         history = category_history.get(cat, pd.Series(dtype=float))
         meta = metadata.get(cat, {})
@@ -235,8 +238,7 @@ def build_category_cards(
         # Extract raw label (e.g. "Matson (Port Ops)")
         # Truncate if super long to avoid blowing up layout
         raw_label = meta.get("raw_label", "")
-        if len(raw_label) > 25:
-            raw_label = raw_label[:23] + ".."
+
 
         # 30-day stats (NaN-safe: history may be short while real
         # measurements are still accumulating)
@@ -253,13 +255,18 @@ def build_category_cards(
         # last two calendar points are often identical — that is a flat day,
         # not a green "up 0.0".
         valid_history = history.dropna()
-        if len(valid_history) >= 2:
+        if (available and not meta.get("is_fallback") and len(history) >= 2
+                and history.tail(2).notna().all()
+                and history.index[-1] - history.index[-2] == pd.Timedelta(days=1)):
             delta = round(float(valid_history.iloc[-1] - valid_history.iloc[-2]), 1)
         else:
-            delta = 0.0
+            delta = None
 
-        if abs(delta) < 0.05:
-            delta_label = "—"
+        if delta is None:
+            delta_label = "No prior day"
+            delta_color = COLORS["text_muted"]
+        elif abs(delta) < 0.05:
+            delta_label = "0.0"
             delta_color = COLORS["text_faint"]
         elif delta > 0:
             delta_label = f"▲ {delta:.1f}"
@@ -281,27 +288,29 @@ def build_category_cards(
         is_fallback = bool(meta.get("is_fallback"))
         fallback_badge = (
             html.Span(
-                "FALLBACK",
+                "Estimated" if available else "Unavailable",
                 title="Provider failed — showing a neutral default, not a measured value",
                 style={
                     "color": COLORS["orange"],
                     "border": f"1px solid {COLORS['orange']}",
                     "borderRadius": "var(--radius)",
                     "padding": "0 4px",
-                    "fontSize": "9px",
+                    "fontSize": "8px",
                     "fontWeight": "700",
                     "marginRight": "6px",
                     "letterSpacing": "0.5px",
                 },
             )
-            if is_fallback
+            if is_fallback or not available
             else None
         )
 
         # Technical HUD Card — pattern-matching id so the modal callback
         # fires for whichever profile's cards are currently mounted.
-        card = html.Div(
+        card = html.Button(
+            type="button",
             className="tech-card",
+            **{"aria-label": f"Explore {CATEGORY_LABELS.get(cat, cat)} details"},
             id={"type": "category-card", "index": cat},
             n_clicks=0,
             style={"cursor": "pointer"},  # Indicate clickability
@@ -318,8 +327,7 @@ def build_category_cards(
                             }) if raw_label else None
                         ]),
                         html.Div([
-                            fallback_badge,
-                            html.Span(f"W:{weight_pct:02d}%", className="tech-weight"),
+                            html.Span(f"{weight_pct}%", className="tech-weight", title="Weight in the selected composite"),
                         ], style={"display": "flex", "alignItems": "center"}),
                     ],
                 ),
@@ -329,14 +337,14 @@ def build_category_cards(
                     className="tech-main-row",
                     children=[
                         html.Span(
-                            f"{score:.1f}",  # One decimal for precision
+                            f"{score:.1f}" if available else "—",
                             className="tech-score",
-                            style={"color": tier["color"]},
+                            style={"color": MAP_HEALTH_COLORS[tier["label"]]},
                         ),
                         html.Div(
                             className="tech-delta-box",
                             children=[
-                                html.Span("24H Δ", className="tech-meta-label"),
+                                html.Span("24h change", className="tech-meta-label"),
                                 html.Span(
                                     delta_label,
                                     className="tech-delta-value",
@@ -347,18 +355,23 @@ def build_category_cards(
                     ]
                 ),
 
+                html.Div(
+                    [fallback_badge, html.Span("Source unavailable" if is_fallback or not available else tier["label"])],
+                    className="card-condition",
+                ),
+
                 # Secondary Stats Grid (Min/Max)
                 html.Div(
                     className="tech-stats-grid",
                     children=[
                         html.Div([
-                            html.Span("LO", className="tech-meta-label"),
-                            html.Span(f"{min_val:.1f}", className="tech-meta-value")
+                            html.Span("30d low", className="tech-meta-label"),
+                            html.Span(f"{min_val:.1f}" if available and not is_fallback else "N/A", className="tech-meta-value")
                         ]),
                         html.Div(className="tech-grid-sep"),
                         html.Div([
-                            html.Span("HI", className="tech-meta-label"),
-                            html.Span(f"{max_val:.1f}", className="tech-meta-value")
+                            html.Span("30d high", className="tech-meta-label"),
+                            html.Span(f"{max_val:.1f}" if available and not is_fallback else "N/A", className="tech-meta-value")
                         ]),
                     ]
                 ),
@@ -366,7 +379,7 @@ def build_category_cards(
                 # Sparkline Container (The "Screen")
                 html.Div(
                     className="tech-sparkline-container",
-                    children=[_sparkline(history, sparkline_color)],
+                    children=[html.Span("History unavailable", className="history-unavailable") if is_fallback else _sparkline(history, sparkline_color)],
                 ),
             ],
         )

@@ -4,6 +4,39 @@ A real-time supply chain health dashboard that aggregates data from six provider
 
 Live site: [gscindex.com](https://gscindex.com)
 
+## Monitoring workspace
+
+The dashboard now provides a responsive overview, ranked pressure drivers, and
+industry-specific scorecards. The existing provider calculations and profile
+weights are preserved.
+
+- **Port map:** hover or tap a marker for its score, regional pressures,
+  disruption summary, and related reporting. Drag to pan, scroll to zoom, or use
+  the zoom/reset controls. Bright colors show relative risk.
+- **Market ticker:** continuously scrolling quotes; hover or focus to pause.
+- **Trend periods:** choose 7, 30, or 90 days; toggle signals through the legend.
+  Missing history remains a gap, and sparse series display individual points.
+- **Intelligence:** search news by headline, description, or source and filter
+  by severity and topic. Headlines are shown first, with descriptions and the
+  briefing expanded by default. News rows stay compact with optional details.
+  RSS markup is converted to readable text.
+- **Export CSV:** download the selected profile's scores, weights, weighted
+  contributions, source timestamps, and fallback status.
+- **Refresh:** updates panels in place and preserves filters and scroll position.
+  Manual refresh reads the latest cache; it does not trigger provider API calls.
+- **Data quality:** snapshot timestamps, cached-data notices, and fallback/missing
+  categories are explicit. Daily comparisons use the same profile's weights and
+  require consecutive, complete observations. Map colors compare relative risk;
+  each hover shows the absolute score and health tier alongside port conditions.
+
+For local use, install `requirements.txt` and run `python app.py` at
+`http://127.0.0.1:8050`. FRED data uses the authenticated API when a key is configured, otherwise its
+public CSV download. Set optional provider credentials in an untracked `.env`
+file. Unavailable readings remain explicitly marked; history is never invented.
+`GSC_DISABLE_BACKGROUND=1` disables background fetches when importing the app for
+offline tests. Install `pytest` and run `python -m pytest tests/workspace_test.py`
+for the monitoring behavior tests. Gemini integration tests require credentials.
+
 ## What It Does
 
 The dashboard fetches economic, weather, and news data on a background thread (every 5 minutes), caches results in memory and on disk, and renders instantly from cache on each page load. A single **Supply Chain Health Index** score summarizes overall stability, with six category breakdowns, a 37-port world map, 90-day trend charts, news alerts, and an optional AI briefing.
@@ -15,28 +48,28 @@ The index is a weighted average of six category scores (0–100, where **100 = h
 | Category | Weight | Data Source |
 |----------|--------|-------------|
 | Weather Disruptions | 10% | [Open-Meteo](https://open-meteo.com/) at 37 major ports (no API key) |
-| Supply Chain | 20% | NY Fed Global Supply Chain Pressure Index (GSCPI), monthly |
-| Energy Costs | 20% | Live WTI futures (yfinance), percentile vs trailing 2-year FRED range |
+| Supply Chain | 25% | NY Fed GSCPI (monthly), supplemented by a minority daily BDRY proxy |
+| Energy & Fuel | 20% | Crude and diesel cost pressure, relative to trailing 2-year ranges |
 | Trade & Tariffs | 15% | Trade Policy Uncertainty categorical index (`EPUTRADE`) via [FRED](https://fred.stlouisfed.org/), monthly |
-| Inland Freight | 15% | DOE weekly retail diesel, with a live Heating Oil futures nowcast for today |
+| Freight Flow | 10% | BTS freight throughput growth, supplemented by a minority daily transportation proxy |
 | Geopolitical Risk | 20% | RSS/[NewsAPI](https://newsapi.org/) + VADER severity, with optional Gemini AI analysis |
 
-Energy and Inland Freight are cost-pressure gauges (price percentile within a trailing 2-year window). Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (UI badge, `/api/v1/latest`, and `/health`).
+Energy & Fuel is a cost-pressure gauge; Freight Flow measures throughput growth. Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (UI badge, `/api/v1/latest`, and `/health`).
 
 Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–59), **Critical** (0–39).
 
 ### Dashboard Features
 
-- **Composite gauge** — semi-circle visualization of the overall index
-- **Category cards** — score, 30-day sparkline, delta, and clickable detail modal per category
+- **Composite overview** — readable score, health band, same-profile daily comparison, and ranked pressure drivers
+- **Category cards** — score, 90-day sparkline, 30-day range, delta, and clickable detail modal per category
 - **World map** — 37 ports colored by blended local weather (40%) + regional macro (60%)
 - **90-day trend chart** — multi-line history for all six categories
 - **News alerts** — supply-chain articles scored by VADER negativity
 - **AI briefing** — Gemini-generated summary (optional; cached ~24h)
 - **Market indicators** — crude oil, natural gas, copper, gold, VIX via yfinance
-- **Disruptions table** — auto-generated from categories scoring below 70
+- **Port conditions** — source-provided disruption context directly on map hover
 - **Newsletter signup** — email collection stored in PostgreSQL (prod) or SQLite (dev)
-- **Auto-refresh** — page reloads every 5 min with fresh data, or every 20s while warming up
+- **Auto-refresh** — panels update in place every 5 min, or every 20s while warming up
 
 ### Additional Pages
 
@@ -103,7 +136,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `FRED_API_KEY` | Yes | Powers energy, tariffs, and trucking categories (GSCPI comes from the NY Fed directly) |
+| `FRED_API_KEY` | Recommended | Uses the authenticated FRED API; public CSV downloads support keyless previews |
 | `NEWSAPI_KEY` | Yes | Geopolitical scoring, news alerts, and briefing input |
 | `GEMINI_API_KEY` | No | AI briefing, daily report, and news analysis |
 | `DATABASE_URL` | No | PostgreSQL for newsletter subscribers (omit for SQLite fallback) |

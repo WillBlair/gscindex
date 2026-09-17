@@ -21,7 +21,7 @@ def _trend_arrow(current: float, previous: float) -> tuple[str, str, str]:
 def build_market_costs_panel(market_data: dict) -> html.Div:
     """Build a horizontal scrolling ticker for market data."""
     if not market_data:
-        return html.Div(style={"display": "none"})
+        return html.P("Market quotes are currently unavailable.", className="fine-print")
 
     # 1. Build the list of distinct items
     base_items = []
@@ -56,10 +56,13 @@ def build_market_costs_panel(market_data: dict) -> html.Div:
 
     # 2. Duplicate content for seamless loop (A + A)
     # The animation will slide -50% (width of one set), then loop.
-    ticker_content = base_items + base_items
+    ticker_content = [html.Div(base_items, className="market-ticker-set"),
+                      html.Div(base_items, className="market-ticker-set", **{"aria-hidden": "true"})]
 
     return html.Section(
         className="market-section-ticker",
+        tabIndex=0,
+        title="Market prices · pause by hovering or focusing",
         children=[
             html.Div(
                 className="market-ticker-track",

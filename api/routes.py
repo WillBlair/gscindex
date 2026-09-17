@@ -37,10 +37,8 @@ def get_latest_data():
     
     current_scores = data.get("current_scores", {})
     response = {
-        # TODO: data["dates"] is a pd.DatetimeIndex after reconstruct_dashboard_state.
-        # pd.Timestamp may not serialize via Flask's default JSONProvider.
-        # Convert to ISO string explicitly to prevent 500 errors.
-        "timestamp": str(data.get("dates", [])[-1]) if data.get("dates") is not None and len(data.get("dates", [])) > 0 else None,
+        # Actual snapshot time, not midnight of the final history date.
+        "timestamp": data.get("last_updated_utc"),
         "composite_index": round(compute_composite_index(current_scores), 1) if current_scores else None,
         "categories": current_scores,
         # Degradation flags: categories listed here are serving a neutral
