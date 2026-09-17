@@ -1613,6 +1613,8 @@ button, input, select { font: inherit; }
 .workspace .map-heading { position: absolute; top: 0; left: 0; right: 0; z-index: 2; padding: 12px 16px 24px; pointer-events: none; background: linear-gradient(#0b121cee, #0b121c00); }
 .workspace .map-footer { position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; padding: 24px 16px 12px; pointer-events: none; background: linear-gradient(#0b121c00, #0b121cee); }
 .workspace #world-map .modebar { top: 38px; right: 12px; }
+/* Keep port labels above the decorative header/footer gradients. */
+.workspace #world-map .main-svg:has(> .hoverlayer) { z-index: 4; }
 .workspace #world-map .maplibregl-ctrl-bottom-right { bottom: 34px; }
 @media (max-width: 750px) { .workspace .network-card { min-height: 360px; } }
 @media (max-width: 460px) { .workspace .network-card { min-height: 320px; } }
