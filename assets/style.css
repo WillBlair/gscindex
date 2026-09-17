@@ -1618,3 +1618,20 @@ button, input, select { font: inherit; }
 
 .workspace #world-map .maplibregl-ctrl-attrib { background: #121c2ae6; color: #bacbdd; }
 .workspace #world-map .maplibregl-ctrl-attrib a { color: #bacbdd; }
+
+/* Dense headline rows retain readable type and optional article summaries. */
+.workspace .alerts-list { gap: 0; max-height: 360px; }
+.workspace .alert-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 4px; padding: 8px 0; }
+.workspace .alert-title { grid-column: 1; grid-row: 1; margin: 0 !important; font-size: 13px; line-height: 1.35; }
+.workspace .alert-header { grid-column: 1; grid-row: 2; justify-content: flex-start; gap: 8px; margin: 0; }
+.workspace .alert-meta { flex-wrap: wrap; }
+.workspace .severity-badge { padding: 1px 5px; font-size: 9px; }
+.workspace .category-tag { padding: 0 !important; border: 0 !important; background: none !important; }
+.workspace .alert-time { font-size: 10px; }
+.workspace .news-detail { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.workspace .news-detail > summary { color: var(--text-muted); font-size: 11px; padding: 5px 0; }
+.workspace .news-detail[open] { grid-column: 1 / -1; grid-row: 3; }
+.workspace .news-detail[open] > summary { padding-top: 0; }
+.workspace .news-detail .alert-body { margin: 2px 0 4px; line-height: 1.5; }
+.workspace .news-filters { padding-top: 10px; padding-bottom: 8px; gap: 10px; }
+.workspace .news-column .results-count { padding-bottom: 6px; }

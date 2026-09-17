@@ -18,7 +18,8 @@ weights are preserved.
   Missing history remains a gap, and sparse series display individual points.
 - **Intelligence:** search news by headline, description, or source and filter
   by severity and topic. Headlines are shown first, with descriptions and the
-  briefing available on expansion. RSS markup is converted to readable text.
+  briefing expanded by default. News rows stay compact with optional details.
+  RSS markup is converted to readable text.
 - **Export CSV:** download the selected profile's scores, weights, weighted
   contributions, source timestamps, and fallback status.
 - **Refresh:** updates panels in place and preserves filters and scroll position.

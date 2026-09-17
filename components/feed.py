@@ -146,6 +146,7 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
 
     return html.Details(
         className="panel briefing-disclosure",
+        open=True,
         children=[html.Summary("Briefing", title="Automated summary of recent reporting"), content],
     )
 
