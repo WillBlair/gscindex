@@ -11,6 +11,12 @@ import os
 
 bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
 workers = 1
-threads = 8
+threads = 4
 worker_class = "gthread"
 timeout = 120
+
+# Bound long-lived worker growth as a backstop, not a substitute for bounded jobs.
+# Keep one process: additional workers duplicate all providers and caches.
+max_requests = 2000
+max_requests_jitter = 200
+graceful_timeout = 30

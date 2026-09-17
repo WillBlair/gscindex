@@ -55,6 +55,7 @@ _LAST_FETCH_DURATION_SECONDS = None
 _LOCK = threading.Lock()
 
 from data.status import set_status, get_status
+from data.runtime import memory_usage
 
 # ── Key Migration: Remap old category names to current ones ──────────
 _KEY_MIGRATIONS: dict[str, str] = {
@@ -185,19 +186,8 @@ if startup_data and _LAST_UPDATE:
         logging.getLogger(__name__).warning(f"Startup cache is stale ({age/3600:.1f}h old). Marking as provisional.")
         _DATA_IS_FRESH = False
 
-# ── Clear Stale News Cache (Deploy Cache Bust) ──────────────────────
-# On every startup (i.e. every deploy), clear the newsapi briefing cache
-# so the background thread regenerates the report with the latest code.
-# Without this, old cached reports survive for 4 hours after a deploy.
-try:
-    from config import NEWS_BRIEFING_CACHE_KEY
-    from data.cache import _CACHE_DIR
-    _news_cache = _CACHE_DIR / f"{NEWS_BRIEFING_CACHE_KEY}.json"
-    if _news_cache.exists():
-        _news_cache.unlink()
-        logging.getLogger(__name__).info("Cleared stale news cache for fresh report generation.")
-except Exception as e:
-    logging.getLogger(__name__).warning(f"Failed to clear stale news cache: {e}")
+# Preserve versioned news caches across worker recycling. Schema/prompt changes
+# invalidate them through NEWS_BRIEFING_CACHE_KEY, not on every worker startup.
 
 
 def update_data_loop():
@@ -210,7 +200,7 @@ def update_data_loop():
     
     while True:
         try:
-            logger.info("Fetching fresh data from all providers...")
+            logger.info("Fetching fresh data from all providers; memory=%s", memory_usage())
             fetch_started = datetime.now(timezone.utc)
             with _LOCK:
                 _LAST_FETCH_STATUS = "running"
@@ -227,7 +217,7 @@ def update_data_loop():
                 _LAST_FETCH_ERROR = None
                 _LAST_FETCH_DURATION_SECONDS = round(fetch_duration, 2)
             
-            logger.info("Data update complete. Sleeping for 5 minutes.")
+            logger.info("Data update complete; memory=%s. Sleeping for 5 minutes.", memory_usage())
             time.sleep(300)
             
         except Exception as e:
@@ -360,6 +350,7 @@ def create_app() -> dash.Dash:
             "fallback_categories": fallback_categories,
             "status_message": status_message,
             "update_interval_seconds": 300,
+            "process_memory": memory_usage(),
         }
         return flask.jsonify(payload), http_status
 

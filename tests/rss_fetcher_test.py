@@ -24,15 +24,17 @@ class RssFetcherTests(unittest.TestCase):
             "max_items": 2,
         }
 
-        def fake_parse(url):
-            self.assertEqual(url, source["url"])
+        def fake_parse(content, response_headers):
+            self.assertEqual(content, b"test XML")
+            self.assertEqual(response_headers["content-location"], source["url"])
             return SimpleNamespace(
                 bozo=False,
                 feed={"title": "Ignored Feed Title"},
                 entries=[_entry("Tariff update", "https://example.com/a")],
             )
 
-        with patch("data.rss_fetcher.feedparser.parse", fake_parse):
+        with (patch("data.rss_fetcher.feedparser.parse", fake_parse),
+              patch("data.rss_fetcher._download_feed", return_value=b"test XML")):
             articles = fetch_single_feed(source)
 
         self.assertEqual(
@@ -92,6 +94,8 @@ class RssFetcherTests(unittest.TestCase):
 
         with (
             patch("data.rss_fetcher.NEWS_SOURCES", sources, create=True),
+            patch("data.rss_fetcher.get_cached", return_value=None),
+            patch("data.rss_fetcher.set_cached"),
             patch("data.rss_fetcher.fetch_single_feed", fake_fetch),
         ):
             articles = fetch_rss_articles(max_items=10)
