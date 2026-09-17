@@ -5,7 +5,7 @@ All Plotly figures and Dash panels that appear in the main dashboard body:
 
     - ``build_history_chart``  — 90-day multi-line trend of every category
     - ``build_category_panel`` — Horizontal health bars for each category
-    - ``build_world_map``      — Scatter-geo map with regional risk dots
+    - ``build_world_map``      — Responsive tile map with regional risk dots
 """
 
 from __future__ import annotations
@@ -223,7 +223,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist() if len(set(scores)) > 1 else [0.5] * len(scores)
 
     fig = go.Figure(
-        go.Scattergeo(
+        go.Scattermap(
             lat=lats,
             lon=lons,
             text=hover_texts,
@@ -235,8 +235,6 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
                 "colorscale": MAP_RISK_SCALE,
                 "cmin": 0, "cmax": 1,
                 "showscale": False,
-                # Use solid dark background color for the border to create a sharp cutout effect
-                "line": {"width": 1.2, "color": "#071017"},
                 "opacity": 1.0,  # Full opacity for maximum contrast
             },
         )
@@ -252,8 +250,8 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"t": 0, "b": 0, "l": 0, "r": 0},
-        height=310,
-        uirevision="port-map",
+        autosize=True,
+        uirevision="port-map-fill",
         dragmode="pan",
         hoverlabel={
             "bgcolor": "#121c2a",
@@ -262,19 +260,10 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             "align": "left",
             "namelength": -1,
         },
-        geo={
-            "bgcolor": "rgba(0,0,0,0)",
-            "showframe": False,
-            "showcoastlines": True,
-            "coastlinecolor": "#415066",
-            "showland": True,
-            "landcolor": "#263548",
-            "showocean": True,
-            "oceancolor": "#0b121c",
-            "showlakes": False,
-            "showcountries": True,
-            "countrycolor": "#415066",
-            "projection": {"type": "natural earth"},
+        map={
+            "style": "carto-darkmatter",
+            "fitbounds": "locations",
+            "uirevision": "port-map-fill",
         },
     )
 
