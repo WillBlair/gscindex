@@ -129,7 +129,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
    For production-style serving:
    ```bash
-   gunicorn app:server -c gunicorn.conf.py
+   env -u GUNICORN_CMD_ARGS gunicorn app:server -c gunicorn.conf.py --access-logfile -
    ```
 
 ### Environment Variables
@@ -208,7 +208,7 @@ Main thread (serves requests)
 
 ## Deployment
 
-**Render (primary):** Build with `pip install -r requirements.txt`, start with `gunicorn app:server -c gunicorn.conf.py`, health check at `/health`. Use exactly **1 Gunicorn worker** — the in-memory cache is worker-local.
+**Render (primary):** Build with `pip install -r requirements.txt`, start with `env -u GUNICORN_CMD_ARGS gunicorn app:server -c gunicorn.conf.py --access-logfile -`, health check at `/health`. Use exactly **1 Gunicorn worker** — the in-memory cache is worker-local. Clear Render's inherited preload option so the updater starts in the worker; see [memory operations](docs/render-memory.md).
 
 **Vercel:** Serverless entry at `api/index.py` via `vercel.json`.
 
