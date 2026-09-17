@@ -11,6 +11,10 @@ All Plotly figures and Dash panels that appear in the main dashboard body:
 from __future__ import annotations
 
 from html import escape
+import re
+from textwrap import wrap
+
+from components.workspace import plain_text
 
 import plotly.graph_objects as go
 from dash import html
@@ -21,7 +25,6 @@ from config import (
     CATEGORY_WEIGHTS,
     COLORS,
     HEALTH_TIERS,
-    MAP_HEALTH_COLORS,
     MAP_RISK_SCALE,
 )
 from scoring import get_health_tier
@@ -177,8 +180,22 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
     )
 
 
-def build_world_map(map_markers: list[dict], mode: str = "health") -> go.Figure:
-    """Choose explicit absolute bands or relative ranks without changing scores."""
+def _port_hover_text(marker: dict) -> str:
+    """Restore port context in the hover, preserving lines but not publisher HTML."""
+    score = marker.get("score", 100)
+    heading = f"<b>{escape(marker['name'])}</b><br>{score:.1f} / 100 · {get_health_tier(score)['label']}"
+    lines = []
+    for raw in re.split(r"<br\s*/?>", str(marker.get("description") or ""), flags=re.IGNORECASE):
+        text = plain_text(raw)
+        # The current score is already displayed in the hover heading.
+        if not text or text.startswith("Score:"):
+            continue
+        lines.extend(escape(line) for line in wrap(text, width=48))
+    return heading + "<br>" + ("<br>".join(lines) or "Port context unavailable.")
+
+
+def build_world_map(map_markers: list[dict]) -> go.Figure:
+    """Show relative port risk with source-provided conditions directly on hover."""
     lats: list[float] = []
     lons: list[float] = []
     scores: list[float] = []
@@ -199,22 +216,17 @@ def build_world_map(map_markers: list[dict], mode: str = "health") -> go.Figure:
 
         sizes.append(11 + (100 - score) * 0.07)
 
-        hover_texts.append(
-            f"<b>{escape(marker['name'])}</b><br>{score:.1f} / 100 · {get_health_tier(score)['label']}<br>Click to inspect"
-        )
+        hover_texts.append(_port_hover_text(marker))
 
-    colors = [MAP_HEALTH_COLORS[get_health_tier(score)["label"]] for score in scores]
-    if mode == "relative":
-        # Ties share a hue. A flat day stays neutral rather than inventing a spread.
-        ranks = pd.Series(scores, dtype=float).rank(method="average")
-        colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist() if len(set(scores)) > 1 else [0.5] * len(scores)
+    # Ties share a hue; identical readings stay neutral.
+    ranks = pd.Series(scores, dtype=float).rank(method="average")
+    colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist() if len(set(scores)) > 1 else [0.5] * len(scores)
 
     fig = go.Figure(
         go.Scattergeo(
             lat=lats,
             lon=lons,
             text=hover_texts,
-            customdata=[m["name"] for m in sorted_markers],
             hoverinfo="text",
             mode="markers",
             marker={
@@ -244,8 +256,8 @@ def build_world_map(map_markers: list[dict], mode: str = "health") -> go.Figure:
         uirevision="port-map",
         dragmode=False,
         hoverlabel={
-            "bgcolor": COLORS["card"],
-            "bordercolor": COLORS["card_border_hex"],
+            "bgcolor": "#121c2a",
+            "bordercolor": "#6f87a5",
             "font": {"family": "Satoshi", "size": 12, "color": COLORS["text"]},
             "align": "left",
             "namelength": -1,

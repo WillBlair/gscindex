@@ -152,34 +152,6 @@ def build_freshness(data, key, provisional=False, now=None):
     ], className="freshness-strip" + (" freshness-warning" if stale or missing else ""), role="status")
 
 
-def select_ports(markers, query="", tier="all", saved=None, only_saved=False, order="risk"):
-    saved = saved or []
-    query = (query or "").strip().casefold()
-    selected = [m for m in markers if finite_score(m.get("score"))
-                and query in m.get("name", "").casefold()
-                and (tier == "all" or get_health_tier(m["score"])["label"].lower() == tier)
-                and (not only_saved or m.get("name") in saved)]
-    return sorted(selected, key=(lambda m: m["name"]) if order == "name" else (lambda m: (m["score"], m["name"])))
-
-
-def build_port_rows(markers, saved=None):
-    saved = saved or []
-    if not markers:
-        return html.Div([html.Strong("No matching ports"), html.P("Clear search or change filters.")], className="empty-state")
-    return html.Table([
-        html.Thead(html.Tr([html.Th("Watch", scope="col"), html.Th("Port", scope="col"),
-                           html.Th("Health", scope="col"), html.Th("Condition", scope="col"), html.Th("Context", scope="col")])),
-        html.Tbody([html.Tr([
-            html.Td(html.Button("★" if m["name"] in saved else "☆", id={"type": "watch-port", "index": m["name"]}, n_clicks=0,
-                                className="watch-button" + (" is-saved" if m["name"] in saved else ""),
-                                **{"aria-label": ("Unsave " if m["name"] in saved else "Save ") + m["name"], "aria-pressed": str(m["name"] in saved).lower()})),
-            html.Th(m["name"], scope="row"), html.Td(f'{m["score"]:.1f}', className="port-score"),
-            html.Td(tier_pill(m["score"])),
-            html.Td(html.Details([html.Summary("View conditions"), html.P(plain_text(m.get("description", "No additional context available.")))], className="port-context")),
-        ]) for m in markers]),
-    ], className="port-table")
-
-
 def select_news(alerts, query="", severity="all", category="all"):
     query = (query or "").strip().casefold()
     selected = [a for a in alerts if (severity == "all" or a.get("severity") == severity)

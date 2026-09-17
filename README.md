@@ -10,8 +10,8 @@ The dashboard now provides a responsive overview, ranked pressure drivers, and
 industry-specific scorecards. The existing provider calculations and profile
 weights are preserved.
 
-- **Port monitor:** search, filter by health band, sort by risk or name, expand
-  conditions, and star ports. Watchlists stay on the current browser/device.
+- **Port map:** hover or tap a marker for its score, regional pressures,
+  disruption summary, and related reporting. Bright colors show relative risk.
 - **Trend periods:** choose 7, 30, or 90 days; toggle signals through the legend.
   Missing history remains a gap, and sparse series display individual points.
 - **Intelligence:** search news by headline, description, or source and filter
@@ -23,9 +23,8 @@ weights are preserved.
   Manual refresh reads the latest cache; it does not trigger provider API calls.
 - **Data quality:** snapshot timestamps, cached-data notices, and fallback/missing
   categories are explicit. Daily comparisons use the same profile's weights and
-  require consecutive, complete observations. The map defaults to relative risk
-  for comparing ports; switch to Health bands for absolute thresholds. Both views
-  show unchanged health scores, and clicking a marker filters the port monitor.
+  require consecutive, complete observations. Map colors compare relative risk;
+  each hover shows the absolute score and health tier alongside port conditions.
 
 For local use, install `requirements.txt` and run `python app.py` at
 `http://127.0.0.1:8050`. Set provider credentials in an untracked `.env` file;
@@ -64,7 +63,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 - **News alerts** — supply-chain articles scored by VADER negativity
 - **AI briefing** — Gemini-generated summary (optional; cached ~24h)
 - **Market indicators** — crude oil, natural gas, copper, gold, VIX via yfinance
-- **Port monitor** — searchable conditions, absolute health bands, and local watchlists
+- **Port conditions** — source-provided disruption context directly on map hover
 - **Newsletter signup** — email collection stored in PostgreSQL (prod) or SQLite (dev)
 - **Auto-refresh** — panels update in place every 5 min, or every 20s while warming up
 

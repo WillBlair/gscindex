@@ -7,7 +7,7 @@ from components.cards import build_category_cards
 from components.charts import build_history_chart, build_world_map
 from components.feed import build_briefing_panel, build_news_panel
 from components.market_costs import build_market_costs_panel
-from components.workspace import build_overview, build_drivers, build_freshness, build_port_rows
+from components.workspace import build_overview, build_drivers, build_freshness
 from config import APP_AUTHOR_URL, CATEGORY_LABELS, COLORS, DEFAULT_PROFILE, INDUSTRY_PROFILES
 
 
@@ -29,12 +29,11 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         dcc.Store(id="refresh-request", data=0),
         dcc.Store(id="category-metadata-store", data=metadata),
         dcc.Store(id="profile-store", data=DEFAULT_PROFILE),
-        dcc.Store(id="port-watchlist", data=[], storage_type="local"),
         dcc.Download(id="snapshot-download"),
         html.A("Skip to dashboard", href="#overview", className="skip-link"),
         html.Header([
             html.A(html.H1("Global Supply Chain Index"), href="/", className="brand-lockup", **{"aria-label": "Global Supply Chain Index home"}),
-            html.Nav([html.A("Overview", href="#overview", className="nav-active"), html.A("Port monitor", href="#ports"), html.A("News", href="#intelligence"), html.A("Docs", href="/docs")], className="workspace-nav", **{"aria-label": "Main navigation"}),
+            html.Nav([html.A("Overview", href="#overview", className="nav-active"), html.A("News", href="#intelligence"), html.A("Docs", href="/docs")], className="workspace-nav", **{"aria-label": "Main navigation"}),
             html.Div([html.Button("API", id="api-btn", className="button-quiet"), html.Button("Subscribe", id="newsletter-btn", className="button-primary")], className="header-actions"),
         ], className="workspace-header"),
         html.Main([
@@ -47,9 +46,9 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
             html.Section([
                 html.Div([html.Div(build_overview(data, provisional=is_provisional), id="overview-summary"), html.Div(build_drivers(data), id="pressure-drivers")], className="overview-card"),
                 html.Div([
-                    html.Div([html.H2("Ports"), dbc.RadioItems(id="map-mode", options=[{"label": "Relative risk", "value": "relative"}, {"label": "Health bands", "value": "health"}], value="relative", inline=True, className="range-switch map-switch", **persist)], className="panel-heading map-heading"),
-                    dcc.Graph(id="world-map", responsive=True, style={"height": "310px"}, figure=build_world_map(markers, mode="relative"), config={"displayModeBar": False, "responsive": True, "scrollZoom": False}),
-                    html.Div([html.Span(f"{len(markers)} ports", id="map-count"), html.Div(id="map-legend", className="map-legend"), html.Span("Click a port to inspect", id="map-selection")], className="map-footer"),
+                    html.Div([html.H2("Ports"), html.Span("Hover or tap a port", className="map-hint")], className="panel-heading map-heading"),
+                    dcc.Graph(id="world-map", responsive=True, style={"height": "310px"}, figure=build_world_map(markers), config={"displayModeBar": False, "responsive": True, "scrollZoom": False}),
+                    html.Div([html.Span(f"{len(markers)} ports", id="map-count"), html.Div([html.Span("Higher relative risk"), html.I(className="risk-gradient"), html.Span("Lower")], className="map-legend")], className="map-footer"),
                 ], className="network-card"),
             ], className="overview-grid"),
 
@@ -60,19 +59,6 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
                     dcc.Graph(id="trend-chart", responsive=True, style={"height": "245px"}, figure=build_history_chart({c: history[c] for c in profile["weights"] if c in history}), config={"displayModeBar": False, "responsive": True}),
                 ], className="trend-card"),
             ], className="analysis-grid"),
-            html.Section([
-                section_heading("Port monitor"),
-                html.Div([
-                    html.Div([
-                        control("Find a port", dcc.Input(id="port-search", type="search", placeholder="Search ports…", debounce=True, **persist)),
-                        control("Condition", dbc.Select(id="port-tier", options=[{"label": "All conditions", "value": "all"}] + [{"label": t, "value": t.lower()} for t in ("Critical", "Stressed", "Stable", "Healthy")], value="all", **persist)),
-                        control("Sort by", dbc.Select(id="port-order", options=[{"label": "Most at risk", "value": "risk"}, {"label": "Port name", "value": "name"}], value="risk", **persist)),
-                        dbc.Checklist(id="watch-only", options=[{"label": "Watchlist only", "value": "saved"}], value=[], switch=True, className="watch-filter", **persist),
-                    ], className="filter-bar"),
-                    html.Div(f"{len(markers)} ports", id="port-results-count", className="results-count", role="status"),
-                    html.Div(build_port_rows(sorted(markers, key=lambda m: m.get("score", 100))), id="port-results", className="port-results"),
-                ], className="ports-card"),
-            ], id="ports"),
             html.Section([
                 section_heading("News"),
                 html.Div([

@@ -6,11 +6,10 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from components.workspace import (plain_text, safe_url, select_ports, select_news,
+from components.workspace import (plain_text, safe_url, select_news,
                                   daily_delta, composite_for, snapshot_csv, build_freshness)
 from components.charts import build_world_map
-from config import INDUSTRY_PROFILES, MAP_HEALTH_COLORS
-from scoring import get_health_tier
+from config import INDUSTRY_PROFILES
 
 
 @pytest.fixture
@@ -37,13 +36,6 @@ def test_unsafe_article_links_are_not_linked(url):
 
 def test_external_article_url_is_preserved():
     assert safe_url("https://example.org/news?q=ports") == "https://example.org/news?q=ports"
-
-
-def test_port_filters_compose_and_sort_by_absolute_risk():
-    markers = [{"name": "Port A", "score": 59.9}, {"name": "Port B", "score": 60.0}, {"name": "Other", "score": 10.0}]
-    assert select_ports(markers, "port", "stressed", ["Port A"], True) == [markers[0]]
-    assert select_ports(markers, "unknown") == []
-    assert select_ports(markers)[0]["name"] == "Other"
 
 
 def test_news_filters_search_clean_content_and_order_newest():
@@ -87,36 +79,39 @@ def test_stale_snapshot_is_never_labelled_latest(snapshot):
     assert status.children[0].children[1] == "Cached snapshot"
 
 
-def test_map_colors_use_same_bands_even_when_all_ports_are_stressed():
-    fig = build_world_map([{"name": str(i), "lat": i, "lon": i, "score": score, "description": ""} for i, score in enumerate([41, 45, 59])])
-    assert set(fig.data[0].marker.color) == {MAP_HEALTH_COLORS[get_health_tier(45)["label"]]}
-
-
 def test_relative_map_spreads_close_scores_without_changing_the_readings():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": score, "description": ""}
                for i, score in enumerate([61, 62, 63])]
-    fig = build_world_map(markers, mode="relative")
+    fig = build_world_map(markers)
     assert list(fig.data[0].marker.color) == [1.0, 0.5, 0.0]
     assert "63.0 / 100" in fig.data[0].text[0]
-    assert list(fig.data[0].customdata) == ["2", "1", "0"]
     assert min(fig.data[0].marker.size) >= 11
 
 
 def test_relative_map_ties_do_not_invent_differences():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": 65, "description": ""} for i in range(3)]
-    assert set(build_world_map(markers, mode="relative").data[0].marker.color) == {0.5}
+    assert set(build_world_map(markers).data[0].marker.color) == {0.5}
 
 
-def test_map_click_filters_to_the_actual_port(snapshot, monkeypatch):
-    monkeypatch.setenv("GSC_DISABLE_BACKGROUND", "1")
-    import app as application
-    snapshot["map_markers"] = [{"name": "Singapore", "score": 65.0, "lat": 1.35, "lon": 103.8}]
-    monkeypatch.setattr(application, "_DATA_CACHE", snapshot)
-    handler = next(v["callback"].__wrapped__ for k, v in application.app.callback_map.items() if "port-search.value" in k)
-    assert handler({"points": [{"customdata": "Singapore"}]}) == ("Singapore", "all", [])
-    import dash
-    with pytest.raises(dash.exceptions.PreventUpdate):
-        handler({"points": [{"customdata": "Invalid"}]})
+def test_map_hover_restores_conditions_and_news_without_active_html():
+    marker = {"name": "Test port", "lat": 1, "lon": 2, "score": 43.0,
+              "description": '<b>Region:</b> East Asia<br><b>AI Status:</b> Delays after storm.<br><b>[HIGH]</b> Terminal closure reported<br><script>bad()</script><img src=x onerror=bad()>'}
+    hover = build_world_map([marker]).data[0].text[0]
+    assert "Region: East Asia" in hover
+    assert "Delays after storm." in hover
+    assert "Terminal closure reported" in hover
+    assert "43.0 / 100" in hover
+    assert "Click to inspect" not in hover
+    assert "<script>" not in hover and "<img" not in hover and "bad()" not in hover
+
+
+def test_map_hover_keeps_all_supplied_context_and_handles_absence():
+    marker = {"name": "Test", "lat": 1, "lon": 2, "score": 50.0}
+    assert "Port context unavailable" in build_world_map([marker]).data[0].text[0]
+    marker["description"] = "<b>Score:</b> 50/100<br>" + "Long context " * 30 + "Final event."
+    hover = build_world_map([marker]).data[0].text[0]
+    assert "Final event." in hover.replace("<br>", " ")
+    assert "Score:" not in hover
 
 
 def test_workspace_callbacks_render_all_profiles_and_export(snapshot, monkeypatch):
@@ -125,7 +120,11 @@ def test_workspace_callbacks_render_all_profiles_and_export(snapshot, monkeypatc
     monkeypatch.setattr(application, "_DATA_CACHE", snapshot)
     monkeypatch.setattr(application, "_DATA_IS_FRESH", True)
     client = application.server.test_client()
-    assert client.get("/_dash-layout").status_code == 200
+    layout_response = client.get("/_dash-layout")
+    assert layout_response.status_code == 200
+    layout_text = layout_response.get_data(as_text=True)
+    assert '"id":"port-search"' not in layout_text
+    assert '"id":"map-mode"' not in layout_text
     app = application.app
     overview = next(v["callback"].__wrapped__ for k, v in app.callback_map.items() if "overview-summary.children" in k)
     for key in INDUSTRY_PROFILES:
