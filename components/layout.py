@@ -46,8 +46,8 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
             html.Section([
                 html.Div([html.Div(build_overview(data, provisional=is_provisional), id="overview-summary"), html.Div(build_drivers(data), id="pressure-drivers")], className="overview-card"),
                 html.Div([
-                    html.Div([html.H2("Ports"), html.Span("Hover or tap a port", className="map-hint")], className="panel-heading map-heading"),
-                    dcc.Graph(id="world-map", responsive=True, style={"height": "310px"}, figure=build_world_map(markers), config={"displayModeBar": False, "responsive": True, "scrollZoom": False}),
+                    html.Div([html.H2("Ports"), html.Span("Drag to move · scroll to zoom", className="map-hint")], className="panel-heading map-heading"),
+                    dcc.Graph(id="world-map", responsive=True, style={"height": "310px"}, figure=build_world_map(markers), config={"displayModeBar": True, "displaylogo": False, "responsive": True, "scrollZoom": True, "modeBarButtons": [["panGeo", "zoomInGeo", "zoomOutGeo", "resetGeo"]]}),
                     html.Div([html.Span(f"{len(markers)} ports", id="map-count"), html.Div([html.Span("Higher relative risk"), html.I(className="risk-gradient"), html.Span("Lower")], className="map-legend")], className="map-footer"),
                 ], className="network-card"),
             ], className="overview-grid"),
@@ -55,8 +55,8 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
             html.Section(build_category_cards(scores, history, metadata, active_weights=profile["weights"], card_categories=profile["card_categories"]), id="cards-container", className="cards-row", **{"aria-label": "Category scores"}),
             html.Section([
                 html.Div([
-                    html.Div([html.H2("History"), dbc.RadioItems(id="trend-range", options=[{"label": f"{n}D", "value": n} for n in (7, 30, 90)], value=90, inline=True, className="range-switch", **persist)], className="panel-heading"),
-                    dcc.Graph(id="trend-chart", responsive=True, style={"height": "245px"}, figure=build_history_chart({c: history[c] for c in profile["weights"] if c in history}), config={"displayModeBar": False, "responsive": True}),
+                    html.Div([html.H2("Health score history"), dbc.RadioItems(id="trend-range", options=[{"label": f"{n}D", "value": n} for n in (7, 30, 90)], value=90, inline=True, className="range-switch", **persist)], className="panel-heading"),
+                    dcc.Graph(id="trend-chart", responsive=True, style={"height": "320px"}, figure=build_history_chart({c: history[c] for c in profile["weights"] if c in history}), config={"displayModeBar": False, "responsive": True}),
                 ], className="trend-card"),
             ], className="analysis-grid"),
             html.Section([

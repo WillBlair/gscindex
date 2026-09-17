@@ -103,7 +103,7 @@ def build_overview(data, key=DEFAULT_PROFILE, provisional=False):
                   tier_pill(score) if score is not None else html.Span("No data", className="status-pill")], className="panel-heading"),
         html.Div([html.Span(f"{score:.1f}" if score is not None else "—", className="hero-score"),
                   html.Span("/ 100", className="score-denominator")], className="score-line"),
-        html.Div("Δ —" if delta is None else
+        html.Div("Daily change unavailable" if delta is None else
                  f"{'↑' if delta > 0 else '↓' if delta < 0 else '→'} {abs(delta):.1f} pts / day",
                  className="score-change " + ("positive" if delta and delta > 0 else "negative" if delta and delta < 0 else "")),
         html.Span("0–100 · higher is healthier", className="scale-caption"),
@@ -117,12 +117,12 @@ def build_drivers(data, key=DEFAULT_PROFILE):
     ranked = sorted([(c, (100 - scores[c]) * w) for c, w in weights.items()
                      if finite_score(scores.get(c))], key=lambda x: x[1], reverse=True)[:3]
     return html.Div([
-        html.H2("Top drags", className="driver-heading", title="Largest weighted contributions to the gap from 100"),
+        html.H2("Main pressures", className="driver-heading", title="Largest weighted contributions to the gap from 100"),
         *[html.Div([
             html.Div([html.Span(f"0{i + 1}", className="driver-rank"),
                       html.Div([html.Strong(CATEGORY_LABELS.get(cat, cat)),
                                 html.Small("Fallback estimate" if meta.get(cat, {}).get("is_fallback") else f"{weights[cat]:.0%} weight")]),
-                      html.Span(f"−{pressure:.1f}", className="driver-value")], className="driver-row"),
+                      html.Span(f"−{pressure:.1f} pts", className="driver-value")], className="driver-row"),
             html.Div(html.Div(style={"width": f"{min(100, pressure / max(ranked[0][1], 1) * 100)}%"}), className="driver-track"),
         ], className="driver-item") for i, (cat, pressure) in enumerate(ranked)],
     ])
@@ -148,7 +148,7 @@ def build_freshness(data, key, provisional=False, now=None):
     return html.Div([
         html.Span([html.Span(className="status-dot"), label], className="snapshot-label"),
         html.Span(stamp),
-        html.Span(f"{len(missing)} fallback", title=", ".join(missing), className="fallback-summary") if missing else None,
+        html.Span(f"{len(missing)} estimated", title=", ".join(missing), className="fallback-summary") if missing else None,
     ], className="freshness-strip" + (" freshness-warning" if stale or missing else ""), role="status")
 
 

@@ -56,10 +56,13 @@ def build_market_costs_panel(market_data: dict) -> html.Div:
 
     # 2. Duplicate content for seamless loop (A + A)
     # The animation will slide -50% (width of one set), then loop.
-    ticker_content = base_items
+    ticker_content = [html.Div(base_items, className="market-ticker-set"),
+                      html.Div(base_items, className="market-ticker-set", **{"aria-hidden": "true"})]
 
     return html.Section(
         className="market-section-ticker",
+        tabIndex=0,
+        title="Market prices · pause by hovering or focusing",
         children=[
             html.Div(
                 className="market-ticker-track",

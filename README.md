@@ -11,7 +11,9 @@ industry-specific scorecards. The existing provider calculations and profile
 weights are preserved.
 
 - **Port map:** hover or tap a marker for its score, regional pressures,
-  disruption summary, and related reporting. Bright colors show relative risk.
+  disruption summary, and related reporting. Drag to pan, scroll to zoom, or use
+  the zoom/reset controls. Bright colors show relative risk.
+- **Market ticker:** continuously scrolling quotes; hover or focus to pause.
 - **Trend periods:** choose 7, 30, or 90 days; toggle signals through the legend.
   Missing history remains a gap, and sparse series display individual points.
 - **Intelligence:** search news by headline, description, or source and filter
@@ -27,8 +29,9 @@ weights are preserved.
   each hover shows the absolute score and health tier alongside port conditions.
 
 For local use, install `requirements.txt` and run `python app.py` at
-`http://127.0.0.1:8050`. Set provider credentials in an untracked `.env` file;
-without them, the UI marks unavailable provider readings as fallbacks.
+`http://127.0.0.1:8050`. FRED data uses the authenticated API when a key is configured, otherwise its
+public CSV download. Set optional provider credentials in an untracked `.env`
+file. Unavailable readings remain explicitly marked; history is never invented.
 `GSC_DISABLE_BACKGROUND=1` disables background fetches when importing the app for
 offline tests. Install `pytest` and run `python -m pytest tests/workspace_test.py`
 for the monitoring behavior tests. Gemini integration tests require credentials.
@@ -132,7 +135,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `FRED_API_KEY` | Yes | Powers energy, tariffs, and trucking categories (GSCPI comes from the NY Fed directly) |
+| `FRED_API_KEY` | Recommended | Uses the authenticated FRED API; public CSV downloads support keyless previews |
 | `NEWSAPI_KEY` | Yes | Geopolitical scoring, news alerts, and briefing input |
 | `GEMINI_API_KEY` | No | AI briefing, daily report, and news analysis |
 | `DATABASE_URL` | No | PostgreSQL for newsletter subscribers (omit for SQLite fallback) |

@@ -154,3 +154,26 @@ def test_newsletter_rejects_invalid_addresses_without_writes(email, monkeypatch)
     monkeypatch.setattr("data.database.add_subscriber", unexpected_write)
     handler = next(v["callback"].__wrapped__ for k, v in application.app.callback_map.items() if "newsletter-feedback.children" in k)
     assert handler(1, email)[0] == "Please enter a valid email address."
+
+
+def test_map_navigation_is_enabled():
+    assert build_world_map([]).layout.dragmode == "pan"
+
+
+def test_missing_daily_comparison_is_distinct_from_zero():
+    from components.cards import build_category_cards
+    def text(node):
+        if isinstance(node, (list, tuple)):
+            return " ".join(text(x) for x in node)
+        if hasattr(node, "children"):
+            return text(node.children)
+        return str(node or "")
+    dates = pd.date_range("2026-09-15", periods=2)
+    args = {"current_scores": {"weather": 80.0}, "active_weights": {"weather": 1.0}}
+    flat = text(build_category_cards(category_history={"weather": pd.Series([80., 80.], index=dates)}, **args))
+    sparse = text(build_category_cards(category_history={"weather": pd.Series([80.], index=dates[-1:])}, **args))
+    assert "24h change 0.0" in flat
+    assert "No prior day" in sparse
+    fallback = text(build_category_cards(category_history={}, metadata={"weather": {"is_fallback": True}}, **args))
+    assert "Estimated" in fallback and "History unavailable" in fallback
+    assert "30d low N/A" in fallback and "30d high N/A" in fallback

@@ -6,15 +6,18 @@ Economic Data (FRED) API. Five of the seven dashboard categories use FRED.
 
 FRED API docs: https://fred.stlouisfed.org/docs/api/fred/
 
-Setup
------
+Authenticated API setup (recommended)
+-------------------------------------
 1. Create a free account at https://fred.stlouisfed.org
 2. Request an API key at https://fred.stlouisfed.org/docs/api/api_key.html
 3. Add ``FRED_API_KEY=your_key_here`` to your ``.env`` file
+
+Without a key, the public FRED graph CSV download supplies the same raw series.
 """
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 from datetime import datetime, timedelta
@@ -67,8 +70,8 @@ def fetch_fred_series(
 
     Raises
     ------
-    EnvironmentError
-        If ``FRED_API_KEY`` is not set.
+    ValueError
+        If FRED returns an empty or malformed download.
     requests.HTTPError
         If the FRED API returns a non-200 status code.
     """
@@ -80,36 +83,41 @@ def fetch_fred_series(
         s.index = pd.DatetimeIndex(cached["dates"])
         return s
 
-    api_key = _get_api_key()
+    api_key = os.environ.get("FRED_API_KEY", "").strip()
     start_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-
     logger.info("Fetching FRED series %s (from %s)", series_id, start_date)
 
-    resp = requests.get(
-        _BASE_URL,
-        params={
-            "series_id": series_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "observation_start": start_date,
-            "sort_order": "asc",
-        },
-        timeout=15,
-    )
-    resp.raise_for_status()
-
-    observations = resp.json().get("observations", [])
-
-    dates: list[str] = []
-    values: list[float] = []
-    for obs in observations:
-        # FRED uses "." for missing values — skip them
-        if obs["value"] == ".":
-            continue
-        dates.append(obs["date"])
-        values.append(float(obs["value"]))
-
-    series = pd.Series(values, index=pd.DatetimeIndex(dates), name=series_id)
+    if api_key:
+        resp = requests.get(
+            _BASE_URL,
+            params={"series_id": series_id, "api_key": api_key, "file_type": "json",
+                    "observation_start": start_date, "sort_order": "asc"}, timeout=15,
+        )
+        resp.raise_for_status()
+        observations = resp.json().get("observations", [])
+        dates = [obs["date"] for obs in observations if obs["value"] != "."]
+        values = [float(obs["value"]) for obs in observations if obs["value"] != "."]
+        series = pd.Series(values, index=pd.DatetimeIndex(dates), name=series_id)
+    else:
+        # FRED's public graph download contains the same untransformed series.
+        # Keep authenticated deployments on the API; allow local previews to
+        # use measured data without requiring a developer's private API key.
+        resp = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv",
+                            params={"id": series_id, "cosd": start_date}, timeout=15)
+        resp.raise_for_status()
+        frame = pd.read_csv(io.StringIO(resp.text))
+        date_column = "observation_date" if "observation_date" in frame else "DATE"
+        if date_column not in frame or series_id not in frame:
+            raise ValueError(f"Unexpected FRED download for {series_id}")
+        series = pd.Series(pd.to_numeric(frame[series_id], errors="coerce").to_numpy(),
+                           index=pd.to_datetime(frame[date_column], errors="coerce"), name=series_id)
+        series = series[series.index.notna()].dropna().sort_index()
+        series = series[~series.index.duplicated(keep="last")]
+        series = series.loc[start_date:]
+        dates = series.index.strftime("%Y-%m-%d").tolist()
+        values = series.tolist()
+    if series.empty:
+        raise ValueError(f"No observations returned for FRED series {series_id}")
 
     # Cache the result
     set_cached(cache_key, {"dates": dates, "values": values})

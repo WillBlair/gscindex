@@ -169,7 +169,7 @@ def _sparkline(series: pd.Series, color: str) -> html.Div:
             className="spark-wrap spark-wrap--sparse",
             children=[
                 _spark_img(svg_markup),
-                html.Span(f"{n}/{_SPARK_WINDOW}d", className="spark-caption"),
+                html.Span(f"{n} recorded day" + ("s" if n != 1 else ""), className="spark-caption"),
             ],
         )
 
@@ -260,10 +260,13 @@ def build_category_cards(
                 and history.index[-1] - history.index[-2] == pd.Timedelta(days=1)):
             delta = round(float(valid_history.iloc[-1] - valid_history.iloc[-2]), 1)
         else:
-            delta = 0.0
+            delta = None
 
-        if abs(delta) < 0.05:
-            delta_label = "—"
+        if delta is None:
+            delta_label = "No prior day"
+            delta_color = COLORS["text_muted"]
+        elif abs(delta) < 0.05:
+            delta_label = "0.0"
             delta_color = COLORS["text_faint"]
         elif delta > 0:
             delta_label = f"▲ {delta:.1f}"
@@ -285,7 +288,7 @@ def build_category_cards(
         is_fallback = bool(meta.get("is_fallback"))
         fallback_badge = (
             html.Span(
-                "EST" if available else "N/A",
+                "Estimated" if available else "Unavailable",
                 title="Provider failed — showing a neutral default, not a measured value",
                 style={
                     "color": COLORS["orange"],
@@ -324,7 +327,6 @@ def build_category_cards(
                             }) if raw_label else None
                         ]),
                         html.Div([
-                            fallback_badge,
                             html.Span(f"{weight_pct}%", className="tech-weight", title="Weight in the selected composite"),
                         ], style={"display": "flex", "alignItems": "center"}),
                     ],
@@ -342,7 +344,7 @@ def build_category_cards(
                         html.Div(
                             className="tech-delta-box",
                             children=[
-                                html.Span("DAILY Δ", className="tech-meta-label"),
+                                html.Span("24h change", className="tech-meta-label"),
                                 html.Span(
                                     delta_label,
                                     className="tech-delta-value",
@@ -353,18 +355,23 @@ def build_category_cards(
                     ]
                 ),
 
+                html.Div(
+                    [fallback_badge, html.Span("Source unavailable" if is_fallback or not available else tier["label"])],
+                    className="card-condition",
+                ),
+
                 # Secondary Stats Grid (Min/Max)
                 html.Div(
                     className="tech-stats-grid",
                     children=[
                         html.Div([
-                            html.Span("30D LOW", className="tech-meta-label"),
-                            html.Span(f"{min_val:.1f}" if available else "—", className="tech-meta-value")
+                            html.Span("30d low", className="tech-meta-label"),
+                            html.Span(f"{min_val:.1f}" if available and not is_fallback else "N/A", className="tech-meta-value")
                         ]),
                         html.Div(className="tech-grid-sep"),
                         html.Div([
-                            html.Span("HIGH", className="tech-meta-label"),
-                            html.Span(f"{max_val:.1f}" if available else "—", className="tech-meta-value")
+                            html.Span("30d high", className="tech-meta-label"),
+                            html.Span(f"{max_val:.1f}" if available and not is_fallback else "N/A", className="tech-meta-value")
                         ]),
                     ]
                 ),
@@ -372,7 +379,7 @@ def build_category_cards(
                 # Sparkline Container (The "Screen")
                 html.Div(
                     className="tech-sparkline-container",
-                    children=[_sparkline(history, sparkline_color)],
+                    children=[html.Span("History unavailable", className="history-unavailable") if is_fallback else _sparkline(history, sparkline_color)],
                 ),
             ],
         )

@@ -81,20 +81,20 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
         font={"family": "Satoshi", "color": COLORS["text_muted"]},
         margin={"t": 42, "b": 25, "l": 32, "r": 10},
-        height=245,
+        height=320,
         dragmode=False,  # Disable drag interactions (pan/zoom selection)
         yaxis={
             "range": [0, 100],
             "gridcolor": COLORS["grid"],
             "zeroline": False,
-            "tickfont": {"size": 10},
+            "tickfont": {"size": 11},
             "title": None,
             "fixedrange": True,  # Disable y-axis zoom/pan
         },
         xaxis={
             "gridcolor": COLORS["grid"],
             "zeroline": False,
-            "tickfont": {"size": 10},
+            "tickfont": {"size": 11},
             "title": None,
             "fixedrange": True,  # Disable x-axis zoom/pan
         },
@@ -104,7 +104,7 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
             "y": 1.04,
             "xanchor": "left",
             "x": 0,
-            "font": {"size": 10},
+            "font": {"size": 12},
         },
         hovermode="x unified",
         uirevision="category-trends",
@@ -254,7 +254,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         margin={"t": 0, "b": 0, "l": 0, "r": 0},
         height=310,
         uirevision="port-map",
-        dragmode=False,
+        dragmode="pan",
         hoverlabel={
             "bgcolor": "#121c2a",
             "bordercolor": "#6f87a5",
