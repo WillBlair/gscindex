@@ -267,12 +267,12 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 # ---------------------------------------------------------------------------
 
 CATEGORY_COLORS: dict[str, str] = {
-    "weather":             "#6b8cae",
-    "supply_chain":        "#8a7e9c",
-    "freight":             "#5f8f7a",
-    "energy":              "#b8956a",
-    "tariffs":             "#a66d6d",
-    "geopolitical":        "#a67c5b",
+    "weather":             "#60a5fa",
+    "supply_chain":        "#c084fc",
+    "freight":             "#34d399",
+    "energy":              "#fbbf24",
+    "tariffs":             "#fb7185",
+    "geopolitical":        "#22d3ee",
     "chip_fab_util":       "#5f8f9c",
     "chip_memory_prices":  "#7d7394",
     "chip_lead_times":     "#5a8f86",
@@ -332,3 +332,13 @@ def hex_to_rgba(hex_color: str, alpha: float) -> str:
     h = hex_color.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return f"rgba({r},{g},{b},{alpha})"
+
+# High-contrast map colors. Health thresholds remain defined by HEALTH_TIERS.
+MAP_HEALTH_COLORS = {
+    "Critical": "#ff4969", "Stressed": "#ff963f",
+    "Stable": "#f8d84a", "Healthy": "#20df9c",
+}
+MAP_RISK_SCALE = [
+    [0.0, "#ff4969"], [0.25, "#ff963f"], [0.5, "#f8d84a"],
+    [0.75, "#73e589"], [1.0, "#20df9c"],
+]

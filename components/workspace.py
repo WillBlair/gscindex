@@ -98,24 +98,15 @@ def build_overview(data, key=DEFAULT_PROFILE, provisional=False):
     scores = data.get("current_scores", {})
     score = composite_for(data, key)
     delta = None if provisional else daily_delta(data, key)
-    ranked = sorted(
-        [(cat, (100 - scores[cat]) * weight) for cat, weight in profile["weights"].items()
-         if finite_score(scores.get(cat))], key=lambda row: row[1], reverse=True,
-    )
-    weakest = CATEGORY_LABELS.get(ranked[0][0], ranked[0][0]) if ranked else "Unavailable data"
     return html.Div([
-        html.Div([html.Span("COMPOSITE HEALTH", className="eyebrow"),
-                  tier_pill(score) if score is not None else html.Span("Incomplete data", className="status-pill")], className="panel-heading"),
+        html.Div([html.Span("HEALTH INDEX", className="eyebrow"),
+                  tier_pill(score) if score is not None else html.Span("No data", className="status-pill")], className="panel-heading"),
         html.Div([html.Span(f"{score:.1f}" if score is not None else "—", className="hero-score"),
                   html.Span("/ 100", className="score-denominator")], className="score-line"),
-        html.Div("Daily comparison unavailable" if delta is None else
-                 f"{'↑' if delta > 0 else '↓' if delta < 0 else '→'} {abs(delta):.1f} pts vs previous day",
+        html.Div("Δ —" if delta is None else
+                 f"{'↑' if delta > 0 else '↓' if delta < 0 else '→'} {abs(delta):.1f} pts / day",
                  className="score-change " + ("positive" if delta and delta > 0 else "negative" if delta and delta < 0 else "")),
-        html.Div([html.Div(style={"width": f"{score or 0}%"})], className="score-meter"),
-        html.Div([html.Span("0 · Critical"), html.Span("100 · Healthy")], className="scale-labels"),
-        html.P(f"{weakest} is the largest weighted pressure on this profile." if score is not None else
-               "Some signals for this profile are unavailable. The composite will appear when all required scores are available.", className="overview-explanation"),
-        html.A("How the index works ↗", href="#methodology", className="text-link"),
+        html.Span("0–100 · higher is healthier", className="scale-caption"),
     ])
 
 
@@ -126,17 +117,14 @@ def build_drivers(data, key=DEFAULT_PROFILE):
     ranked = sorted([(c, (100 - scores[c]) * w) for c, w in weights.items()
                      if finite_score(scores.get(c))], key=lambda x: x[1], reverse=True)[:3]
     return html.Div([
-        html.Div([html.Span("WHAT TO WATCH", className="eyebrow"), html.Span("01 / SIGNALS", className="section-code")], className="panel-heading"),
-        html.H2("The pressure points", className="panel-title"),
-        html.P("Largest contributions to the gap from a perfect 100.", className="section-note"),
+        html.H2("Top drags", className="driver-heading", title="Largest weighted contributions to the gap from 100"),
         *[html.Div([
             html.Div([html.Span(f"0{i + 1}", className="driver-rank"),
                       html.Div([html.Strong(CATEGORY_LABELS.get(cat, cat)),
-                                html.Small("Fallback estimate" if meta.get(cat, {}).get("is_fallback") else f"{weights[cat]:.0%} of the composite")]),
-                      html.Span(f"{pressure:.1f}", className="driver-value")], className="driver-row"),
+                                html.Small("Fallback estimate" if meta.get(cat, {}).get("is_fallback") else f"{weights[cat]:.0%} weight")]),
+                      html.Span(f"−{pressure:.1f}", className="driver-value")], className="driver-row"),
             html.Div(html.Div(style={"width": f"{min(100, pressure / max(ranked[0][1], 1) * 100)}%"}), className="driver-track"),
         ], className="driver-item") for i, (cat, pressure) in enumerate(ranked)],
-        html.P("Points of weighted pressure, not a forecast of disruption.", className="fine-print"),
     ])
 
 
@@ -160,8 +148,7 @@ def build_freshness(data, key, provisional=False, now=None):
     return html.Div([
         html.Span([html.Span(className="status-dot"), label], className="snapshot-label"),
         html.Span(stamp),
-        html.Span("Fallback / missing: " + ", ".join(missing)) if missing else None,
-        html.Span("Historical data shown while sources refresh.") if stale else None,
+        html.Span(f"{len(missing)} fallback", title=", ".join(missing), className="fallback-summary") if missing else None,
     ], className="freshness-strip" + (" freshness-warning" if stale or missing else ""), role="status")
 
 
@@ -178,7 +165,7 @@ def select_ports(markers, query="", tier="all", saved=None, only_saved=False, or
 def build_port_rows(markers, saved=None):
     saved = saved or []
     if not markers:
-        return html.Div([html.Strong("No ports match your filters"), html.P("Try another port name, choose all conditions, or turn off Watchlist only.")], className="empty-state")
+        return html.Div([html.Strong("No matching ports"), html.P("Clear search or change filters.")], className="empty-state")
     return html.Table([
         html.Thead(html.Tr([html.Th("Watch", scope="col"), html.Th("Port", scope="col"),
                            html.Th("Health", scope="col"), html.Th("Condition", scope="col"), html.Th("Context", scope="col")])),

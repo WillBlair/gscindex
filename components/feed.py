@@ -144,12 +144,9 @@ def build_briefing_panel(briefing_text: str = "") -> html.Div:
             ],
         )
 
-    return html.Div(
-        className="panel",
-        children=[
-            html.Div([html.Span("DAILY PERSPECTIVE", className="eyebrow"), html.H3("Your intelligence briefing", className="panel-title"), html.P("Automated summary of recent reporting. Verify details with the linked sources.", className="fine-print")]),
-            content,
-        ],
+    return html.Details(
+        className="panel briefing-disclosure",
+        children=[html.Summary("Briefing", title="Automated summary of recent reporting"), content],
     )
 
 
@@ -171,7 +168,7 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
             children=[
                 html.H3("Recent Alerts", className="panel-title"),
                 html.P(
-                    "No matching articles. Try clearing the search or choosing all topics and severities.",
+                    "No matching articles.",
                     className="alert-body",
                     style={"color": COLORS["text_muted"], "padding": "20px 0"},
                 ),
@@ -238,7 +235,7 @@ def build_news_panel(alerts: list[dict]) -> html.Div:
                     className="alert-title",
                     style={"display": "block", "textDecoration": "none", "color": "inherit", "fontWeight": "600", "marginBottom": "4px"},
                 ),
-                html.P(plain_text(alert.get("body", "")), className="alert-body"),
+                html.Details([html.Summary("Details"), html.P(plain_text(alert.get("body", "")), className="alert-body")], className="news-detail") if plain_text(alert.get("body", "")) else None,
             ],
         )
         items.append(item)

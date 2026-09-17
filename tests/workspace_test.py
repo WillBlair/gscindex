@@ -9,7 +9,7 @@ import pytest
 from components.workspace import (plain_text, safe_url, select_ports, select_news,
                                   daily_delta, composite_for, snapshot_csv, build_freshness)
 from components.charts import build_world_map
-from config import INDUSTRY_PROFILES
+from config import INDUSTRY_PROFILES, MAP_HEALTH_COLORS
 from scoring import get_health_tier
 
 
@@ -89,7 +89,34 @@ def test_stale_snapshot_is_never_labelled_latest(snapshot):
 
 def test_map_colors_use_same_bands_even_when_all_ports_are_stressed():
     fig = build_world_map([{"name": str(i), "lat": i, "lon": i, "score": score, "description": ""} for i, score in enumerate([41, 45, 59])])
-    assert set(fig.data[0].marker.color) == {get_health_tier(45)["color"]}
+    assert set(fig.data[0].marker.color) == {MAP_HEALTH_COLORS[get_health_tier(45)["label"]]}
+
+
+def test_relative_map_spreads_close_scores_without_changing_the_readings():
+    markers = [{"name": str(i), "lat": i, "lon": i, "score": score, "description": ""}
+               for i, score in enumerate([61, 62, 63])]
+    fig = build_world_map(markers, mode="relative")
+    assert list(fig.data[0].marker.color) == [1.0, 0.5, 0.0]
+    assert "63.0 / 100" in fig.data[0].text[0]
+    assert list(fig.data[0].customdata) == ["2", "1", "0"]
+    assert min(fig.data[0].marker.size) >= 11
+
+
+def test_relative_map_ties_do_not_invent_differences():
+    markers = [{"name": str(i), "lat": i, "lon": i, "score": 65, "description": ""} for i in range(3)]
+    assert set(build_world_map(markers, mode="relative").data[0].marker.color) == {0.5}
+
+
+def test_map_click_filters_to_the_actual_port(snapshot, monkeypatch):
+    monkeypatch.setenv("GSC_DISABLE_BACKGROUND", "1")
+    import app as application
+    snapshot["map_markers"] = [{"name": "Singapore", "score": 65.0, "lat": 1.35, "lon": 103.8}]
+    monkeypatch.setattr(application, "_DATA_CACHE", snapshot)
+    handler = next(v["callback"].__wrapped__ for k, v in application.app.callback_map.items() if "port-search.value" in k)
+    assert handler({"points": [{"customdata": "Singapore"}]}) == ("Singapore", "all", [])
+    import dash
+    with pytest.raises(dash.exceptions.PreventUpdate):
+        handler({"points": [{"customdata": "Invalid"}]})
 
 
 def test_workspace_callbacks_render_all_profiles_and_export(snapshot, monkeypatch):

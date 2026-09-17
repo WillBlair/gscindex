@@ -19,6 +19,7 @@ from config import (
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     COLORS,
+    MAP_HEALTH_COLORS,
     hex_to_rgba,
 )
 from scoring import get_health_tier
@@ -284,14 +285,14 @@ def build_category_cards(
         is_fallback = bool(meta.get("is_fallback"))
         fallback_badge = (
             html.Span(
-                "FALLBACK" if available else "NO DATA",
+                "EST" if available else "N/A",
                 title="Provider failed — showing a neutral default, not a measured value",
                 style={
                     "color": COLORS["orange"],
                     "border": f"1px solid {COLORS['orange']}",
                     "borderRadius": "var(--radius)",
                     "padding": "0 4px",
-                    "fontSize": "9px",
+                    "fontSize": "8px",
                     "fontWeight": "700",
                     "marginRight": "6px",
                     "letterSpacing": "0.5px",
@@ -336,7 +337,7 @@ def build_category_cards(
                         html.Span(
                             f"{score:.1f}" if available else "—",
                             className="tech-score",
-                            style={"color": tier["color"]},
+                            style={"color": MAP_HEALTH_COLORS[tier["label"]]},
                         ),
                         html.Div(
                             className="tech-delta-box",

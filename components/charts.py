@@ -10,6 +10,8 @@ All Plotly figures and Dash panels that appear in the main dashboard body:
 
 from __future__ import annotations
 
+from html import escape
+
 import plotly.graph_objects as go
 from dash import html
 
@@ -19,6 +21,8 @@ from config import (
     CATEGORY_WEIGHTS,
     COLORS,
     HEALTH_TIERS,
+    MAP_HEALTH_COLORS,
+    MAP_RISK_SCALE,
 )
 from scoring import get_health_tier
 
@@ -73,8 +77,8 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"family": "Satoshi", "color": COLORS["text_muted"]},
-        margin={"t": 18, "b": 50, "l": 32, "r": 10},
-        height=300,
+        margin={"t": 42, "b": 25, "l": 32, "r": 10},
+        height=245,
         dragmode=False,  # Disable drag interactions (pan/zoom selection)
         yaxis={
             "range": [0, 100],
@@ -93,10 +97,10 @@ def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
         },
         legend={
             "orientation": "h",
-            "yanchor": "top",
-            "y": -0.15,
-            "xanchor": "center",
-            "x": 0.5,
+            "yanchor": "bottom",
+            "y": 1.04,
+            "xanchor": "left",
+            "x": 0,
             "font": {"size": 10},
         },
         hovermode="x unified",
@@ -173,8 +177,8 @@ def build_category_panel(current_scores: dict[str, float]) -> html.Div:
     )
 
 
-def build_world_map(map_markers: list[dict]) -> go.Figure:
-    """Map ports with absolute health bands, consistent with the port table."""
+def build_world_map(map_markers: list[dict], mode: str = "health") -> go.Figure:
+    """Choose explicit absolute bands or relative ranks without changing scores."""
     lats: list[float] = []
     lons: list[float] = []
     scores: list[float] = []
@@ -193,27 +197,34 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         lons.append(marker["lon"])
         scores.append(score)
 
-        # Risk-based sizing: troubled ports are huge, healthy ports are tiny.
-        # Score 100 -> 4px, Score 80 -> ~8.8px (30% smaller than previous 11.6px)
-        sizes.append(max(3, 21 - score * 0.18))
+        sizes.append(11 + (100 - score) * 0.07)
 
         hover_texts.append(
-            f"<b>{marker['name']}</b><br>{marker['description']}"
+            f"<b>{escape(marker['name'])}</b><br>{score:.1f} / 100 · {get_health_tier(score)['label']}<br>Click to inspect"
         )
+
+    colors = [MAP_HEALTH_COLORS[get_health_tier(score)["label"]] for score in scores]
+    if mode == "relative":
+        # Ties share a hue. A flat day stays neutral rather than inventing a spread.
+        ranks = pd.Series(scores, dtype=float).rank(method="average")
+        colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist() if len(set(scores)) > 1 else [0.5] * len(scores)
 
     fig = go.Figure(
         go.Scattergeo(
             lat=lats,
             lon=lons,
             text=hover_texts,
+            customdata=[m["name"] for m in sorted_markers],
             hoverinfo="text",
             mode="markers",
             marker={
                 "size": sizes,
-                "color": [get_health_tier(score)["color"] for score in scores],
+                "color": colors,
+                "colorscale": MAP_RISK_SCALE,
+                "cmin": 0, "cmax": 1,
                 "showscale": False,
                 # Use solid dark background color for the border to create a sharp cutout effect
-                "line": {"width": 1.5, "color": COLORS["bg"]},
+                "line": {"width": 1.2, "color": "#071017"},
                 "opacity": 1.0,  # Full opacity for maximum contrast
             },
         )
@@ -229,7 +240,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"t": 0, "b": 0, "l": 0, "r": 0},
-        height=290,
+        height=310,
         uirevision="port-map",
         dragmode=False,
         hoverlabel={
@@ -243,14 +254,14 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             "bgcolor": "rgba(0,0,0,0)",
             "showframe": False,
             "showcoastlines": True,
-            "coastlinecolor": COLORS["card_border_hex"],
+            "coastlinecolor": "#415066",
             "showland": True,
-            "landcolor": "#1c3038",
+            "landcolor": "#263548",
             "showocean": True,
-            "oceancolor": "#101b21",
+            "oceancolor": "#0b121c",
             "showlakes": False,
             "showcountries": True,
-            "countrycolor": COLORS["card_border_hex"],
+            "countrycolor": "#415066",
             "projection": {"type": "natural earth"},
         },
     )

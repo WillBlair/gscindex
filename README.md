@@ -15,14 +15,17 @@ weights are preserved.
 - **Trend periods:** choose 7, 30, or 90 days; toggle signals through the legend.
   Missing history remains a gap, and sparse series display individual points.
 - **Intelligence:** search news by headline, description, or source and filter
-  by severity and topic. RSS markup is converted to readable text.
+  by severity and topic. Headlines are shown first, with descriptions and the
+  briefing available on expansion. RSS markup is converted to readable text.
 - **Export CSV:** download the selected profile's scores, weights, weighted
   contributions, source timestamps, and fallback status.
 - **Refresh:** updates panels in place and preserves filters and scroll position.
   Manual refresh reads the latest cache; it does not trigger provider API calls.
 - **Data quality:** snapshot timestamps, cached-data notices, and fallback/missing
   categories are explicit. Daily comparisons use the same profile's weights and
-  require consecutive, complete observations. Map colors use absolute health bands.
+  require consecutive, complete observations. The map defaults to relative risk
+  for comparing ports; switch to Health bands for absolute thresholds. Both views
+  show unchanged health scores, and clicking a marker filters the port monitor.
 
 For local use, install `requirements.txt` and run `python app.py` at
 `http://127.0.0.1:8050`. Set provider credentials in an untracked `.env` file;
