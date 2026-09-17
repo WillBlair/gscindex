@@ -114,7 +114,7 @@ def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
     prompt = "\n".join(prompt_lines)
 
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
         result = json.loads(response.text)
         
         # Map back to ID
@@ -161,7 +161,7 @@ def generate_briefing(articles: list[dict]) -> str:
     prompt = "\n".join(prompt_lines)
 
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
         return response.text.strip()
     except Exception as e:
         logger.error(f"Briefing generation failed: {e}")
@@ -228,7 +228,7 @@ def generate_newsletter_briefing(
         )
 
     try:
-        response = model.generate_content("\n".join(prompt_lines))
+        response = model.generate_content("\n".join(prompt_lines), request_options={"timeout": 45, "retry": None})
         return response.text.strip()
     except Exception as exc:
         logger.error("Newsletter briefing generation failed: %s", exc)
@@ -322,7 +322,7 @@ def generate_score_explanation(
     )
 
     try:
-        response = model.generate_content("\n".join(prompt_lines))
+        response = model.generate_content("\n".join(prompt_lines), request_options={"timeout": 45, "retry": None})
         return response.text.strip()
     except Exception as exc:
         logger.error("Score explanation generation failed: %s", exc)
@@ -363,7 +363,7 @@ def generate_full_report(articles: list[dict]) -> str:
     prompt = "\n".join(prompt_lines)
 
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
         return response.text.strip()
     except Exception as e:
         logger.error(f"Full report generation failed: {e}")
