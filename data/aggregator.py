@@ -36,8 +36,10 @@ from data.providers.silicon_analysts import ChipFabUtilProvider
 from data.providers.hormuz import HormuzStraitProvider
 from data.port_analyst import generate_port_summaries
 from scoring import get_health_tier
+from data.runtime import RefreshTasks
 
 logger = logging.getLogger(__name__)
+_FETCH_TASKS = RefreshTasks(max_workers=3)
 
 # All providers, instantiated once
 _PROVIDERS = [
@@ -673,18 +675,18 @@ def aggregate_data(status_callback=None) -> dict:
         freq="D",
     )
 
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    executor = _FETCH_TASKS
     try:
         # -- Submit Provider Tasks --
         future_to_provider = {
-            executor.submit(_fetch_provider_data, p): p
+            executor.submit_once(p.category, _fetch_provider_data, p): p
             for p in _PROVIDERS
         }
 
         # -- Submit News/Market/Port Tasks --
-        future_news = executor.submit(fetch_supply_chain_news)
-        future_market = executor.submit(_fetch_market_data)
-        future_port_summaries = executor.submit(generate_port_summaries)
+        future_news = executor.submit_once("news", fetch_supply_chain_news)
+        future_market = executor.submit_once("market", _fetch_market_data)
+        future_port_summaries = executor.submit_once("port_summaries", generate_port_summaries)
 
         # -------------------------------------------------------------------
         # 2. Collect Results (with Timeout)
@@ -793,8 +795,9 @@ def aggregate_data(status_callback=None) -> dict:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
     finally:
         # Do not block forever on a hung upstream call.
-        # Stuck futures are abandoned so the main update loop can keep running.
-        executor.shutdown(wait=False, cancel_futures=True)
+        # Running jobs remain tracked and are reused on the next refresh.
+        # Never create replacement pools for calls that are still running.
+        executor.cancel_pending()
 
 
     # -----------------------------------------------------------------------

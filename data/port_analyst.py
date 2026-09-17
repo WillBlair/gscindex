@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from data.runtime import serialized
 import os
 from datetime import datetime
 
@@ -158,6 +159,7 @@ def _normalize_summaries(raw, port_names: list[str]) -> dict[str, dict]:
     return normalized
 
 
+@serialized
 def generate_port_summaries() -> dict[str, dict]:
     """Generate AI-powered summaries for all major ports.
 
@@ -237,7 +239,7 @@ Analyze the current supply chain status for these {len(port_names)} major shippi
 You MUST return a JSON entry for EVERY port listed above ({len(port_names)} total).
 Provide the JSON status summary and disruption_penalty for each port."""
 
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
         raw_summaries = json.loads(response.text)
         summaries = _normalize_summaries(raw_summaries, port_names)
 

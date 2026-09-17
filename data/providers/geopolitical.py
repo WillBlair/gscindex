@@ -31,6 +31,7 @@ measurements only. No proxy series, no synthetic backfill.
 
 from datetime import datetime, timedelta
 import logging
+from data.runtime import serialized
 import os
 import requests
 import pandas as pd
@@ -283,6 +284,7 @@ def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
     )
 
 
+@serialized
 def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     """Fetch news and analyze using AI (Gemini) with VADER fallback.
     
