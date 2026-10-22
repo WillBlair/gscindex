@@ -184,7 +184,7 @@ def test_missing_live_score_renders_dash_not_zero():
 
 # --- readout -------------------------------------------------------------------
 
-def test_readout_shows_index_tier_and_categories():
+def test_readout_shows_index_and_tier_without_repeating_the_category_table():
     snap = snapshot()
     summary = index_summary(snap, "aerospace")
     readout = term.build_readout(snap, "aerospace", days=90)
@@ -194,8 +194,14 @@ def test_readout_shows_index_tier_and_categories():
     assert summary["tier"]["label"] in text
     assert "Aero" in text and "90 days" in text
     for row in category_rows(snap, "aerospace"):
-        assert row["label"] in text
+        assert row["label"] not in text
     assert any(isinstance(c, html.Img) and c.src.startswith("data:image/svg+xml") for c in walk(readout))
+
+
+def test_index_row_has_its_own_30_day_line():
+    table = term.build_category_table(snapshot(), "baseline")
+    index_row = next(c for c in walk(table) if "index-row" in str(getattr(c, "className", "") or ""))
+    assert any(isinstance(c, html.Img) and c.src.startswith("data:image/svg+xml") for c in walk(index_row))
 
 
 def test_readout_renders_without_daily_history():

@@ -190,16 +190,6 @@ def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:
     summary = index_summary(data, profile_key)
     tier = summary["tier"]
     color = tier["color"] if tier else DIM
-    rows = category_rows(data, profile_key)
-
-    category_list = []
-    for row in rows:
-        category_list += [
-            html.Span(row["label"], className="dim"),
-            html.Span(fmt(row["today"]), className="num", style={"color": _tier_color(row["today"])}),
-            html.Span(signed(row["change"]), className=f"num {change_class(row['change'])}"),
-        ]
-
     return html.Section([
         html.Div([html.Span(f"{_profile_name(profile_key)} index"), html.Span(_stamp(data))], className="ttl"),
         html.Div(fmt(summary["today"]), className="v num", style={"color": color}),
@@ -213,7 +203,6 @@ def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:
             html.Div(f"{days} days", className="dim spk-label"),
             sparkline(index_history(data, profile_key, days), 268, 46, AMBER),
         ], className="spk"),
-        html.Div(category_list, className="kv"),
     ], className="pane read")
 
 
@@ -366,7 +355,7 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
         html.Td(fmt(summary["yday"]), className="r hide-s dim num"),
         html.Td(signed(summary["change"]), className=f"r num {change_class(summary['change'])}"),
         html.Td(signed(summary["change"], 2), className=f"r num {change_class(summary['change'])}"),
-        html.Td(className="hide-s"),
+        html.Td(sparkline(index_history(data, profile_key, 30), 110, 18, index_color), className="hide-s"),
     ], className="index-row")
 
     return html.Table([head, html.Tbody(body), html.Tfoot(index_row)], className="categories")
