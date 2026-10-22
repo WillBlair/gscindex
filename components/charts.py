@@ -1,11 +1,9 @@
 """
 Dashboard Charts
 ================
-All Plotly figures and Dash panels that appear in the main dashboard body:
+The Terminal port map:
 
-    - ``build_history_chart``  — 90-day multi-line trend of every category
-    - ``build_category_panel`` — Horizontal health bars for each category
-    - ``build_world_map``      — Natural-earth port map with tier-colored risk dots
+    - ``build_world_map`` — Natural-earth port map with tier-colored risk dots
 """
 
 from __future__ import annotations
@@ -14,170 +12,11 @@ from html import escape
 import re
 from textwrap import wrap
 
-from components.workspace import plain_text
-
 import plotly.graph_objects as go
-from dash import html
 
-from config import (
-    CATEGORY_COLORS,
-    CATEGORY_LABELS,
-    CATEGORY_WEIGHTS,
-    COLORS,
-    HEALTH_TIERS,
-)
 from components.terminal_data import tier_for
+from components.workspace import plain_text
 from scoring import get_health_tier
-
-import pandas as pd
-
-
-
-def build_history_chart(category_history: dict[str, pd.Series]) -> go.Figure:
-    """Build a multi-line 90-day trend chart for all categories.
-
-    Parameters
-    ----------
-    category_history : dict[str, pd.Series]
-        Mapping of category key to pandas Series indexed by date.
-
-    Returns
-    -------
-    go.Figure
-        Plotly line chart with one trace per category.
-    """
-    fig = go.Figure()
-
-    for cat, series in category_history.items():
-        if series is None or getattr(series, "empty", False):
-            continue
-        color = CATEGORY_COLORS.get(cat, COLORS["text_muted"])
-        label = CATEGORY_LABELS.get(cat, cat.replace("_", " ").title())
-
-        fig.add_trace(
-            go.Scatter(
-                x=series.index,
-                y=series.values,
-                name=label,
-                mode="lines+markers" if series.count() < 5 else "lines",
-                connectgaps=False,
-                marker={"size": 6},
-                line={"color": color, "width": 2},
-                fill="none",
-                hovertemplate=f"<b>{label}</b><br>"
-                              "%{x|%b %d}<br>"
-                              "Score: %{y:.1f}<extra></extra>",
-            )
-        )
-
-    fig.update_layout(
-        title={
-            "text": "",
-            "font": {"size": 14, "color": COLORS["text"], "family": "Satoshi"},
-            "x": 0,
-            "xanchor": "left",
-        },
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Satoshi", "color": COLORS["text_muted"]},
-        margin={"t": 42, "b": 25, "l": 32, "r": 10},
-        height=320,
-        dragmode=False,  # Disable drag interactions (pan/zoom selection)
-        yaxis={
-            "range": [0, 100],
-            "gridcolor": COLORS["grid"],
-            "zeroline": False,
-            "tickfont": {"size": 11},
-            "title": None,
-            "fixedrange": True,  # Disable y-axis zoom/pan
-        },
-        xaxis={
-            "gridcolor": COLORS["grid"],
-            "zeroline": False,
-            "tickfont": {"size": 11},
-            "title": None,
-            "fixedrange": True,  # Disable x-axis zoom/pan
-        },
-        legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.04,
-            "xanchor": "left",
-            "x": 0,
-            "font": {"size": 12},
-        },
-        hovermode="x unified",
-        uirevision="category-trends",
-    )
-
-    return fig
-
-
-def build_category_panel(current_scores: dict[str, float]) -> html.Div:
-    """Build horizontal health bars for each category.
-
-    Parameters
-    ----------
-    current_scores : dict[str, float]
-        Mapping of category key to current score (0–100).
-
-    Returns
-    -------
-    html.Div
-        Dash component containing styled health bars.
-    """
-    bars = []
-    for cat in CATEGORY_WEIGHTS:
-        score = current_scores[cat]
-        tier = get_health_tier(score)
-        label = CATEGORY_LABELS[cat]
-        cat_color = CATEGORY_COLORS.get(cat, COLORS["text_muted"])
-
-        bar = html.Div(
-            className="health-bar-item",
-            children=[
-                html.Div(
-                    className="health-bar-label",
-                    children=[
-                        html.Span(
-                            label,
-                            # Inline style removed to allow CSS to control font/color
-                            # style={...} 
-                        ),
-                        html.Span(
-                            f"{score:.0f}",
-                            # Inline style removed, color controlled by CSS or parent
-                            # actually score color IS variable, so we need to keep color but remove font styles
-                            style={
-                                "color": tier["color"],
-                                # "fontSize": "0.8rem",  <-- Removed
-                                # "fontWeight": "700",   <-- Removed
-                            },
-                        ),
-                    ],
-                ),
-                html.Div(
-                    className="health-bar-track",
-                    children=[
-                        html.Div(
-                            className="health-bar-fill",
-                            style={
-                                "width": f"{score}%",
-                                "backgroundColor": cat_color,
-                            },
-                        ),
-                    ],
-                ),
-            ],
-        )
-        bars.append(bar)
-
-    return html.Div(
-        children=[
-            html.H3("Category Health", className="panel-title"),
-            html.Div(className="health-bar-container", children=bars),
-        ],
-    )
 
 
 def _port_hover_text(marker: dict) -> str:
@@ -259,12 +98,6 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     )
 
     fig.update_layout(
-        title={
-            "text": "",
-            "font": {"size": 14, "color": COLORS["text"], "family": "Satoshi"},
-            "x": 0,
-            "xanchor": "left",
-        },
         paper_bgcolor=MAP_BG,
         plot_bgcolor=MAP_BG,
         margin={"t": 0, "b": 0, "l": 0, "r": 0},
@@ -274,7 +107,7 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
         hoverlabel={
             "bgcolor": "#0D1117",
             "bordercolor": "#1D232B",
-            "font": {"family": "Arial, sans-serif", "size": 14, "color": "#F2F4F7"},
+            "font": {"family": "JetBrains Mono, monospace", "size": 12, "color": "#F2F4F7"},
             "align": "left",
             "namelength": -1,
         },

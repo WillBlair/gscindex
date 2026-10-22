@@ -312,7 +312,8 @@ CATEGORY_COLORS: dict[str, str] = {
 # Color Palette (consistent across all charts)
 # ---------------------------------------------------------------------------
 
-# Keep in sync with :root tokens in assets/style.css (UI makeover 2026-07-25).
+# Pre-Terminal palette (2026-07-25), kept for Python-rendered pieces outside the
+# dashboard. The dashboard's own palette lives in assets/terminal.css.
 COLORS = {
     "bg":           "#0a0a0b",
     "card":         "#111113",
@@ -331,9 +332,7 @@ COLORS = {
     "grid":         "#1e1e22",
 }
 
-# Keep in sync with --font-* tokens in assets/style.css.
-# Plotly SVG ignores CSS variables, so Python must pass the same stacks.
-# FONT_NUMBERS is the only face for meter/score figures (gauge + category cards).
+# Pre-Terminal font stacks. The dashboard uses JetBrains Mono and Inter (assets/terminal.css).
 FONT_SANS = "Satoshi, 'IBM Plex Sans', sans-serif"
 FONT_MONO = "IBM Plex Mono, ui-monospace, monospace"
 FONT_NUMBERS = "Satoshi, 'IBM Plex Sans', sans-serif"

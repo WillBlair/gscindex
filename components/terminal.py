@@ -85,6 +85,25 @@ def _stamp(data: dict) -> str:
     return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
 
 
+def updated_label(data: dict, now: datetime | None = None) -> str:
+    """'Updated N min ago' from the snapshot time (not the page load)."""
+    raw = data.get("last_updated_utc")
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return "Update time unavailable"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    minutes = int(max(0.0, ((now or datetime.now(timezone.utc)) - parsed).total_seconds()) // 60)
+    if minutes < 1:
+        return "Updated just now"
+    if minutes < 60:
+        return f"Updated {minutes} min ago"
+    if minutes < 48 * 60:
+        return f"Updated {minutes // 60} h ago"
+    return f"Updated {minutes // (24 * 60)} days ago"
+
+
 # --- sparkline ---------------------------------------------------------------------
 
 def sparkline_svg(values, width: int = 120, height: int = 28, stroke: str = "currentColor") -> str:
@@ -225,9 +244,12 @@ def _category_label(cat) -> str:
     return CATEGORY_LABELS.get(cat) or _EXTRA_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
 
 
-def build_headlines(alerts: list[dict], limit: int = 10) -> html.Table:
-    """Most severe first, newest first within a severity."""
-    ordered = sorted(select_news(alerts or []), key=lambda a: _SEVERITY_RANK.get(a.get("severity"), 3))[:limit]
+def build_headlines(alerts: list[dict], limit: int | None = 10, newest_first: bool = False) -> html.Table:
+    """Most severe first, newest first within a severity; ``newest_first`` keeps pure date order."""
+    ordered = select_news(alerts or [])
+    if not newest_first:
+        ordered = sorted(ordered, key=lambda a: _SEVERITY_RANK.get(a.get("severity"), 3))
+    ordered = ordered[:limit]
     head = html.Thead(html.Tr([
         html.Th("Sev"), html.Th("Category", className="hide-s"), html.Th("Headline"),
         html.Th("Source", className="hide-s"), html.Th("Age", className="r"),

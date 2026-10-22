@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, html, dcc
+from dash import Input, Output, State, ctx, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
@@ -278,9 +278,8 @@ def create_app() -> dash.Dash:
             {"name": "description", "content": "Independent global supply chain intelligence: health scores, port conditions, industry signals and the news behind them."},
         ],
         external_stylesheets=[
-            dbc.themes.DARKLY,
-            "https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap",
-            "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
+            dbc.themes.BOOTSTRAP,
+            "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap",
         ],
         suppress_callback_exceptions=True,
     )
@@ -288,19 +287,18 @@ def create_app() -> dash.Dash:
     # ── Custom Index String (Prevents White Flash) ──────────────────────
     app.index_string = '''
     <!DOCTYPE html>
-    <html lang="en">
+    <html lang="en" data-bs-theme="dark">
         <head>
             {%metas%}
             <title>{%title%}</title>
             {%favicon%}
-            <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
-            <link rel="preconnect" href="https://tiles.basemaps.cartocdn.com" crossorigin>
-            <link rel="preload" href="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json" as="fetch" crossorigin>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
             {%css%}
             <style>
                 body {
-                    background-color: #0c1216;
-                    color: #ececef;
+                    background-color: #000000;
+                    color: #F2F4F7;
                     margin: 0;
                 }
                 ._dash-loading {
@@ -520,218 +518,6 @@ def create_app() -> dash.Dash:
         Input("boot-reload-trigger", "children"),
         prevent_initial_call=True
     )
-    
-    # ── Generate Briefing On-Demand (Option 5: User-Triggered) ───────────
-    @app.callback(
-        Output("briefing-content", "children"),
-        Input("generate-briefing-btn", "n_clicks"),
-        prevent_initial_call=True
-    )
-    def generate_briefing_callback(n_clicks):
-        """Generate AI briefing only when user clicks the button."""
-        if not n_clicks:
-            return dash.no_update
-        
-        from api.briefing import get_on_demand_briefing
-        from config import COLORS
-        
-        result = get_on_demand_briefing()
-        
-        if result["success"] and result["briefing"]:
-            from components.feed import format_briefing_content
-
-            return format_briefing_content(result["briefing"])
-        else:
-            # Return error message
-            return html.P(
-                result.get("error") or "Failed to generate briefing. Please try again later.",
-                className="briefing-empty-copy",
-                style=None if result.get("pending") else {"color": COLORS["red"]},
-            )
-
-    # ── Modal Interaction Callbacks ─────────────────────────────────────
-    # Card clicks use pattern-matching ALL so the open callback only depends
-    # on cards that are actually mounted (baseline vs semiconductor). Fixed
-    # Input("card-chip_*") IDs for unmounted cards prevent the whole callback
-    # from firing under Dash's "all Inputs must be present" rule.
-    from dash import ALL, ctx
-    from config import CATEGORY_LABELS, COLORS, INDUSTRY_PROFILES
-    import traceback
-
-    def _build_category_modal_body(cat: str, metadata: dict | None) -> tuple:
-        metadata = metadata or {}
-        meta = metadata.get(cat, {})
-        label = CATEGORY_LABELS.get(cat, cat.title())
-
-        tier = meta.get("tier", {}) or {}
-        score = meta.get("score", "N/A")
-        tier_color = tier.get("color", "#ffffff")
-        tier_label = tier.get("label", "Unknown")
-
-        progress_style = {
-            "width": f"{score}%" if isinstance(score, (int, float)) else "0%",
-            "height": "8px",
-            "backgroundColor": tier_color,
-            "borderRadius": "var(--radius)",
-            "marginTop": "5px",
-        }
-
-        content = html.Div([
-            html.Div([
-                html.Div([
-                    html.H6("Index Score", style={"color": "#9ca3af", "marginBottom": "0"}),
-                    html.H1(
-                        f"{score:.1f}" if isinstance(score, (int, float)) else f"{score}",
-                        className="tech-score",
-                        style={
-                            "fontWeight": "600",
-                            "fontSize": "48px",
-                            "color": tier_color,
-                            "margin": "0",
-                        },
-                    ),
-                    html.Div(style=progress_style),
-                ], style={"flex": "1"}),
-                html.Div([
-                    html.H6("Health Tier", style={"color": "#9ca3af", "marginBottom": "5px"}),
-                    dbc.Badge(
-                        tier_label,
-                        color="light",
-                        style={
-                            "backgroundColor": tier_color,
-                            "color": "#000" if tier_label in ["Healthy", "Stable"] else "#fff",
-                            "fontSize": "18px",
-                            "padding": "8px 12px",
-                        },
-                    ),
-                ], style={"flex": "1", "textAlign": "right"}),
-            ], style={
-                "display": "flex",
-                "alignItems": "center",
-                "marginBottom": "25px",
-                "paddingBottom": "20px",
-                "borderBottom": "1px solid #2a2d3a",
-            }),
-            html.H5(
-                "Underlying Data",
-                style={"color": "#fff", "fontWeight": "bold", "marginBottom": "15px"},
-            ),
-            html.Div([
-                html.Div([
-                    html.Span("Raw Value", style={"color": "#9ca3af", "fontSize": "14px"}),
-                    html.H3(
-                        meta.get("raw_value", "N/A"),
-                        style={"fontWeight": "bold", "marginTop": "5px"},
-                    ),
-                ], style={"flex": "1"}),
-                html.Div([
-                    html.Span("Data Source", style={"color": "#9ca3af", "fontSize": "14px"}),
-                    html.P(
-                        meta.get("source", "Unknown"),
-                        style={
-                            "fontWeight": "500",
-                            "marginTop": "5px",
-                            "color": COLORS["text"],
-                        },
-                    ),
-                ], style={"flex": "1"}),
-            ], style={
-                "display": "flex",
-                "gap": "20px",
-                "marginBottom": "20px",
-                "backgroundColor": COLORS["card_raised"],
-                "padding": "15px",
-                "borderRadius": "var(--radius)",
-            }),
-            html.H5(
-                "Analysis",
-                style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"},
-            ),
-            html.P(
-                meta.get("description", "No detailed description available."),
-                style={
-                    "fontSize": "15px",
-                    "lineHeight": "1.6",
-                    "color": COLORS["text_muted"],
-                    "marginBottom": "25px",
-                },
-            ),
-            html.H5(
-                "Scoring Logic",
-                style={"color": COLORS["text"], "fontWeight": "bold", "marginBottom": "10px"},
-            ),
-            html.Div(
-                html.Code(
-                    meta.get("calculation", "Calculation logic not available."),
-                    style={
-                        "color": COLORS["text"],
-                        "fontFamily": "IBM Plex Mono, ui-monospace, monospace",
-                    },
-                ),
-                style={
-                    "backgroundColor": COLORS["card_raised"],
-                    "padding": "15px",
-                    "borderRadius": "var(--radius)",
-                    "border": f"1px solid {COLORS['card_border']}",
-                },
-            ),
-            html.Hr(style={"borderColor": COLORS["card_border_hex"], "marginTop": "20px"}),
-            html.Small(
-                f"Raw Label: {meta.get('raw_label', '')} | "
-                f"Last Updated: {meta.get('updated', 'Unknown')}",
-                style={"color": COLORS["text_faint"]},
-            ),
-        ])
-        return html.H5(f"{label} Details"), content
-
-    @app.callback(
-        Output("details-modal", "is_open", allow_duplicate=True),
-        Output("modal-header", "children"),
-        Output("modal-body", "children"),
-        Input({"type": "category-card", "index": ALL}, "n_clicks"),
-        State("category-metadata-store", "data"),
-        prevent_initial_call=True,
-    )
-    def open_category_modal(n_clicks_list, metadata):
-        try:
-            triggered = ctx.triggered_id
-            if not isinstance(triggered, dict) or triggered.get("type") != "category-card":
-                raise dash.exceptions.PreventUpdate
-
-            # Ignore 0-clicks from dynamically recreated cards (profile switch).
-            click_val = None
-            for trig_info in ctx.triggered:
-                if trig_info.get("prop_id", "").endswith(".n_clicks"):
-                    click_val = trig_info.get("value")
-                    break
-            if click_val is None or click_val == 0:
-                raise dash.exceptions.PreventUpdate
-
-            cat = triggered.get("index")
-            if not cat:
-                raise dash.exceptions.PreventUpdate
-
-            header, body = _build_category_modal_body(cat, metadata)
-            return True, header, body
-        except dash.exceptions.PreventUpdate:
-            raise
-        except Exception as e:
-            logging.error("open_category_modal error: %s", e)
-            logging.error(traceback.format_exc())
-            raise dash.exceptions.PreventUpdate
-
-    @app.callback(
-        Output("details-modal", "is_open", allow_duplicate=True),
-        Input({"type": "modal-dismiss", "index": ALL}, "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def close_category_modal(dismiss_clicks):
-        triggered = ctx.triggered_id
-        if not isinstance(triggered, dict) or triggered.get("type") != "modal-dismiss":
-            raise dash.exceptions.PreventUpdate
-        if not any(dismiss_clicks or []):
-            raise dash.exceptions.PreventUpdate
-        return False
 
     # ── API Modal Callback ──────────────────────────────────────────────
     @app.callback(
@@ -746,24 +532,10 @@ def create_app() -> dash.Dash:
             return True
         return False
 
-    # ── Newsletter Modal Callback ─────────────────────────────────────────────
-    @app.callback(
-        Output("newsletter-modal", "is_open"),
-        Input("newsletter-btn", "n_clicks"),
-        Input("newsletter-modal-close", "n_clicks"),
-        Input("newsletter-toast-inner", "n_clicks"),
-        State("newsletter-modal", "is_open"),
-        prevent_initial_call=True,
-    )
-    def toggle_newsletter_modal(open_click, close_click, toast_click, is_open):
-        ctx_id = ctx.triggered_id
-        if ctx_id == "newsletter-modal-close":
-            return False
-        if ctx_id in ("newsletter-btn", "newsletter-toast-inner"):
-            return True
-        return is_open
-
     # ── Newsletter Submit Callback ────────────────────────────────────────────
+    # Terminal tier colors (components.terminal_data.TIER_COLORS).
+    _FEEDBACK_OK = {"color": "#35D07F"}
+    _FEEDBACK_ERROR = {"color": "#FF4D5E"}
     # Letters, digits and . _ % + - in the local part; no quotes, commas or
     # spaces, which could otherwise end up inside the email To header.
     _EMAIL_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")
@@ -779,15 +551,15 @@ def create_app() -> dash.Dash:
     def handle_newsletter_submit(n_clicks, email):
         email = str(email or "").strip().lower()
         if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
-            return "Please enter a valid email address.", {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
+            return "Please enter a valid email address.", _FEEDBACK_ERROR, dash.no_update
         
         from data.database import add_subscriber
         result = add_subscriber(email)
         
         if result.get("success"):
-            return "You're subscribed to the daily briefing.", {"color": "#10b981", "marginTop": "15px", "fontSize": "14px"}, ""
+            return "You're subscribed to the daily briefing.", _FEEDBACK_OK, ""
         else:
-            return result.get("message", "An error occurred."), {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
+            return result.get("message", "An error occurred."), _FEEDBACK_ERROR, dash.no_update
 
     from components.workspace_callbacks import register_workspace_callbacks
 

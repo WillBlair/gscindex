@@ -6,10 +6,12 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from components.workspace import (plain_text, safe_url, select_news,
-                                  daily_delta, composite_for, snapshot_csv, build_freshness)
+from dash import dcc, html
+
+from components.workspace import plain_text, safe_url, select_news, snapshot_csv
 from components.charts import build_world_map
-from components.terminal_data import TIER_COLORS
+from components.terminal import fmt
+from components.terminal_data import TIER_COLORS, index_summary
 from config import INDUSTRY_PROFILES
 
 
@@ -45,24 +47,10 @@ def test_news_filters_search_clean_content_and_order_newest():
     assert select_news(alerts, "oil", "low") == []
 
 
-def test_each_profile_compares_its_own_weighted_history(snapshot):
-    snapshot["current_scores"]["chip_fab_util"] = 100.0
-    assert daily_delta(snapshot, "baseline") == 20.0
-    assert daily_delta(snapshot, "semiconductor") == 24.0
 
 
-def test_missing_scores_never_become_zero(snapshot):
-    del snapshot["current_scores"]["chip_fab_util"]
-    assert composite_for(snapshot, "semiconductor") is None
-    assert composite_for(snapshot, "baseline") == 80.0
 
 
-def test_fallbacks_and_gaps_do_not_make_daily_comparisons(snapshot):
-    snapshot["category_metadata"]["weather"]["is_fallback"] = True
-    assert daily_delta(snapshot, "baseline") is None
-    snapshot["category_metadata"]["weather"] = {}
-    snapshot["category_history"]["weather"].iloc[-2] = float("nan")
-    assert daily_delta(snapshot, "baseline") is None
 
 
 def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
@@ -75,9 +63,6 @@ def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
     assert weather["snapshot_utc"] == snapshot["last_updated_utc"]
 
 
-def test_stale_snapshot_is_never_labelled_latest(snapshot):
-    status = build_freshness(snapshot, "baseline", now=datetime(2026, 9, 17, tzinfo=timezone.utc))
-    assert status.children[0].children[1] == "Cached snapshot"
 
 
 def test_map_colors_by_tier_without_changing_the_readings():
@@ -127,26 +112,6 @@ def test_map_hover_keeps_all_supplied_context_and_handles_absence():
     assert "Score:" not in hover
 
 
-def test_workspace_callbacks_render_all_profiles_and_export(snapshot, monkeypatch):
-    monkeypatch.setenv("GSC_DISABLE_BACKGROUND", "1")
-    import app as application
-    monkeypatch.setattr(application, "_DATA_CACHE", snapshot)
-    monkeypatch.setattr(application, "_DATA_IS_FRESH", True)
-    client = application.server.test_client()
-    layout_response = client.get("/_dash-layout")
-    assert layout_response.status_code == 200
-    layout_text = layout_response.get_data(as_text=True)
-    assert '"id":"port-search"' not in layout_text
-    assert '"id":"map-mode"' not in layout_text
-    app = application.app
-    overview = next(v["callback"].__wrapped__ for k, v in app.callback_map.items() if "overview-summary.children" in k)
-    for key in INDUSTRY_PROFILES:
-        result = overview(key, 0)
-        assert len(result[2]) == len(INDUSTRY_PROFILES[key]["card_categories"])
-        assert result[-1] == 300_000
-    download = app.callback_map["snapshot-download.data"]["callback"].__wrapped__(1, "baseline")
-    assert download["filename"] == "gscindex-baseline.csv"
-    assert "weighted_points" in download["content"]
 
 
 def test_api_uses_snapshot_timestamp(snapshot, monkeypatch):
@@ -173,20 +138,140 @@ def test_map_navigation_is_enabled():
     assert build_world_map([]).layout.dragmode == "pan"
 
 
-def test_missing_daily_comparison_is_distinct_from_zero():
-    from components.cards import build_category_cards
-    def text(node):
-        if isinstance(node, (list, tuple)):
-            return " ".join(text(x) for x in node)
-        if hasattr(node, "children"):
-            return text(node.children)
-        return str(node or "")
-    dates = pd.date_range("2026-09-15", periods=2)
-    args = {"current_scores": {"weather": 80.0}, "active_weights": {"weather": 1.0}}
-    flat = text(build_category_cards(category_history={"weather": pd.Series([80., 80.], index=dates)}, **args))
-    sparse = text(build_category_cards(category_history={"weather": pd.Series([80.], index=dates[-1:])}, **args))
-    assert "24h change 0.0" in flat
-    assert "No prior day" in sparse
-    fallback = text(build_category_cards(category_history={}, metadata={"weather": {"is_fallback": True}}, **args))
-    assert "Estimated" in fallback and "History unavailable" in fallback
-    assert "30d low N/A" in fallback and "30d high N/A" in fallback
+# --- terminal layout and callbacks ----------------------------------------------
+
+def _walk(node):
+    if isinstance(node, (list, tuple)):
+        for child in node:
+            yield from _walk(child)
+        return
+    if not hasattr(node, "_prop_names"):
+        return
+    yield node
+    yield from _walk(getattr(node, "children", None))
+
+
+def _text(node):
+    if node is None:
+        return ""
+    if isinstance(node, (str, int, float)):
+        return str(node)
+    if isinstance(node, (list, tuple)):
+        return " ".join(_text(n) for n in node)
+    return _text(getattr(node, "children", None))
+
+
+def _callback(app, output):
+    return next(v["callback"].__wrapped__ for k, v in app.callback_map.items() if output in [part.strip(".") for part in k.split("...")])
+
+
+@pytest.fixture
+def terminal_app(snapshot, monkeypatch):
+    monkeypatch.setenv("GSC_DISABLE_BACKGROUND", "1")
+    import app as application
+    snapshot["daily_history"] = {
+        "dates": ["2026-09-15", "2026-09-16"],
+        "scores": {c: [75.0, None] for c in snapshot["current_scores"]},
+    }
+    snapshot["alerts"] = [
+        {"title": f"Story {i}", "severity": sev, "category": "energy", "source": "Wire",
+         "url": "https://example.org", "timestamp": f"2026-09-{10 + i:02d}T00:00:00Z"}
+        for i, sev in enumerate(["high", "low", "medium", "low", "high", "low", "low", "medium", "low", "low", "low", "high"])
+    ]
+    monkeypatch.setattr(application, "_DATA_CACHE", snapshot)
+    monkeypatch.setattr(application, "_DATA_IS_FRESH", True)
+    monkeypatch.setattr("data.cache.get_cached_dashboard", lambda: None)
+    return application
+
+
+def test_layout_serves_the_terminal_panes_only(terminal_app):
+    response = terminal_app.server.test_client().get("/_dash-layout")
+    assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    for pane_id in ("profile-switch", "readout", "trend-range", "world-map", "quotes", "news-search",
+                    "news-severity", "news-category", "news-results", "news-results-count", "briefing",
+                    "category-table", "refresh-interval", "profile-store", "snapshot-download", "api-modal",
+                    "newsletter-popover", "updated-label"):
+        assert f'"id":"{pane_id}"' in text, pane_id
+    for removed in ("refresh-btn", "profile-selector", "overview-summary", "pressure-drivers", "cards-container",
+                    "trend-chart", "details-modal", "newsletter-modal", "generate-briefing-btn", "port-search", "map-mode"):
+        assert f'"id":"{removed}"' not in text, removed
+    assert "higher is healthier" not in text
+
+
+def test_removed_callbacks_are_gone(terminal_app):
+    outputs = " ".join(terminal_app.app.callback_map)
+    for gone in ("briefing-content", "details-modal", "newsletter-modal", "modal-body"):
+        assert gone not in outputs
+
+
+def test_workspace_callbacks_render_all_profiles_and_export(terminal_app):
+    app = terminal_app.app
+    snapshot = terminal_app._DATA_CACHE
+    assert _callback(app, "profile-store.data")("semiconductor") == "semiconductor"
+    overview = _callback(app, "category-table.children")
+    for key in INDUSTRY_PROFILES:
+        readout, table = overview(key, 0, 30)
+        summary = index_summary(snapshot, key)
+        index_row = next(c for c in _walk(table) if getattr(c, "className", None) == "index-row")
+        cells = [_text(c) for c in index_row.children]
+        assert cells[3] == fmt(summary["today"])
+        assert cells[4] == fmt(summary["yday"]) == "75.0"
+        assert fmt(summary["today"]) in _text(readout)
+        body_rows = [c for c in _walk(table) if isinstance(c, html.Tr)]
+        assert len(body_rows) == len(INDUSTRY_PROFILES[key]["weights"]) + 2  # header + rows + index
+    download = _callback(app, "snapshot-download.data")(1, "baseline")
+    assert download["filename"] == "gscindex-baseline.csv"
+    assert "weighted_points" in download["content"]
+
+
+def test_trend_range_drives_the_readout_line(terminal_app):
+    overview = _callback(terminal_app.app, "category-table.children")
+    assert "7 days" in _text(overview("baseline", 0, 7)[0])
+    assert "90 days" in _text(overview("baseline", 0, 90)[0])
+    assert "30 days" in _text(overview("baseline", 0, "bogus")[0])
+
+
+def test_refresh_updates_context_panes_and_interval(terminal_app, monkeypatch):
+    refresh = _callback(terminal_app.app, "refresh-interval.interval")
+    figure, quotes, briefing, updated, interval = refresh(3)
+    assert figure.data[0].type == "scattergeo"
+    assert "Read full report" in _text(briefing)
+    assert updated.startswith("Updated")
+    assert interval == 300_000
+    monkeypatch.setattr(terminal_app, "_DATA_IS_FRESH", False)
+    assert refresh(4)[-1] == 20_000
+
+
+def test_headlines_list_every_alert_newest_first_and_filter(terminal_app):
+    news = _callback(terminal_app.app, "news-results.children")
+    table, count = news("", "all", "all", 0)
+    titles = [_text(c) for c in _walk(table) if getattr(c, "className", None) == "h"]
+    assert titles == [f"Story {i}" for i in range(11, -1, -1)]
+    assert count == "12 tracked"
+    table, count = news("story", "high", "all", 0)
+    titles = [_text(c) for c in _walk(table) if getattr(c, "className", None) == "h"]
+    assert titles == ["Story 11", "Story 4", "Story 0"]
+    assert count == "3 of 12"
+
+
+def test_map_graph_hides_modebar_and_keeps_pan_and_zoom(snapshot):
+    from components.layout import build_layout
+    graph = next(c for c in _walk(build_layout(snapshot)) if getattr(c, "id", None) == "world-map")
+    assert isinstance(graph, dcc.Graph)
+    assert graph.config["displayModeBar"] is False
+    assert graph.config["scrollZoom"] is True
+    assert graph.figure.layout.dragmode == "pan"
+
+
+def test_map_hover_uses_the_terminal_mono_face():
+    assert "JetBrains Mono" in build_world_map([]).layout.hoverlabel.font.family
+
+
+def test_updated_label_reads_minutes_since_the_snapshot():
+    from components.terminal import updated_label
+    now = datetime(2026, 9, 16, 12, 7, 30, tzinfo=timezone.utc)
+    assert updated_label({"last_updated_utc": "2026-09-16T12:00:00Z"}, now=now) == "Updated 7 min ago"
+    assert updated_label({"last_updated_utc": "2026-09-16T11:59:40Z"}, now=datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)) == "Updated just now"
+    assert updated_label({"last_updated_utc": "2026-09-16T09:00:00Z"}, now=now) == "Updated 3 h ago"
+    assert updated_label({}, now=now) == "Update time unavailable"
