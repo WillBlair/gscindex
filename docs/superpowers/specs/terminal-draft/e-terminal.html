@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draft E: Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+  :root {
+    --bg: #000000;
+    --cell: #07090C;
+    --grid: #1D232B;
+    --text: #F2F4F7;
+    --dim: #8A94A3;
+    --amber: #FFB020;
+    --healthy: #35D07F; --stable: #F5C542; --stressed: #FF8A3D; --critical: #FF4D5E;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "JetBrains Mono", monospace; font-size: 13px; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .sans { font-family: "Inter", system-ui, sans-serif; }
+
+  /* One continuous grid; panes are separated by 1px rules, not floating cards */
+  .shell { display: grid; grid-template-columns: 300px 1fr 300px; grid-auto-rows: auto; gap: 1px; background: var(--grid); border-bottom: 1px solid var(--grid); min-height: 100vh; align-content: start; }
+  .pane { background: var(--cell); padding: 14px 16px; min-width: 0; }
+  .head { grid-column: 1 / -1; display: flex; align-items: center; gap: 22px; padding: 0 16px; height: 44px; background: var(--bg); }
+  .brand { font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+  .brand b { color: var(--amber); }
+  .views { display: flex; gap: 2px; }
+  .views button { font: inherit; background: none; border: 1px solid transparent; color: var(--dim); padding: 5px 10px; cursor: pointer; }
+  .views button[aria-pressed="true"] { color: var(--bg); background: var(--amber); }
+  .hr { margin-left: auto; display: flex; gap: 18px; align-items: center; color: var(--dim); }
+  .hr a { text-decoration: none; white-space: nowrap; }
+  .hr a:hover { color: var(--text); }
+  .hr a.sub { color: var(--amber); border: 1px solid var(--amber); padding: 4px 10px; }
+
+  .ttl { color: var(--amber); font-size: 12px; margin: 0 0 10px; display: flex; justify-content: space-between; }
+  .ttl span:last-child { color: var(--dim); }
+
+  .read .v { font-size: 76px; font-weight: 500; letter-spacing: -0.04em; line-height: 1; }
+  .read .tier { font-size: 15px; margin-top: 8px; font-weight: 700; }
+  .read .chg { margin-top: 4px; color: var(--dim); }
+  .kv { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--grid); }
+  .kv span:nth-child(3n+1) { color: var(--dim); }
+  .kv span:nth-child(3n+2), .kv span:nth-child(3n) { text-align: right; }
+  .spk { margin-top: 14px; color: var(--amber); }
+  #map { height: 100%; min-height: 380px; }
+
+  #quotes > div { display: grid; grid-template-columns: 1fr auto; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+  #quotes > div span:first-child { color: var(--dim); }
+  #quotes b { font-weight: 500; }
+  #quotes small { grid-column: 2; text-align: right; }
+
+  .wide { grid-column: 1 / 3; }
+  .full { grid-column: 1 / -1; }
+  table { width: 100%; border-collapse: collapse; }
+  th { color: var(--dim); font-weight: 400; text-align: left; padding: 0 10px 6px 0; border-bottom: 1px solid var(--grid); font-size: 12px; }
+  td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  tr:hover td { background: #0D1117; }
+  td.r, th.r { text-align: right; }
+  td.h { font-family: "Inter", sans-serif; font-size: 14px; color: var(--text); }
+  td.h a { text-decoration: none; } td.h a:hover { text-decoration: underline; }
+  .sev { font-weight: 700; }
+  .bar { position: relative; height: 8px; background: #141A21; margin-top: 4px; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; }
+  .bar u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); opacity: 0.5; }
+  .brief p { font-family: "Inter", sans-serif; font-size: 14px; line-height: 1.5; margin: 0 0 12px; color: #D6DBE3; }
+  .neg { color: var(--critical); } .pos { color: var(--healthy); } .dim { color: var(--dim); }
+
+  @media (max-width: 1100px) {
+    .shell { grid-template-columns: 1fr; }
+    .wide, .full { grid-column: auto; }
+    .head { flex-wrap: wrap; height: auto; padding: 10px 16px; gap: 10px; }
+    .hr a.opt { display: none; }
+    .hide-s { display: none; }
+  }
+  :focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="head">
+    <div class="brand"><b>GSCI</b> Global Supply Chain Index</div>
+    <div class="views" id="views" role="group" aria-label="Industry view"></div>
+    <div class="hr"><span id="updated"></span><a class="opt" href="#">Methodology</a><a class="opt" href="#">API</a><a class="opt" href="#">CSV</a><a class="sub" href="#">Subscribe</a></div>
+  </div>
+
+  <section class="pane read">
+    <div class="ttl"><span id="scope">INDEX</span><span id="date"></span></div>
+    <div class="v" id="v"></div>
+    <div class="tier" id="tier"></div>
+    <div class="chg" id="chg"></div>
+    <div class="spk"><div class="dim" style="font-size:11px;margin-bottom:4px">30 days</div><div id="spk"></div></div>
+    <div class="kv" id="kv"></div>
+  </section>
+  <section class="pane" style="padding:0"><div id="map"></div></section>
+  <section class="pane quotes"><div class="ttl"><span>Markets</span><span>last</span></div><div id="quotes"></div></section>
+
+  <section class="pane wide">
+    <div class="ttl"><span>Headlines</span><span id="ncount"></span></div>
+    <table><thead><tr><th>Sev</th><th class="hide-s">Category</th><th>Headline</th><th class="hide-s">Source</th><th class="r">Age</th></tr></thead><tbody id="news"></tbody></table>
+  </section>
+  <section class="pane"><div class="ttl"><span>Briefing</span><span></span></div><div class="brief" id="brief"></div></section>
+
+  <section class="pane full">
+    <div class="ttl"><span>Categories</span><span>bar = today, tick = yesterday</span></div>
+    <table><thead><tr><th>Category</th><th class="r hide-s">Wt</th><th style="width:28%">Score</th><th class="r">Today</th><th class="r hide-s">Yest.</th><th class="r">Chg</th><th class="r">Effect</th><th class="hide-s">30 days</th><th class="hide-s">Source</th></tr></thead>
+    <tbody id="cats"></tbody><tfoot id="foot"></tfoot></table>
+  </section>
+</div>
+
+<script src="common.js"></script>
+<script>
+const HEX = { Healthy: "#35D07F", Stable: "#F5C542", Stressed: "#FF8A3D", Critical: "#FF4D5E" };
+const names = { baseline: "Global", semiconductor: "Semis", aerospace: "Aero" };
+let profile = "baseline";
+const cls = v => v < -0.05 ? "neg" : v > 0.05 ? "pos" : "dim";
+
+function render() {
+  const s = GSC.summary(profile);
+  document.getElementById("scope").textContent = `${names[profile]} index`;
+  const v = document.getElementById("v"); v.textContent = GSC.fmt(s.today); v.style.color = HEX[s.tier.label];
+  const t = document.getElementById("tier"); t.textContent = s.tier.label; t.style.color = HEX[s.tier.label];
+  document.getElementById("chg").innerHTML = `<span class="${cls(s.change)}">${GSC.signed(s.change)}</span> vs yesterday ${GSC.fmt(s.yday)}`;
+  document.getElementById("spk").innerHTML = GSC.sparkline(GSC.compositeHistory(profile).slice(-30), { w: 268, h: 46, stroke: "#FFB020" });
+  const rows = GSC.rows(profile);
+  document.getElementById("kv").innerHTML = rows.map(r => `<span>${r.label}</span><span style="color:${HEX[GSC.tier(r.today).label]}">${GSC.fmt(r.today)}</span><span class="${cls(r.change)}">${GSC.signed(r.change)}</span>`).join("");
+  document.getElementById("cats").innerHTML = rows.map(r => {
+    const c = HEX[GSC.tier(r.today).label];
+    return `<tr><td>${r.label}</td><td class="r hide-s dim">${Math.round(r.weight * 100)}%</td>
+      <td><div class="bar"><i style="width:${r.today}%;background:${c}"></i><u style="left:${r.yday}%"></u></div></td>
+      <td class="r" style="color:${c}">${GSC.fmt(r.today)}</td><td class="r hide-s dim">${GSC.fmt(r.yday)}</td>
+      <td class="r ${cls(r.change)}">${GSC.signed(r.change)}</td><td class="r ${cls(r.effect)}">${GSC.signed(r.effect, 2)}</td>
+      <td class="hide-s">${GSC.sparkline(r.hist, { w: 110, h: 18, stroke: c })}</td><td class="hide-s dim">${r.meta.source || ""}</td></tr>`;
+  }).join("");
+  document.getElementById("foot").innerHTML = `<tr><td><b>Index</b></td><td class="r hide-s dim">100%</td><td></td><td class="r" style="color:${HEX[s.tier.label]}"><b>${GSC.fmt(s.today)}</b></td><td class="r hide-s dim">${GSC.fmt(s.yday)}</td><td class="r ${cls(s.change)}">${GSC.signed(s.change)}</td><td class="r ${cls(s.change)}">${GSC.signed(s.change, 2)}</td><td class="hide-s"></td><td class="hide-s"></td></tr>`;
+  document.querySelectorAll("#views button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === profile));
+}
+
+GSC.load().then(D => {
+  document.getElementById("views").innerHTML = Object.keys(D.profiles).map(k => `<button data-k="${k}">${names[k]}</button>`).join("");
+  document.querySelectorAll("#views button").forEach(b => b.onclick = () => { profile = b.dataset.k; render(); });
+  document.getElementById("updated").textContent = GSC.updatedLabel();
+  document.getElementById("date").textContent = new Date(D.updated).toISOString().slice(0, 16).replace("T", " ") + "Z";
+  document.getElementById("brief").innerHTML = GSC.briefingBullets().map(b => `<p>${b}</p>`).join("");
+  document.getElementById("quotes").innerHTML = Object.entries(D.market).map(([k, q]) =>
+    `<div><span>${k}</span><b>${GSC.fmt(q.price, 2)}</b><small class="${cls(q.change_pct)}">${GSC.signed(q.change_pct)}%</small></div>`).join("");
+  const sevC = { high: HEX.Critical, medium: HEX.Stressed, low: "#8A94A3" };
+  document.getElementById("ncount").textContent = `${D.alerts.length} tracked`;
+  document.getElementById("news").innerHTML = GSC.topAlerts(10).map(a => `<tr>
+    <td class="sev" style="color:${sevC[a.severity]}">${({ high: "HIGH", medium: "MED", low: "LOW" })[a.severity]}</td>
+    <td class="hide-s dim">${D.labels[a.category] || ({ shipping: "Shipping", ports: "Ports" })[a.category] || a.category}</td>
+    <td class="h"><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a></td>
+    <td class="hide-s dim">${GSC.cleanSource(a.source)}</td><td class="r dim">${GSC.relTime(a.timestamp)}</td></tr>`).join("");
+  render();
+  GSC.drawMap("map", { land: "#151B22", ocean: "#07090C", coast: "#27303B", border: "#1E252E", bg: "#07090C",
+    font: "JetBrains Mono", colorFor: sc => HEX[GSC.tier(sc).label], hoverBg: "#0D1117", hoverFg: "#F2F4F7" });
+});
+</script>
+</body>
+</html>

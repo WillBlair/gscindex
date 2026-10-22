@@ -26,3 +26,6 @@ frontend/node_modules/
 # Local preview diagnostics
 app_errors.log
 .pytest_cache/
+
+# Local design mockups (not part of the app)
+design-drafts/
