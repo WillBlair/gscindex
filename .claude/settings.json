@@ -10,9 +10,11 @@
       "Bash(git diff *)",
       "Bash(git log *)"
     ],
+    "ask": [
+      "Bash(git push *)"
+    ],
     "deny": [
       "Bash(rm -rf *)",
-      "Bash(git push *)",
       "Bash(git reset --hard *)"
     ]
   }
