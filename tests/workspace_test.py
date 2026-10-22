@@ -21,7 +21,8 @@ def snapshot():
     dates = pd.date_range("2026-09-15", periods=2)
     return {
         "last_updated_utc": "2026-09-16T12:00:00Z",
-        "current_scores": {c: 80.0 for c in categories},
+        # Distinct per category, so each profile's weights give a different index.
+        "current_scores": {c: 50.0 + 3 * i for i, c in enumerate(sorted(categories))},
         "category_history": {c: pd.Series([60.0, 80.0], index=dates) for c in categories},
         "category_metadata": {c: {"source": "A source", "updated": "2026-09-16"} for c in categories},
         "alerts": [], "disruptions": [], "map_markers": [], "market_data": {}, "briefing": "",
@@ -47,12 +48,6 @@ def test_news_filters_search_clean_content_and_order_newest():
     assert select_news(alerts, "oil", "low") == []
 
 
-
-
-
-
-
-
 def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
     snapshot["category_metadata"]["weather"] = {"source": "=SUM(1,1)", "is_fallback": True}
     rows = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "semiconductor"))))
@@ -61,8 +56,6 @@ def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
     assert weather["source"] == "'=SUM(1,1)"
     assert weather["status"] == "fallback"
     assert weather["snapshot_utc"] == snapshot["last_updated_utc"]
-
-
 
 
 def test_map_colors_by_tier_without_changing_the_readings():
@@ -110,8 +103,6 @@ def test_map_hover_keeps_all_supplied_context_and_handles_absence():
     hover = build_world_map([marker]).data[0].text[0]
     assert "Final event." in hover.replace("<br>", " ")
     assert "Score:" not in hover
-
-
 
 
 def test_api_uses_snapshot_timestamp(snapshot, monkeypatch):
@@ -171,7 +162,8 @@ def terminal_app(snapshot, monkeypatch):
     import app as application
     snapshot["daily_history"] = {
         "dates": ["2026-09-15", "2026-09-16"],
-        "scores": {c: [75.0, None] for c in snapshot["current_scores"]},
+        "scores": {c: [score - 2 - i % 3, None]
+                   for i, (c, score) in enumerate(sorted(snapshot["current_scores"].items()))},
     }
     snapshot["alerts"] = [
         {"title": f"Story {i}", "severity": sev, "category": "energy", "source": "Wire",
@@ -208,18 +200,24 @@ def test_removed_callbacks_are_gone(terminal_app):
 def test_workspace_callbacks_render_all_profiles_and_export(terminal_app):
     app = terminal_app.app
     snapshot = terminal_app._DATA_CACHE
+    yesterday = {c: v[0] for c, v in snapshot["daily_history"]["scores"].items()}
     assert _callback(app, "profile-store.data")("semiconductor") == "semiconductor"
     overview = _callback(app, "category-table.children")
-    for key in INDUSTRY_PROFILES:
+    seen = set()
+    for key, profile in INDUSTRY_PROFILES.items():
+        weights = profile["weights"]
+        expected_today = sum(w * snapshot["current_scores"][c] for c, w in weights.items())
+        expected_yday = sum(w * yesterday[c] for c, w in weights.items())
         readout, table = overview(key, 0, 30)
-        summary = index_summary(snapshot, key)
         index_row = next(c for c in _walk(table) if getattr(c, "className", None) == "index-row")
         cells = [_text(c) for c in index_row.children]
-        assert cells[3] == fmt(summary["today"])
-        assert cells[4] == fmt(summary["yday"]) == "75.0"
-        assert fmt(summary["today"]) in _text(readout)
+        assert cells[3] == fmt(expected_today) == fmt(index_summary(snapshot, key)["today"])
+        assert cells[4] == fmt(expected_yday)
+        assert fmt(expected_today) in _text(readout)
         body_rows = [c for c in _walk(table) if isinstance(c, html.Tr)]
-        assert len(body_rows) == len(INDUSTRY_PROFILES[key]["weights"]) + 2  # header + rows + index
+        assert len(body_rows) == len(weights) + 2  # header + rows + index
+        seen.add(cells[3])
+    assert len(seen) == len(INDUSTRY_PROFILES)  # the weights actually matter
     download = _callback(app, "snapshot-download.data")(1, "baseline")
     assert download["filename"] == "gscindex-baseline.csv"
     assert "weighted_points" in download["content"]
@@ -243,16 +241,36 @@ def test_refresh_updates_context_panes_and_interval(terminal_app, monkeypatch):
     assert refresh(4)[-1] == 20_000
 
 
-def test_headlines_list_every_alert_newest_first_and_filter(terminal_app):
+def _headline_titles(table):
+    return [_text(c) for c in _walk(table) if getattr(c, "className", None) == "h"]
+
+
+def test_headlines_list_every_alert_by_severity_then_newest_and_filter(terminal_app):
     news = _callback(terminal_app.app, "news-results.children")
     table, count = news("", "all", "all", 0)
-    titles = [_text(c) for c in _walk(table) if getattr(c, "className", None) == "h"]
-    assert titles == [f"Story {i}" for i in range(11, -1, -1)]
+    # HIGH, then MED, then LOW; newest first within each (Draft E order).
+    high, medium, low = [11, 4, 0], [7, 2], [10, 9, 8, 6, 5, 3, 1]
+    assert _headline_titles(table) == [f"Story {i}" for i in high + medium + low]
     assert count == "12 tracked"
     table, count = news("story", "high", "all", 0)
-    titles = [_text(c) for c in _walk(table) if getattr(c, "className", None) == "h"]
-    assert titles == ["Story 11", "Story 4", "Story 0"]
+    assert _headline_titles(table) == ["Story 11", "Story 4", "Story 0"]
     assert count == "3 of 12"
+
+
+def test_initial_headlines_use_the_same_order(terminal_app):
+    from components.layout import build_layout
+    layout = build_layout(terminal_app._DATA_CACHE)
+    results = next(c for c in _walk(layout) if getattr(c, "id", None) == "news-results")
+    assert _headline_titles(results)[:3] == ["Story 11", "Story 4", "Story 0"]
+    assert len(_headline_titles(results)) == 12
+
+
+def test_controls_persist_for_the_session(snapshot):
+    from components.layout import build_layout
+    controls = {getattr(c, "id", None): c for c in _walk(build_layout(snapshot))}
+    for control_id in ("news-search", "news-severity", "news-category", "trend-range", "profile-switch"):
+        assert controls[control_id].persistence is True, control_id
+        assert controls[control_id].persistence_type == "session", control_id
 
 
 def test_map_graph_hides_modebar_and_keeps_pan_and_zoom(snapshot):

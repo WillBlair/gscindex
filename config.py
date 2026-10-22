@@ -309,11 +309,12 @@ CATEGORY_COLORS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Color Palette (consistent across all charts)
+# Pre-Terminal palette (2026-07-25)
 # ---------------------------------------------------------------------------
 
-# Pre-Terminal palette (2026-07-25), kept for Python-rendered pieces outside the
-# dashboard. The dashboard's own palette lives in assets/terminal.css.
+# Used by the newsletter email (scripts/send_newsletter.py) and the cold-start
+# skeleton until its Terminal rewrite. The dashboard palette is in
+# assets/terminal.css and components.terminal_data.TIER_COLORS.
 COLORS = {
     "bg":           "#0a0a0b",
     "card":         "#111113",
@@ -332,10 +333,6 @@ COLORS = {
     "grid":         "#1e1e22",
 }
 
-# Pre-Terminal font stacks. The dashboard uses JetBrains Mono and Inter (assets/terminal.css).
-FONT_SANS = "Satoshi, 'IBM Plex Sans', sans-serif"
-FONT_MONO = "IBM Plex Mono, ui-monospace, monospace"
-FONT_NUMBERS = "Satoshi, 'IBM Plex Sans', sans-serif"
 
 
 def hex_to_rgba(hex_color: str, alpha: float) -> str:

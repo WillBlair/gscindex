@@ -21,6 +21,8 @@ from components.terminal import (
 from config import CATEGORY_LABELS, DEFAULT_PROFILE, INDUSTRY_PROFILES
 
 TREND_DAYS = (7, 30, 90)
+# Filters, range and profile survive a reload within the browser session.
+PERSIST = {"persistence": True, "persistence_type": "session"}
 DEFAULT_TREND_DAYS = 30
 
 # Drag to pan and scroll to zoom stay on; the mode bar is hidden as in the draft.
@@ -45,13 +47,13 @@ def _hidden_label(text, target):
 def _news_filters():
     return html.Div([
         _hidden_label("Search headlines", "news-search"),
-        dcc.Input(id="news-search", type="search", placeholder="Search", debounce=True, className="flt flt-search"),
+        dcc.Input(id="news-search", type="search", placeholder="Search", debounce=True, className="flt flt-search", **PERSIST),
         _hidden_label("Severity", "news-severity"),
         dbc.Select(id="news-severity", value="all", className="flt",
                    options=[{"label": "All severities", "value": "all"}]
-                   + [{"label": s.title(), "value": s} for s in ("high", "medium", "low")]),
+                   + [{"label": s.title(), "value": s} for s in ("high", "medium", "low")], **PERSIST),
         _hidden_label("Topic", "news-category"),
-        dbc.Select(id="news-category", value="all", className="flt", options=news_filter_options()),
+        dbc.Select(id="news-category", value="all", className="flt", options=news_filter_options(), **PERSIST),
     ], className="filters")
 
 
@@ -87,7 +89,7 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
             dcc.RadioItems(
                 id="trend-range", value=DEFAULT_TREND_DAYS, inline=True, className="range",
                 options=[{"label": f"{n}D", "value": n} for n in TREND_DAYS],
-                inputClassName="view-input", labelClassName="view-option",
+                inputClassName="view-input", labelClassName="view-option", **PERSIST,
             ),
         ], className="pane read-cell"),
         html.Section(
@@ -106,7 +108,7 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
                 _news_filters(),
                 html.Span(id="news-results-count", role="status", className="count"),
             ], className="ttl news-head"),
-            html.Div(build_headlines(alerts, limit=None, newest_first=True), id="news-results", className="news-scroll"),
+            html.Div(build_headlines(alerts, limit=None), id="news-results", className="news-scroll"),
         ], className="pane wide"),
         html.Section([
             _title("Briefing"),

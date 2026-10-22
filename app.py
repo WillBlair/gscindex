@@ -533,9 +533,10 @@ def create_app() -> dash.Dash:
         return False
 
     # ── Newsletter Submit Callback ────────────────────────────────────────────
-    # Terminal tier colors (components.terminal_data.TIER_COLORS).
-    _FEEDBACK_OK = {"color": "#35D07F"}
-    _FEEDBACK_ERROR = {"color": "#FF4D5E"}
+    from components.terminal_data import TIER_COLORS
+
+    _FEEDBACK_OK = {"color": TIER_COLORS["Healthy"]}
+    _FEEDBACK_ERROR = {"color": TIER_COLORS["Critical"]}
     # Letters, digits and . _ % + - in the local part; no quotes, commas or
     # spaces, which could otherwise end up inside the email To header.
     _EMAIL_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")

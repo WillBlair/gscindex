@@ -166,6 +166,8 @@ def build_header(updated_label: str) -> html.Header:
             className="views",
             inputClassName="view-input",
             labelClassName="view-option",
+            persistence=True,
+            persistence_type="session",
         ),
         html.Div([
             html.Span(updated_label, id="updated-label", className="updated"),
@@ -244,12 +246,9 @@ def _category_label(cat) -> str:
     return CATEGORY_LABELS.get(cat) or _EXTRA_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
 
 
-def build_headlines(alerts: list[dict], limit: int | None = 10, newest_first: bool = False) -> html.Table:
-    """Most severe first, newest first within a severity; ``newest_first`` keeps pure date order."""
-    ordered = select_news(alerts or [])
-    if not newest_first:
-        ordered = sorted(ordered, key=lambda a: _SEVERITY_RANK.get(a.get("severity"), 3))
-    ordered = ordered[:limit]
+def build_headlines(alerts: list[dict], limit: int | None = 10) -> html.Table:
+    """Most severe first (HIGH, MED, LOW), newest first within a severity. ``limit=None`` keeps all."""
+    ordered = sorted(select_news(alerts or []), key=lambda a: _SEVERITY_RANK.get(a.get("severity"), 3))[:limit]
     head = html.Thead(html.Tr([
         html.Th("Sev"), html.Th("Category", className="hide-s"), html.Th("Headline"),
         html.Th("Source", className="hide-s"), html.Th("Age", className="r"),
