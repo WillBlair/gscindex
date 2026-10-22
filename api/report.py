@@ -104,9 +104,8 @@ _REPORT_TEMPLATE = """
         .prose a { color: #FFB020; text-decoration: none; }
         .prose a:hover { text-decoration: underline; }
         .prose blockquote {
-            border-left: 2px solid #FFB020;
-            padding: 4px 16px;
             margin: 20px 0;
+            padding: 0 0 0 20px;
             color: #8A94A3;
         }
         .prose code {

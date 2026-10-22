@@ -28,4 +28,36 @@
       if (button) button.focus();
     })();
   });
+  // Phones and touch screens: a one-finger swipe over the map should scroll
+  // the page, so map dragging and scroll zoom are off there.
+  // Desktop keeps the server's dragmode "pan" and scrollZoom. Tapping a port
+  // still shows its hover box. Re-applied after every render because each
+  // refresh sends the server figure again.
+  var touchMap = window.matchMedia("(max-width: 760px), (pointer: coarse)");
+
+  function applyMapMode(gd) {
+    if (!gd || !gd.layout || !gd._context || !window.Plotly) return;
+    var touch = touchMap.matches;
+    var mode = touch ? { dragmode: false } : { dragmode: "pan" };
+    var zoom = !touch;
+    if (gd.layout.dragmode === mode.dragmode && gd._context.scrollZoom === zoom) return;
+    // react (not relayout) so the config change also lands: with scrollZoom
+    // left on, the map still swallows wheel and trackpad scrolling.
+    window.Plotly.react(gd, gd.data, Object.assign({}, gd.layout, mode),
+                        Object.assign({}, gd._context, { scrollZoom: zoom }));
+  }
+
+  function bindMap() {
+    var gd = document.querySelector("#world-map .js-plotly-plot");
+    if (!gd || typeof gd.on !== "function" || gd.__gsciMapBound) return;
+    gd.__gsciMapBound = true;
+    gd.on("plotly_afterplot", function () { applyMapMode(gd); });
+    applyMapMode(gd);
+  }
+
+  new MutationObserver(bindMap).observe(document.documentElement, { childList: true, subtree: true });
+  var onChange = function () { applyMapMode(document.querySelector("#world-map .js-plotly-plot")); };
+  if (touchMap.addEventListener) touchMap.addEventListener("change", onChange);
+  else if (touchMap.addListener) touchMap.addListener(onChange);
+  window.addEventListener("resize", onChange);  // rotation and window resizes
 })();

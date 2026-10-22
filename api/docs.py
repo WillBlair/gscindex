@@ -231,15 +231,19 @@ _DOCS_TEMPLATE = """
 
         /* ── Callout ──────────────────────────────────────────── */
         .callout {
-            border-left: 2px solid #FFB020;
+            border: 1px solid #1D232B;
             background: #000000;
             padding: 12px 16px;
             margin: 24px 0 32px;
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
         }
-        .callout-icon { font-size: 15px; flex-shrink: 0; }
+        .callout::before {
+            content: "Note";
+            display: block;
+            margin-bottom: 6px;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 12px;
+            color: #FFB020;
+        }
         .callout p { font-size: 14px; color: #D6DBE3; line-height: 1.6; margin-bottom: 0 !important; }
 
         /* ── Footer ───────────────────────────────────────────── */
@@ -404,7 +408,6 @@ flowchart LR
 </div>
 
 <div class="callout">
-    <span class="callout-icon">💡</span>
     <p>The geopolitical score already includes news severity and the AI port-disruption signal (15% of that category). There is no separate penalty term in the composite formula.</p>
 </div>
 

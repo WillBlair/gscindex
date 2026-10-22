@@ -360,7 +360,6 @@ td.h a:hover { text-decoration: underline; }
    low-value columns (.hide-s) instead of scrolling sideways. */
 @media (max-width: 760px) {
   .shell { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }
-  .wide, .full { grid-column: 1 / -1; }
 
   .head { gap: 10px; padding: 10px 16px 12px; }
   .head > .hr { display: contents; }

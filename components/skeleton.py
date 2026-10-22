@@ -28,7 +28,7 @@ def build_skeleton_layout():
         html.Div([html.B("GSCI"), " Global Supply Chain Index"], className="brand"),
         html.Div(_ph("180px", 22), className="sk-views"),
         html.Div(_ph("92px", 22), className="hr"),
-    ], className="head", **{"aria-busy": "true"})
+    ], className="head")
 
     readout = html.Section([
         _title("Index"),
@@ -56,4 +56,4 @@ def build_skeleton_layout():
         header, readout, map_pane, quotes, headlines, briefing, categories,
         html.Div(id="boot-reload-trigger", style={"display": "none"}),
         dcc.Interval(id="boot-interval", interval=1000, n_intervals=0),
-    ], className="shell")
+    ], className="shell", **{"aria-busy": "true"})

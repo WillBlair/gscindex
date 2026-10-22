@@ -335,3 +335,38 @@ def test_category_detail_opens_above_or_below_so_it_fits_a_phone():
     table = term.build_category_table(snapshot(), "baseline")
     for tip in (c for c in walk(table) if isinstance(c, dbc.Tooltip)):
         assert tip.placement == "top-start" and getattr(tip, "flip", True) is not False
+
+
+def test_map_stops_capturing_swipes_on_phones_and_touch():
+    # Desktop keeps pan and scroll zoom (server-side figure and config);
+    # assets/terminal.js turns map dragging off on narrow or touch screens
+    # so a one-finger swipe scrolls the page.
+    from pathlib import Path
+    from components.layout import MAP_CONFIG
+
+    assert MAP_CONFIG["scrollZoom"] is True
+    assert build_world_map([]).layout.dragmode == "pan"
+    js = Path(__file__).resolve().parents[1].joinpath("assets", "terminal.js").read_text()
+    assert 'matchMedia("(max-width: 760px), (pointer: coarse)")' in js
+    assert "world-map" in js and "plotly_afterplot" in js
+    assert "dragmode: false" in js and 'dragmode: "pan"' in js
+
+
+def test_docs_and_report_have_no_colored_edges_or_emoji():
+    import re
+    from api import docs, report
+
+    for source in (docs._DOCS_TEMPLATE, report._REPORT_TEMPLATE):
+        assert not re.search(r"border-left:\s*\d+px solid #FFB020", source)
+    assert "💡" not in docs._DOCS_MARKDOWN and "callout-icon" not in docs._DOCS_MARKDOWN
+    callout = docs._DOCS_TEMPLATE.split(".callout {", 1)[1].split("}", 1)[0]
+    assert "border: 1px solid #1D232B" in callout
+
+
+def test_skeleton_marks_whole_grid_busy():
+    from components.skeleton import build_skeleton_layout
+
+    skeleton = build_skeleton_layout()
+    assert getattr(skeleton, "aria-busy", None) == "true"
+    header = next(c for c in walk(skeleton) if isinstance(c, html.Header))
+    assert getattr(header, "aria-busy", None) is None
