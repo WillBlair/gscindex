@@ -8,9 +8,7 @@
       "Bash(black *)",
       "Bash(git status)",
       "Bash(git diff *)",
-      "Bash(git log *)"
-    ],
-    "ask": [
+      "Bash(git log *)",
       "Bash(git push *)"
     ],
     "deny": [
