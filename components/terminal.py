@@ -129,7 +129,7 @@ def sparkline_svg(values, width: int = 120, height: int = 28, stroke: str = "cur
     path = " ".join(f"{'L' if k else 'M'}{x(i):.1f},{y(v):.1f}" for k, (i, v) in enumerate(points))
     last_i, last_v = points[-1]
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" preserveAspectRatio="none">'
         f'<path d="{path}" fill="none" stroke="{stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
         f'<circle cx="{x(last_i):.1f}" cy="{y(last_v):.1f}" r="2.2" fill="{stroke}"/></svg>'
     )

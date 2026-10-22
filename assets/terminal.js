@@ -9,6 +9,17 @@
     if (button) button.focus();
   });
 
+  // With a mouse the detail is hover-only: clicking a name must not leave it
+  // focused (focus kept the detail open until you clicked elsewhere), and
+  // leaving the name always closes it.
+  document.addEventListener("mousedown", function (event) {
+    if (event.target.closest && event.target.closest(".cat-name")) event.preventDefault();
+  });
+  document.addEventListener("mouseout", function (event) {
+    var button = event.target.closest && event.target.closest(".cat-name");
+    if (button && !button.contains(event.relatedTarget) && document.activeElement === button) button.blur();
+  });
+
   // Escape closes the Subscribe box (react-bootstrap root close); put focus
   // back on the Subscribe button so keyboard users keep their place.
   var subscribeWasOpen = false;

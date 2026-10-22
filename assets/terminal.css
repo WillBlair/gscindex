@@ -53,7 +53,8 @@ button { font: inherit; color: inherit; }
 /* ── Grid ─────────────────────────────────────────────────────────── */
 .shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  /* Side columns grow with the screen (about a quarter each on wide displays). */
+  grid-template-columns: minmax(300px, 24%) minmax(0, 1fr) minmax(300px, 24%);
   grid-auto-rows: auto;
   gap: 1px;
   background: var(--grid);
@@ -185,9 +186,10 @@ button { font: inherit; color: inherit; }
    outside it, so both are laid out in the cell's own single-column grid. */
 .read-cell { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
 #readout, #readout > .read { display: contents; }
-.read .v { font-size: 76px; font-weight: 500; letter-spacing: -0.04em; line-height: 1; }
-.read .tier { font-size: 15px; margin-top: 8px; font-weight: 700; }
-.read .chg { margin-top: 4px; color: var(--dim); }
+.read .v { font-size: clamp(76px, 6vw, 132px); font-weight: 500; letter-spacing: -0.04em; line-height: 1; }
+.read .tier { font-size: clamp(15px, 1.1vw, 20px); margin-top: 8px; font-weight: 700; }
+.read .chg { margin-top: 4px; color: var(--dim); font-size: clamp(13px, 0.9vw, 16px); }
+.read .spk .spark { width: 100%; height: auto; }
 .read .spk { margin-top: 14px; color: var(--amber); grid-row: 5; grid-column: 1; }
 .spk-label { font-size: 11px; margin-bottom: 4px; line-height: 20px; }
 .spark { display: block; max-width: 100%; height: auto; }
@@ -200,6 +202,7 @@ button { font: inherit; color: inherit; }
   margin-top: 18px;
   padding-top: 12px;
   border-top: 1px solid var(--grid);
+  font-size: clamp(13px, 0.85vw, 16px);
 }
 .kv span:nth-child(3n+2), .kv span:nth-child(3n) { text-align: right; }
 
@@ -212,6 +215,11 @@ button { font: inherit; color: inherit; }
 
 /* ── Markets ──────────────────────────────────────────────────────── */
 .quote { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--grid); }
+/* The briefing scrolls inside its pane too, so the categories row is as
+   tall as the category table, not the briefing text. */
+.briefing-pane { position: relative; min-height: 0; }
+.briefing-scroll { position: absolute; top: 44px; right: 16px; bottom: 12px; left: 16px; overflow-y: auto; scrollbar-color: var(--grid) transparent; }
+
 /* The quote list scrolls inside its pane, so it never makes the top row
    taller than the readout and map. */
 .quotes-pane { position: relative; min-height: 0; }
@@ -355,6 +363,7 @@ td.h a:hover { text-decoration: underline; }
 
 /* ── Narrow desktops and tablets ──────────────────────────────────── */
 @media (max-width: 1100px) {
+  .briefing-scroll { position: static; max-height: none; }
   .quotes-scroll { position: static; max-height: 320px; }
   /* Two columns; briefing fills the space beside the quotes. */
   .shell { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-flow: row dense; }

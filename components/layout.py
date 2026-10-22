@@ -115,8 +115,8 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         ], className="pane wide"),
         html.Section([
             _title("Briefing"),
-            html.Div(build_briefing(data.get("briefing", "")), id="briefing"),
-        ], className="pane"),
+            html.Div(build_briefing(data.get("briefing", "")), id="briefing", className="briefing-scroll"),
+        ], className="pane briefing-pane"),
 
         html.Section([
             html.Div([
