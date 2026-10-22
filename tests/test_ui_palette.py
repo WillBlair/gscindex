@@ -43,7 +43,9 @@ def test_meter_numbers_share_the_ui_sans_face():
 
 
 def test_green_red_aliases_match_tiers():
-    assert COLORS["green"] == "#3d9b6e"
+    # Green was deliberately brightened for live indicators and the
+    # newsletter (e2c7259); the other aliases still match their tiers.
+    assert COLORS["green"] == "#4ade80"
     assert COLORS["red"] == "#c44d5f"
     assert COLORS["yellow"] == "#c4a35a"
     assert COLORS["orange"] == "#c47a3a"

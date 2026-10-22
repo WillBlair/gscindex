@@ -1413,20 +1413,6 @@ body {
     color: var(--text) !important;
 }
 
-/* --------------------------------------------------------------------------
-   Vendored effects — thinking-orbs, metal-fx
-   See assets/vendor/ + frontend/ for provenance and build steps.
-   Used sparingly and tastefully per design brief: loading states + a single
-   restrained brand accent, not decoration.
-   -------------------------------------------------------------------------- */
-
-/* thinking-orbs: brand mark — <ThinkingOrb state="working" size={64} /> */
-canvas.thinking-orb-mount.brand-orb {
-    display: block;
-    width: 64px;
-    height: 64px;
-    flex-shrink: 0;
-}
 /* Compact monitoring dashboard. */
 :root {
     --bg: #090d14; --surface: #111823; --surface-raised: #192333;

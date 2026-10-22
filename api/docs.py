@@ -412,7 +412,7 @@ _DOCS_TEMPLATE = """
 _DOCS_MARKDOWN = """
 <div class="section-heading"><span class="section-num">1.</span><h2>System Architecture</h2></div>
 <hr class="section-rule">
-<p>A daemon thread fetches raw data from 6 providers in parallel every 5 minutes, passes articles through Anthropic's Claude API for severity analysis, saves the daily composite score to a Neon PostgreSQL database, and caches the final layout as JSON for instant page loads.</p>
+<p>A daemon thread fetches data from the 6 category providers (plus 2 industry-profile providers) in parallel every 5 minutes. Anthropic's Claude API scores news severity and summarizes port conditions about once a day. Daily scores and the latest snapshot are saved to a Neon PostgreSQL database, and the snapshot is cached as JSON for instant page loads.</p>
 
 <div class="mermaid">
 flowchart LR
@@ -425,27 +425,27 @@ flowchart LR
     style G fill:#1a1d26,stroke:#f87171,stroke-width:2px,color:#e5e7eb
     style H fill:#1a1d26,stroke:#34d399,stroke-width:2px,color:#e5e7eb
 
-    A["FRED API<br>(WEI · EPU · Diesel)"] --> E
-    B["Open-Meteo<br>(14 Shipping Hubs)"] --> E
-    C["Yahoo Finance<br>(CL=F · HO=F)"] --> E
-    D["RSS Feeds<br>(12 Industry Outlets)"] --> E
+    A["FRED + NY Fed<br>(GSCPI · EPUTRADE · TSI · Diesel)"] --> E
+    B["Open-Meteo<br>(37 Ports)"] --> E
+    C["Yahoo Finance<br>(CL=F · BDRY · IYT)"] --> E
+    D["RSS Feeds<br>(17 Feeds)"] --> E
     
-    E["Background Thread<br>Parallel Aggregator"] --> F["Claude Sonnet<br>News Analyzer"]
+    E["Background Thread<br>Parallel Aggregator"] --> F["Claude Sonnet<br>News + Port Analyst"]
     F --> G["Neon Postgres<br>Daily Scores"]
     E --> H["Dash UI<br>Live Dashboard"]
 </div>
 
 <div class="section-heading"><span class="section-num">2.</span><h2>Data Providers</h2></div>
 <hr class="section-rule">
-<p>Six specialized providers fetch and normalize data from independent sources. Each produces a 0–100 category score where <strong>100 = healthiest</strong>.</p>
+<p>Six providers fetch and normalize data from independent sources. Each produces a 0–100 category score where <strong>100 = healthiest</strong>. Monthly sources are blended with a daily proxy so scores move between releases. If a proxy fails, the monthly source is used alone.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Supply Chain Activity <span class="card-badge">25%</span></h3>
+        <h3>Supply Chain Pressure <span class="card-badge">25%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> NY Fed Weekly Economic Index (<span class="code-inline">WEI</span>) via FRED.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Composite of 10 high-frequency indicators — rail traffic, fuel sales, steel production, staffing.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Fixed calibration: <span class="highlight-blue">Score = 50 + (WEI × 12.5)</span>, clipped to 0–100.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> NY Fed Global Supply Chain Pressure Index (<span class="code-inline">GSCPI</span>, monthly), blended with a daily dry-bulk freight-rate proxy (<span class="code-inline">BDRY</span>).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> GSCPI is a z-score built from transport costs and PMI delivery-time and backlog components. 0 is average pressure. The NY Fed Weekly Economic Index (WEI) is shown for context only and is not scored.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> <span class="highlight-blue">Score = 50 − (GSCPI × 12.5)</span>, clipped to 0–100, then blended 70/30 with BDRY scored by inverse percentile over the trailing 2 years.</div></div>
         </div>
     </div>
     <div class="p-card">
@@ -459,49 +459,49 @@ flowchart LR
     <div class="p-card">
         <h3>Geopolitical Risk <span class="card-badge">20%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> 12 industry RSS feeds (FreightWaves, gCaptain, Supply Chain Dive, etc.).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analysis:</strong> Claude Sonnet scores each article's severity (<span class="highlight-red">-10 to +10</span>). VADER sentiment as fallback.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Starts at 100, deducts cumulative severity. Also generates the <span class="highlight-green">AI Daily Briefing</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> 17 RSS feeds (FreightWaves, gCaptain, Supply Chain Dive, WTO, NOAA hurricane alerts, and more).</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analysis:</strong> Claude Sonnet scores each article's severity (<span class="highlight-red">-10 to +10</span>). VADER sentiment is the fallback, and re-scores alerts hourly between Claude runs.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Starts at 100 and deducts the 10 most severe negative articles (duplicates removed), with a maximum deduction of 60. That result is blended 85/15 with an AI port-disruption score (100 − 2 × the average port penalty). Positive news never raises the score.</div></div>
         </div>
     </div>
     <div class="p-card">
         <h3>Trade & Tariffs <span class="card-badge">15%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Baker-Bloom-Davis Economic Policy Uncertainty Index (<span class="code-inline">USEPUINDXD</span>) via FRED.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Measures legislative uncertainty from newspaper coverage of tariffs and trade policy.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse normalization against <span class="highlight-blue">5-year historical range</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Baker-Bloom-Davis Trade Policy Uncertainty categorical index (<span class="code-inline">EPUTRADE</span>, monthly) via FRED, plus a daily tariff news nowcast from the RSS feeds.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Counts newspaper coverage of trade policy uncertainty (tariffs, trade wars, import and export policy). The nowcast scores tariff-related headlines with VADER sentiment.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse percentile against the <span class="highlight-blue">trailing 2-year range</span>. When tariff news scores lower, it is blended in at 30%. The news can only lower this score.</div></div>
         </div>
     </div>
     <div class="p-card">
         <h3>Port Weather <span class="card-badge">10%</span></h3>
         <div class="step-list">
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Open-Meteo API (free, no key required).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Coverage:</strong> 14 major shipping hubs — Houston, Shanghai, Rotterdam, Singapore, Busan, and more.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Continuous deductions for <span class="highlight-red">wind, precipitation, temperature extremes, and WMO condition codes</span>.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Coverage:</strong> 37 major ports, including Houston, Shanghai, Rotterdam, Singapore, and Busan.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Continuous deductions for <span class="highlight-red">wind, precipitation, temperature extremes, and WMO condition codes</span>, averaged across all ports.</div></div>
         </div>
     </div>
     <div class="p-card">
         <h3>Freight Flow <span class="card-badge">10%</span></h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> BTS Freight Transportation Services Index (monthly), blended with a daily dry-bulk freight-rate proxy (<span class="code-inline">BDRY</span>).</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> BTS Freight Transportation Services Index (<span class="code-inline">TSIFRGHT</span>, monthly, 1 to 2 month lag), blended with a daily transportation-stock proxy (<span class="code-inline">IYT</span>).</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Physical throughput across trucking, rail, air, and waterborne freight — are goods actually moving?</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Year-over-year growth mapped to a 0–100 health score — <span class="highlight-amber">contraction lowers the score, expansion raises it</span>.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> <span class="highlight-amber">Score = 72 + (YoY % × 6.5)</span>, clipped to 0–100, so contraction lowers the score. Blended 70/30 with IYT scored by percentile over the trailing 2 years.</div></div>
         </div>
     </div>
 </div>
 
 <div class="section-heading"><span class="section-num">3.</span><h2>Scoring Engine</h2></div>
 <hr class="section-rule">
-<p>The composite index is a <strong>weighted average</strong> of all six category scores, producing a single 0–100 value where 100 represents a completely frictionless global logistics network.</p>
+<p>The composite index is a <strong>weighted average</strong> of all six category scores, producing a single 0–100 value where 100 represents a completely frictionless global logistics network. The Semiconductor and Aerospace &amp; Manufacturing profiles add four industry categories each and use their own weights.</p>
 
 | Category | Weight | Primary Source | Normalization |
 |:---|:---|:---|:---|
-| **Supply Chain Activity** | 25% | NY Fed WEI (FRED) | Fixed calibration (WEI × 12.5 + 50) |
+| **Supply Chain Pressure** | 25% | NY Fed GSCPI + BDRY proxy | 50 − GSCPI × 12.5, blended 70/30 with BDRY percentile |
 | **Energy & Fuel** | 20% | WTI Crude (CL=F) + DOE Diesel (GASDESW) | Average inverse percentile vs trailing 2-year range |
-| **Geopolitical Risk** | 20% | RSS + Claude AI | Severity deductions from baseline |
-| **Trade & Tariffs** | 15% | EPU Index (FRED) | Inverse against trailing range |
+| **Geopolitical Risk** | 20% | RSS + Claude AI | Severity deductions from 100, blended 85/15 with port disruption |
+| **Trade & Tariffs** | 15% | EPUTRADE (FRED) + news nowcast | Inverse percentile vs trailing 2-year range; news can only lower it |
 | **Port Weather** | 10% | Open-Meteo | Continuous weather deductions |
-| **Freight Flow** | 10% | BTS Freight TSI + BDRY proxy | YoY growth mapped to 0–100 |
+| **Freight Flow** | 10% | BTS Freight TSI + IYT proxy | 72 + YoY % × 6.5, blended 70/30 with IYT percentile |
 
 <div class="math-block">
     <code>
@@ -509,12 +509,12 @@ flowchart LR
         <span class="operator">=</span>
         Σ ( <span class="variable">Category_Score<sub>i</sub></span> × <span class="variable">Weight<sub>i</sub></span> )
     </code>
-    <span class="math-caption">Weights must sum to 1.0. Each category score is independently clipped to [0, 100] before aggregation.</span>
+    <span class="math-caption">Weights must sum to 1.0. Each category score is on a 0–100 scale, and the composite is clipped to [0, 100].</span>
 </div>
 
 <div class="callout">
     <span class="callout-icon">💡</span>
-    <p>The geopolitical score already includes AI-derived disruption penalties — there is no separate penalty term in the composite formula. News severity is baked directly into the category score before weighting.</p>
+    <p>The geopolitical score already includes news severity and the AI port-disruption signal (15% of that category). There is no separate penalty term in the composite formula.</p>
 </div>
 
 <p>The composite score maps to a health tier for display:</p>
@@ -528,13 +528,13 @@ flowchart LR
 
 <div class="section-heading"><span class="section-num">4.</span><h2>AI Intelligence Layer</h2></div>
 <hr class="section-rule">
-<p>Anthropic's Claude Sonnet model processes supply chain news in a <strong>single consolidated API call</strong> to minimize usage, producing both article analysis and the executive briefing simultaneously.</p>
+<p>Anthropic's Claude Sonnet model runs several separate calls: <strong>article scoring plus the briefing (one call)</strong>, the full report, port summaries, and the explanation shown when you hover over the gauge. Each result is reused for about 24 hours. A failed call is retried after an hour. Without Claude, the site falls back to VADER sentiment and fixed text.</p>
 
 <div class="grid-2">
     <div class="p-card">
         <h3>Article Analysis</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Ingest:</strong> The aggregator fetches up to 50 articles from <span class="highlight-purple">12 industry RSS feeds</span> in parallel.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Ingest:</strong> Articles are pulled from <span class="highlight-purple">17 RSS feeds</span> and deduplicated. The 25 newest go to Claude for scoring.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Filter:</strong> Irrelevant articles (sports, crypto, fashion, market research spam) are pre-filtered via keyword exclusion.</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Claude assigns each article a severity from <span class="highlight-red">-10</span> (catastrophic) to <span class="highlight-green">+10</span> (miracle).</div></div>
         </div>
@@ -544,7 +544,7 @@ flowchart LR
         <div class="step-list">
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Briefing:</strong> A 3-bullet executive summary shown on the dashboard.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Full Report:</strong> A Chief Strategy Officer-style Markdown intelligence report.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Port Summaries:</strong> AI-generated context for each port's <span class="highlight-green">map tooltip hover</span>.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Port Summaries:</strong> AI-generated context and a 0–50 disruption penalty for each of the 37 ports, shown in the <span class="highlight-green">map tooltip</span>.</div></div>
         </div>
     </div>
 </div>
@@ -557,37 +557,41 @@ flowchart LR
     <div class="p-card">
         <h3>Background Data Pipeline</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> A Python daemon thread fetches from <span class="highlight-blue">all 6 providers in parallel</span> every 5 minutes.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> Results are saved to a JSON payload on disk. Cold starts use a committed fallback snapshot.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> A Python daemon thread fetches from <span class="highlight-blue">all providers in parallel</span> (3 at a time) every 5 minutes.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> Results are saved to a JSON payload on disk. A fresh deploy loads the last snapshot saved in the database, then a committed fallback snapshot if that is under 14 days old.</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> Page loads read directly from the in-memory cache — <span class="highlight-green">zero database queries on render</span>.</div></div>
         </div>
     </div>
     <div class="p-card">
         <h3>Persistence & Distribution</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Database:</strong> Neon PostgreSQL stores <span class="highlight-blue">daily composite scores</span> for historical tracking and day-over-day delta arrows.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Newsletter:</strong> Subscriber emails are managed in Postgres. The daily briefing is emailed each morning.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>API:</strong> A public REST endpoint at <span class="code-inline">GET /api/v1/latest</span> serves the latest index data, rate-limited to 60 req/min.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Database:</strong> Neon PostgreSQL stores <span class="highlight-blue">daily composite and category scores</span> for the trend charts and day-over-day deltas, plus the latest snapshot.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Newsletter:</strong> Subscriber emails are managed in Postgres. The daily briefing is emailed each morning, and every email has an unsubscribe link.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>API:</strong> A public REST endpoint at <span class="code-inline">GET /api/v1/latest</span> serves the latest index data, limited to 500 requests per hour and 2,000 per day per IP.</div></div>
         </div>
     </div>
 </div>
 
 <div class="section-heading"><span class="section-num">6.</span><h2>News Sources</h2></div>
 <hr class="section-rule">
-<p>The geopolitical provider ingests articles from curated, high-quality industry feeds — not generic news aggregators. NewsAPI serves only as a fallback if RSS returns no data.</p>
+<p>The geopolitical provider reads 17 curated RSS feeds from industry, trade-policy, and weather-alert sources rather than general news aggregators. NewsAPI serves only as a fallback if RSS returns no data.</p>
 
-<div class="grid-3">
+<div class="grid-2">
     <div class="p-card">
-        <h3>Maritime & Shipping</h3>
-        <p>gCaptain, Splash247, The Loadstar, Maritime Executive</p>
+        <h3>Ports & Shipping</h3>
+        <p>gCaptain, Splash 247, The Loadstar, Maritime Executive, Logistics Management (Ocean Freight)</p>
     </div>
     <div class="p-card">
         <h3>Supply Chain & Logistics</h3>
-        <p>Supply Chain Dive, SupplyChainBrain, FreightWaves, Logistics Management</p>
+        <p>Supply Chain Dive, SupplyChainBrain, FreightWaves, Logistics Management (Transportation), Supply Chain Management Review, Logistics Viewpoints</p>
     </div>
     <div class="p-card">
-        <h3>Strategic & Analysis</h3>
-        <p>Supply Chain Management Review, Logistics Viewpoints</p>
+        <h3>Trade Policy</h3>
+        <p>WTO News</p>
+    </div>
+    <div class="p-card">
+        <h3>Weather & Disasters</h3>
+        <p>GDACS Disaster Alerts, plus four NOAA National Hurricane Center feeds (Atlantic and Eastern Pacific cyclones, Atlantic outlook, Atlantic high seas forecast)</p>
     </div>
 </div>
 """

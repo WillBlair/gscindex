@@ -6,7 +6,7 @@ Chain Pressure Index): a monthly z-score built from transport costs and
 PMI delivery-time/backlog components. 0 = average pressure, positive =
 elevated pressure.
 
-    score = 50 - GSCPI * 25, clipped to 0-100
+    score = 50 - GSCPI * GSCPI_SCORE_SCALE (12.5), clipped to 0-100
 
 The NY Fed **WEI** (Weekly Economic Index) is fetched for context only and
 shown in the metadata. It does NOT contribute to the score: WEI is a

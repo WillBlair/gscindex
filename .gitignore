@@ -16,7 +16,7 @@ data/.cache/
 # Local artifacts
 app_run.log
 data/subscribers.db
-test_*.py
+/test_*.py
 
 # Frontend build workspace (vendors thinking-orbs/border-beam/metal-fx into
 # assets/vendor/*.js + assets/vendor/border-beam-pulse.css, which ARE

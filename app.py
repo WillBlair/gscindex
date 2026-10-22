@@ -62,7 +62,6 @@ from data.runtime import memory_usage
 # ── Key Migration: Remap old category names to current ones ──────────
 _KEY_MIGRATIONS: dict[str, str] = {
     "ports": "supply_chain",
-    "shipping": "trucking",
 }
 
 def _migrate_keys(data: dict) -> dict:
@@ -284,7 +283,6 @@ def create_app() -> dash.Dash:
             "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap",
         ],
         suppress_callback_exceptions=True,
-        assets_ignore=r"(metal-fx|thinking-orbs)\.min\.js|zzz-effects-init\.js",
     )
 
     # ── Custom Index String (Prevents White Flash) ──────────────────────

@@ -18,8 +18,9 @@ The explicit access-log option preserves request logging.
 - News, tariff and port consumers share one five-minute RSS snapshot. Only four
   RSS downloads run at once, with connect/read timeouts, elapsed-time checks
   between chunks, and a 2 MB decoded response limit before parsing XML.
-- News and port cache regeneration are serialized. Gemini requests have a
-  45-second deadline and no automatic retries.
+- News and port cache regeneration are serialized. Claude requests (data/llm.py)
+  have a 90-second timeout and no automatic retries; failed calls are not
+  retried until AI_FAILURE_RETRY_SECONDS has passed.
 - Gunicorn recycles its worker after 2,000–2,200 requests as a backstop for
   retained allocations. Versioned news caches survive worker restarts.
 
