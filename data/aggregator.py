@@ -974,6 +974,13 @@ def aggregate_data(status_callback=None) -> dict:
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info("Data aggregation complete in %.2fs", elapsed)
 
+    try:
+        from data.database import get_daily_category_scores
+        daily_history = get_daily_category_scores(91)
+    except Exception as e:
+        logger.warning("Failed to load daily history: %s", e)
+        daily_history = {"dates": [], "scores": {}}
+
     result = {
         "last_updated_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "dates": dates,
@@ -990,6 +997,7 @@ def aggregate_data(status_callback=None) -> dict:
         "score_explanation": score_explanation,
         "degraded": bool(fallback_categories),
         "fallback_categories": fallback_categories,
+        "daily_history": daily_history,
     }
 
     # Persist the full dashboard state to disk for instant startup

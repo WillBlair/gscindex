@@ -529,3 +529,55 @@ def record_newsletter_send(send_date: date, email: str) -> None:
         logger.warning("Failed to record newsletter send: %s", e)
     finally:
         conn.close()
+
+
+def get_daily_category_scores(days: int) -> dict:
+    """Return stored daily scores for every category over the last ``days`` days.
+
+    Shape: ``{"dates": ["YYYY-MM-DD", ...ascending], "scores": {category:
+    [float | None, ...aligned to dates]}}``. The date axis runs from
+    ``today - days`` through today, so days with no stored row show up as
+    ``None`` instead of being skipped or backfilled. Returns the empty shape
+    when no database is configured or the query fails.
+    """
+    from datetime import timedelta
+
+    empty = {"dates": [], "scores": {}}
+    conn = get_connection()
+    if not conn:
+        return empty
+
+    db_type = get_db_type()
+    try:
+        today = date.today()
+        start = today - timedelta(days=days)
+        cursor = conn.cursor()
+        if db_type == "postgres":
+            cursor.execute("""
+                SELECT date, category, score FROM daily_category_scores
+                WHERE date >= %s
+                ORDER BY date ASC
+            """, (start,))
+        elif db_type == "sqlite":
+            cursor.execute("""
+                SELECT date, category, score FROM daily_category_scores
+                WHERE date >= ?
+                ORDER BY date ASC
+            """, (start.isoformat(),))
+        else:
+            return empty
+
+        dates = [(start + timedelta(days=i)).isoformat() for i in range((today - start).days + 1)]
+        index = {d: i for i, d in enumerate(dates)}
+        scores: dict[str, list[float | None]] = {}
+        for row_date, category, score in cursor.fetchall():
+            pos = index.get(str(row_date)[:10])
+            if pos is None:
+                continue
+            scores.setdefault(category, [None] * len(dates))[pos] = float(score)
+        return {"dates": dates, "scores": scores}
+    except Exception as e:
+        logger.error(f"Failed to fetch daily category scores: {e}")
+        return empty
+    finally:
+        conn.close()
