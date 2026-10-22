@@ -242,6 +242,9 @@ def _score_wafer_prices(data_points: list[dict]) -> tuple[float, dict]:
 # Main provider
 # ---------------------------------------------------------------------------
 
+_FAILED_FETCH_RETRY_SECONDS = 3600
+
+
 class SiliconAnalystsProvider:
     """Fetch all semiconductor supply chain signals from the free Silicon
     Analysts API and return four category scores.
@@ -256,6 +259,7 @@ class SiliconAnalystsProvider:
     def __init__(self) -> None:
         self._cache: dict | None = None
         self._cache_time: datetime | None = None
+        self._cache_ttl: float = CACHE_TTL_SECONDS
 
     def _fetch_with_cache(self) -> dict[str, dict]:
         """Fetch all four datasets from the API, with 24-hour caching."""
@@ -263,7 +267,7 @@ class SiliconAnalystsProvider:
         if (
             self._cache is not None
             and self._cache_time is not None
-            and (now - self._cache_time).total_seconds() < CACHE_TTL_SECONDS
+            and (now - self._cache_time).total_seconds() < self._cache_ttl
         ):
             logger.info("Silicon Analysts: serving from cache (age=%ds)",
                          (now - self._cache_time).total_seconds())
@@ -292,6 +296,11 @@ class SiliconAnalystsProvider:
 
         self._cache = datasets
         self._cache_time = now
+        # A partial or failed fetch is retried within the hour instead of
+        # serving neutral fallbacks for a full day.
+        self._cache_ttl = (
+            CACHE_TTL_SECONDS if all(datasets.values()) else _FAILED_FETCH_RETRY_SECONDS
+        )
         return datasets
 
     def fetch_all_current(self) -> dict[str, tuple[float, dict]]:
@@ -330,6 +339,18 @@ class SiliconAnalystsProvider:
             else:
                 score, meta = 50.0, {"source": "Silicon Analysts API", "error": f"Unknown scoring: {scoring}"}
 
+            if "error" in meta:
+                # Scoring helpers return a bare 50.0 + error when the payload
+                # has no usable rows; flag it so it is never shown as measured.
+                meta = {
+                    "source": "Silicon Analysts API",
+                    "raw_value": "—",
+                    "raw_label": ep["label"],
+                    "description": f"No usable data for {ep['label']}: {meta['error']}",
+                    "calculation": "Neutral default — API returned no usable data",
+                    "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "is_fallback": True,
+                }
             scores[key] = (score, meta)
 
         return scores

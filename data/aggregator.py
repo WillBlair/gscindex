@@ -22,18 +22,29 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, HISTORY_DAYS
+from config import (
+    CATEGORY_LABELS,
+    CATEGORY_WEIGHTS,
+    DISRUPTION_SCORE_THRESHOLD,
+    HISTORY_DAYS,
+    PORT_DISRUPTION_WEIGHT,
+)
 from data.ports_data import MAJOR_PORTS
 
 from data.providers.energy import EnergyProvider
 from data.providers.freight import FreightProvider
-from data.providers.geopolitical import GeopoliticalProvider, fetch_supply_chain_news, _is_irrelevant_article
+from data.providers.geopolitical import (
+    GeopoliticalProvider,
+    _is_irrelevant_article,
+    blend_port_disruption,
+    fetch_supply_chain_news,
+    news_scoring_label,
+)
 from data.providers.supply_chain import SupplyChainProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
-from data.providers.hormuz import HormuzStraitProvider
 from data.port_analyst import generate_port_summaries
 from scoring import get_health_tier
 from data.runtime import RefreshTasks
@@ -51,7 +62,6 @@ _PROVIDERS = [
     GeopoliticalProvider(),
     ChipFabUtilProvider(),
     AeroMetalsProvider(),
-    HormuzStraitProvider(),
 ]
 
 def _fetch_market_data() -> dict:
@@ -435,7 +445,7 @@ def _derive_map_markers(
     for name, lat, lon, _direct_kw in MAJOR_PORTS:
         # ── Local weather score (real, unique per port) ──────────
         wx = batch_weather.get(name, {})
-        local_weather = wx.get("score", 75.0)
+        local_weather = wx.get("score")
         weather_summary = wx.get("summary", "Weather data unavailable")
 
         # ── Per-port macro score (region-specific weighting) ─────
@@ -450,7 +460,11 @@ def _derive_map_markers(
         )
 
         # ── Composite: 40% local weather + 60% regional macro ───
-        composite = local_weather * 0.40 + regional_macro * 0.60
+        # Without a weather reading the port scores on regional macro alone.
+        if local_weather is None:
+            composite = regional_macro
+        else:
+            composite = local_weather * 0.40 + regional_macro * 0.60
 
         # ── Structural vulnerability penalty ─────────────────────
         composite -= vulnerability
@@ -819,30 +833,46 @@ def aggregate_data(status_callback=None) -> dict:
 
     # Use fresh news result as the source of truth for geopolitical current score.
     # This avoids stale provider snapshots and keeps alerts/score aligned.
+    # The port-disruption blend is applied here too, using this cycle's port
+    # summaries, so PORT_DISRUPTION_WEIGHT actually reaches the composite.
     if news_score is not None:
-        current_scores["geopolitical"] = float(news_score)
+        scoring_label = news_scoring_label()
+        geo_score, blend_suffix, blend_note = blend_port_disruption(
+            float(news_score), port_summaries or None
+        )
+        current_scores["geopolitical"] = geo_score
         geo_meta = category_metadata.get("geopolitical", {})
         high_sev = sum(1 for a in alerts if a.get("severity") == "high")
         med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
         geo_meta.update(
             {
-                "source": "RSS + Claude AI",
+                "source": f"{scoring_label}{blend_suffix}",
                 "raw_value": f"{len(alerts)} articles",
                 "raw_label": "Analyzed News Volume",
                 "description": (
                     f"Analyzed recent supply chain news. Found {high_sev} high-severity "
-                    f"and {med_sev} medium-severity risk events affecting the score."
+                    f"and {med_sev} medium-severity risk events affecting the score.{blend_note}"
+                ),
+                "calculation": (
+                    "News score = 100 + sum of the 10 most severe negative article severities "
+                    f"({scoring_label}; deduplicated by title, total deduction floored at -60)."
+                    + (
+                        f" Blended {1 - PORT_DISRUPTION_WEIGHT:.0%}/{PORT_DISRUPTION_WEIGHT:.0%} "
+                        "with the aggregate AI port-disruption signal."
+                        if blend_suffix
+                        else ""
+                    )
                 ),
                 "updated": "Live",
-                "score": round(float(news_score), 1),
-                "tier": get_health_tier(float(news_score)),
+                "score": round(geo_score, 1),
+                "tier": get_health_tier(geo_score),
                 "is_fallback": False,
             }
         )
         category_metadata["geopolitical"] = geo_meta
         geo_hist = category_history.get("geopolitical")
         if geo_hist is not None and not geo_hist.empty:
-            geo_hist.iloc[-1] = float(news_score)
+            geo_hist.iloc[-1] = geo_score
 
     composite = compute_composite_index(current_scores)
 
@@ -850,16 +880,25 @@ def aggregate_data(status_callback=None) -> dict:
     score_explanation = ""
     try:
         from data.cache import get_cached, set_cached
-        from config import AI_CACHE_TTL_SECONDS
+        from config import AI_CACHE_TTL_SECONDS, AI_FAILURE_RETRY_SECONDS
         from data.ai_analyst import generate_score_explanation
 
-        _score_cache_key = "claude_score_explanation_v1"
+        _score_cache_key = "claude_score_explanation_v2"
+        _score_fail_key = "claude_score_explanation_failed_v1"
+        tier_label = get_health_tier(composite)["label"]
         cached_explanation = get_cached(_score_cache_key, ttl=AI_CACHE_TTL_SECONDS)
 
-        if cached_explanation and cached_explanation.get("text"):
+        # Reuse the cached text only while the composite is in the same tier;
+        # otherwise the hover could explain a score the gauge no longer shows.
+        if (
+            cached_explanation
+            and cached_explanation.get("text")
+            and cached_explanation.get("tier") == tier_label
+        ):
             score_explanation = str(cached_explanation["text"])
+        elif get_cached(_score_fail_key, ttl=AI_FAILURE_RETRY_SECONDS):
+            score_explanation = ""
         else:
-            tier_label = get_health_tier(composite)["label"]
             top_alerts = [a for a in alerts if a.get("severity") in ("high", "medium")][:5]
             score_explanation = generate_score_explanation(
                 composite=composite,
@@ -871,8 +910,10 @@ def aggregate_data(status_callback=None) -> dict:
             if score_explanation:
                 set_cached(
                     _score_cache_key,
-                    {"composite": composite, "text": score_explanation},
+                    {"composite": composite, "tier": tier_label, "text": score_explanation},
                 )
+            else:
+                set_cached(_score_fail_key, {"composite": composite})
     except Exception as exc:
         logger.warning("Score explanation generation skipped: %s", exc)
 
@@ -898,9 +939,12 @@ def aggregate_data(status_callback=None) -> dict:
     # Disruptions aggregation
     disruptions: list[dict] = []
 
-    # Source 1: Low-scoring categories
+    # Source 1: Low-scoring categories (measured values only — a provider
+    # serving its neutral fallback is an outage, not a supply chain event)
     for cat, score in current_scores.items():
-        if score < 70:
+        if cat in fallback_categories:
+            continue
+        if score < DISRUPTION_SCORE_THRESHOLD:
             severity = "Critical" if score < 40 else "Stressed"
             impact = round((100 - score) / 10, 1)
             disruptions.append({

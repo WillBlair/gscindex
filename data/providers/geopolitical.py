@@ -31,6 +31,7 @@ measurements only. No proxy series, no synthetic backfill.
 
 from datetime import datetime, timedelta
 import logging
+import time
 from data.runtime import serialized
 import os
 import requests
@@ -39,11 +40,14 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from config import (
     AI_CACHE_TTL_SECONDS,
+    AI_FAILURE_RETRY_SECONDS,
+    AI_SEVERITY_MAX,
     NEWS_BRIEFING_CACHE_KEY,
+    NEWS_CACHE_MAX_AGE_SECONDS,
     NEWS_RSS_REFRESH_SECONDS,
     PORT_DISRUPTION_WEIGHT,
 )
-from data.cache import get_cache_age_seconds, get_cached, set_cached
+from data.cache import get_cached, set_cached
 from data.providers.base import BaseProvider
 from data.ai_analyst import analyze_news_batch
 
@@ -54,6 +58,43 @@ logger = logging.getLogger(__name__)
 _NEWSAPI_URL = "https://newsapi.org/v2/everything"
 _VADER = SentimentIntensityAnalyzer()
 _NEWS_CACHE_KEY = NEWS_BRIEFING_CACHE_KEY
+
+# Labels for how the cached alerts were scored. The hourly RSS refresh
+# re-scores with VADER, so the label has to follow the payload, not the
+# pipeline that originally produced it.
+SCORING_CLAUDE = "RSS + Claude AI"
+SCORING_VADER = "RSS + VADER"
+
+
+def _clamp_severity(value) -> float:
+    """Model severities are documented as -10..+10; never trust the range."""
+    try:
+        sev = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(-AI_SEVERITY_MAX, min(AI_SEVERITY_MAX, sev))
+
+
+def _ai_refresh_due(cached: dict, now: float | None = None) -> bool:
+    """True when the Claude analysis in the cached payload has expired.
+
+    Uses a timestamp stored in the payload, not the cache file's mtime:
+    the hourly RSS re-score rewrites the file, which used to reset the
+    mtime clock so Claude never ran again after the first hour.
+    """
+    now = time.time() if now is None else now
+    generated_at = cached.get("ai_generated_at")
+    if not isinstance(generated_at, (int, float)):
+        return True
+    return now - float(generated_at) > AI_CACHE_TTL_SECONDS
+
+
+def news_scoring_label() -> str:
+    """Source label matching how the currently cached alerts were scored."""
+    cached = get_cached(_NEWS_CACHE_KEY, ttl=NEWS_CACHE_MAX_AGE_SECONDS)
+    if isinstance(cached, dict) and cached.get("scoring") == SCORING_CLAUDE:
+        return SCORING_CLAUDE
+    return SCORING_VADER
 
 # ---------------------------------------------------------------------------
 # Category classification keywords
@@ -262,6 +303,8 @@ def _refresh_cached_news_from_rss(cached: dict) -> dict | None:
     refreshed = dict(cached)
     refreshed["score"] = _risk_score_from_alerts(alerts)
     refreshed["alerts"] = alerts
+    refreshed["scoring"] = SCORING_VADER
+    refreshed["alerts_refreshed_at"] = time.time()
     if not (refreshed.get("briefing") or "").strip():
         refreshed["briefing"] = _build_fallback_briefing(alerts)
     return refreshed
@@ -273,7 +316,7 @@ def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
     This is intentionally fast and non-blocking so provider calls never trigger
     long AI/RSS fetches. Fresh news fetch runs in the aggregator job.
     """
-    cached = get_cached(_NEWS_CACHE_KEY, ttl=AI_CACHE_TTL_SECONDS)
+    cached = get_cached(_NEWS_CACHE_KEY, ttl=NEWS_CACHE_MAX_AGE_SECONDS)
     if not cached:
         return None
     return (
@@ -294,18 +337,21 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
         (score, alerts, briefing_text, full_report_md)
     """
     cache_key = _NEWS_CACHE_KEY
-    cached = get_cached(cache_key, ttl=AI_CACHE_TTL_SECONDS)
+    cached = get_cached(cache_key, ttl=NEWS_CACHE_MAX_AGE_SECONDS)
+    if cached is not None and _ai_refresh_due(cached):
+        logger.info("Claude news analysis is due; regenerating.")
+        cached = None
     if cached is not None:
-        cache_age = get_cache_age_seconds(cache_key)
-        if cache_age is not None and cache_age > NEWS_RSS_REFRESH_SECONDS:
+        alerts_age = time.time() - float(cached.get("alerts_refreshed_at") or 0)
+        if alerts_age > NEWS_RSS_REFRESH_SECONDS:
             try:
                 refreshed = _refresh_cached_news_from_rss(cached)
                 if refreshed:
                     set_cached(cache_key, refreshed)
                     cached = refreshed
                     logger.info(
-                        "Refreshed news score/alerts from RSS (cache age %.0fs)",
-                        cache_age,
+                        "Refreshed news score/alerts from RSS (alerts age %.0fs)",
+                        alerts_age,
                     )
             except Exception as exc:
                 logger.warning("RSS refresh of cached news failed: %s", exc)
@@ -414,7 +460,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
             if not analysis.get("is_relevant", False):
                 continue
                 
-            severity = analysis.get("severity_score", 0.0)
+            severity = _clamp_severity(analysis.get("severity_score", 0.0))
             
             # Find original
             original = next((c for c in ai_candidates if c["id"] == cid), None)
@@ -427,9 +473,10 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
                 "title": original["title"],
                 "body": analysis.get("summary", original["description"]),
                 "category": analysis.get("category", "geopolitical"),
-                "sentiment": severity, 
+                "sentiment": severity,
                 "url": original["url"],
                 "source": original["source"],
+                "scored_by": "claude",
             })
     
     # Fallback VADER for non-AI analyzed items or if AI failed
@@ -464,15 +511,51 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
 
     alerts.sort(key=lambda a: (a.get("sentiment", 0.0), a.get("timestamp", "")), reverse=False)
 
+    now = time.time()
+    claude_scored = bool(ai_results) and any(a.get("scored_by") == "claude" for a in alerts)
     result = {
         "score": final_score,
         "alerts": alerts,
         "briefing": briefing_text,
-        "full_report": full_report_md
+        "full_report": full_report_md,
+        "scoring": SCORING_CLAUDE if claude_scored else SCORING_VADER,
+        "alerts_refreshed_at": now,
+        "generated_at": now,
+        # A failed Claude run retries after AI_FAILURE_RETRY_SECONDS instead
+        # of waiting a full AI_CACHE_TTL_SECONDS (or retrying every cycle).
+        "ai_generated_at": (
+            now if claude_scored else now - AI_CACHE_TTL_SECONDS + AI_FAILURE_RETRY_SECONDS
+        ),
     }
     
     set_cached(cache_key, result)
     return result["score"], result["alerts"], result["briefing"], result["full_report"]
+
+
+def blend_port_disruption(
+    base_score: float, port_summaries: dict | None = None
+) -> tuple[float, str, str]:
+    """Blend the aggregate port-disruption score into a geopolitical score.
+
+    Returns (blended_score, source_suffix, note). Uses the given summaries,
+    or the cached ones when None; never calls the model. Falls back to the
+    unmodified base score when no port data is available.
+    """
+    from data.port_analyst import aggregate_disruption_score, get_cached_port_summaries
+
+    summaries = port_summaries if port_summaries is not None else get_cached_port_summaries()
+    try:
+        port_score, port_count, port_summary = aggregate_disruption_score(summaries)
+    except ValueError as exc:
+        logger.debug("Port-disruption blend skipped (base score used as-is): %s", exc)
+        return base_score, "", ""
+    weight = PORT_DISRUPTION_WEIGHT
+    blended = (1 - weight) * base_score + weight * port_score
+    note = (
+        f" Blended with an aggregate AI port-disruption signal ({port_summary}) "
+        f"at {weight:.0%} weight."
+    )
+    return round(blended, 1), f" + port-disruption ({port_count} ports)", note
 
 
 class GeopoliticalProvider(BaseProvider):
@@ -485,25 +568,8 @@ class GeopoliticalProvider(BaseProvider):
 
     @staticmethod
     def _blend_port_disruption(base_score: float, source_label: str) -> tuple[float, str, str]:
-        """Best-effort blend of the aggregate port-disruption score into a
-        base geopolitical score. Returns (blended_score, source_suffix, note).
-        Falls back to the unmodified base score if port data isn't available
-        (e.g. ANTHROPIC_API_KEY unset) — never raises.
-        """
-        try:
-            from data.port_analyst import get_aggregate_disruption_score
-
-            port_score, port_count, port_summary = get_aggregate_disruption_score()
-            weight = PORT_DISRUPTION_WEIGHT
-            blended = (1 - weight) * base_score + weight * port_score
-            note = (
-                f" Blended with an aggregate AI port-disruption signal ({port_summary}) "
-                f"at {weight:.0%} weight."
-            )
-            return round(blended, 1), f" + port-disruption ({port_count} ports)", note
-        except Exception as exc:
-            logger.debug("Port-disruption blend skipped (base score used as-is): %s", exc)
-            return base_score, "", ""
+        # Provider path: cached port summaries only, never a Claude call.
+        return blend_port_disruption(base_score)
 
     def fetch_current(self) -> tuple[float, dict]:
         # Never trigger long AI/RSS pipeline from provider path.
@@ -514,12 +580,13 @@ class GeopoliticalProvider(BaseProvider):
             high_sev = sum(1 for a in alerts if a.get("severity") == "high")
             med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
 
+            scoring_label = news_scoring_label()
             blended_score, source_suffix, port_note = self._blend_port_disruption(
-                score, "RSS + Claude (cached)"
+                score, scoring_label
             )
 
             return blended_score, {
-                "source": f"RSS + Claude (cached){source_suffix}",
+                "source": f"{scoring_label} (cached){source_suffix}",
                 "raw_value": f"{len(alerts)} articles",
                 "raw_label": "Analyzed News Volume",
                 "description": (
@@ -527,8 +594,8 @@ class GeopoliticalProvider(BaseProvider):
                     f"and {med_sev} medium-severity risk events.{port_note}"
                 ),
                 "calculation": (
-                    "Score is derived from Claude severity analysis of recent supply-chain "
-                    "articles and used as the current anchor for geopolitical risk."
+                    "Score = 100 + sum of the 10 most severe negative article severities "
+                    f"({scoring_label}; deduplicated by title, total deduction floored at -60)."
                     + (
                         f" Blended {1 - PORT_DISRUPTION_WEIGHT:.0%}/{PORT_DISRUPTION_WEIGHT:.0%} "
                         "with the aggregate AI port-disruption signal."

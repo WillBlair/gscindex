@@ -94,7 +94,7 @@ NEWS_SOURCES: list[NewsSource] = [
     },
     {
         "name": "WTO News",
-        "url": "http://www.wto.org/library/rss/latest_news_e.xml",
+        "url": "https://www.wto.org/library/rss/latest_news_e.xml",
         "group": "trade_policy",
         "max_items": 5,
     },

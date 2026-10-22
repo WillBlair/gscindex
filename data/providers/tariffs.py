@@ -57,7 +57,9 @@ class TariffsProvider(BaseProvider):
         score = eputrade_score
         try:
             news_score, matched_count, news_summary = fetch_tariff_news_score()
-            if matched_count > 0:
+            # News can only pull the score down: a quiet news day (nowcast
+            # near 100) must not act as a positive-sentiment boost.
+            if matched_count > 0 and news_score < eputrade_score:
                 blend_weight = TARIFFS_PROXY_WEIGHT
                 score = (1 - blend_weight) * eputrade_score + blend_weight * news_score
                 proxy_note = (
@@ -93,23 +95,11 @@ class TariffsProvider(BaseProvider):
         }
 
     def fetch_history(self, days: int = HISTORY_DAYS) -> pd.Series:
+        """EPUTRADE scores only. Today's news nowcast is not written back onto
+        the last EPUTRADE date: the aggregator forward-fills that date to
+        today, so a blended value there would become weeks of invented
+        history. The aggregator sets today's point to the live blended score.
+        """
         raw = fetch_fred_series(self._SERIES_ID)
         scores = normalize_series_inverse(raw)
-        daily = scores.resample("D").ffill().tail(days)
-
-        # History blend uses only today's live news nowcast (no historical
-        # news score is stored), applied to the most recent day so the chart
-        # tail reflects the same blend fetch_current() reports.
-        try:
-            news_score, matched_count, _ = fetch_tariff_news_score()
-            if matched_count > 0 and not daily.empty:
-                daily = daily.copy()
-                last_idx = daily.index[-1]
-                daily.loc[last_idx] = (
-                    (1 - TARIFFS_PROXY_WEIGHT) * daily.loc[last_idx]
-                    + TARIFFS_PROXY_WEIGHT * news_score
-                )
-        except Exception as exc:
-            logger.warning("Tariff news nowcast history blend failed (using EPUTRADE only): %s", exc)
-
-        return daily.rename("tariffs")
+        return scores.resample("D").ffill().tail(days).rename("tariffs")

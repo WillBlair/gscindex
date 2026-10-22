@@ -2,7 +2,9 @@
 """RSS fetcher for public supply-chain intelligence feeds."""
 from __future__ import annotations
 
+import html
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -16,6 +18,15 @@ from data.news_selection import dedupe_articles, is_low_signal_article, parse_ar
 from data.news_sources import NEWS_SOURCES, NewsSource
 
 logger = logging.getLogger(__name__)
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_SPACE_RE = re.compile(r"\s+")
+
+
+def _plain_text(value: str) -> str:
+    """Strip markup from feed text so prompts and the UI get plain text."""
+    return _SPACE_RE.sub(" ", html.unescape(_TAG_RE.sub(" ", value))).strip()
+
 
 # Compatibility for any older diagnostics importing the raw URL list.
 FEED_URLS = [source["url"] for source in NEWS_SOURCES]
@@ -61,9 +72,9 @@ def fetch_single_feed(source: NewsSource) -> list[dict]:
             logger.warning("RSS parse warning for %s: %s", source["url"], feed.bozo_exception)
 
         for entry in feed.entries[: source["max_items"]]:
-            title = str(entry.get("title", "No Title")).strip()[:500]
+            title = _plain_text(str(entry.get("title", "No Title")))[:500]
             link = str(entry.get("link", "#")).strip()[:2048]
-            description = str(entry.get("summary", "") or entry.get("description", "")).strip()
+            description = _plain_text(str(entry.get("summary", "") or entry.get("description", "")))
             articles.append(
                 {
                     "title": title,

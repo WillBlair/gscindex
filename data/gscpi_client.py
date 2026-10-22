@@ -23,7 +23,7 @@ _GSCPI_CSV_URL = (
     "https://www.newyorkfed.org/medialibrary/research/interactives/"
     "data/gscpi/gscpi_interactive_data.csv"
 )
-_CACHE_KEY = "nyfed_gscpi_monthly_v2"
+_CACHE_KEY = "nyfed_gscpi_monthly_v3"
 _CACHE_TTL = 6 * 3600  # 6 hours — index updates monthly
 
 # Excel serial day 0 (the NY Fed export switched column headers from
@@ -85,19 +85,25 @@ def fetch_gscpi_series() -> pd.Series:
             na_values=["#N/A"],
         )
         df.columns = ["Date"] + list(df.columns[1:])
-        month_cols = list(df.columns[1:])
+        # The CSV is a vintage matrix: each row is a data month ("Date"),
+        # each column is a release (vintage). A vintage's last value is the
+        # PREVIOUS month's reading, so keying values by the vintage header
+        # shifted everything a month late. Key by the row's data month and
+        # take the newest vintage that has a value for it.
+        vintage_cols = [c for c in df.columns[1:] if _parse_month_column(c) is not None]
+        skipped = [c for c in df.columns[1:] if c not in vintage_cols]
+        if skipped:
+            logger.warning("GSCPI: skipping unparseable vintage columns %r", skipped)
+        vintage_cols.sort(key=_parse_month_column)
+        values = df[vintage_cols].apply(pd.to_numeric, errors="coerce")
+        latest = values.ffill(axis=1).iloc[:, -1] if vintage_cols else pd.Series(dtype=float)
+        dates = pd.to_datetime(df["Date"], format="%d-%b-%Y", errors="coerce")
 
         by_month: dict[pd.Timestamp, float] = {}
-        for col in month_cols:
-            month_end = _parse_month_column(col)
-            if month_end is None:
-                logger.warning("GSCPI: skipping unparseable vintage column %r", col)
+        for date, value in zip(dates, latest):
+            if pd.isna(date) or pd.isna(value):
                 continue
-            numeric = pd.to_numeric(df[col], errors="coerce")
-            valid = numeric.dropna()
-            if valid.empty:
-                continue
-            by_month[month_end] = float(valid.iloc[-1])
+            by_month[(date + pd.offsets.MonthEnd(0)).normalize()] = float(value)
 
         if not by_month:
             raise ValueError("GSCPI CSV parsed empty — NY Fed format may have changed")

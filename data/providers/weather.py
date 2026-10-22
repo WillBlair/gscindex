@@ -132,7 +132,8 @@ def _score_hub_current(current: dict) -> float:
 
     wmo_code = current.get("weather_code", 0) or 0
     wind = current.get("wind_speed_10m", 0) or 0
-    temp = current.get("temperature_2m", 20) or 20
+    temp = current.get("temperature_2m")
+    temp = 20.0 if temp is None else temp  # 0°C is a real reading, not missing
     precip = current.get("precipitation", 0) or 0
 
     score -= _wmo_deduction(wmo_code)
@@ -280,26 +281,26 @@ class WeatherProvider(BaseProvider):
                     all_results.extend([None] * len(chunks[idx]))
 
         if not any(r is not None for r in all_results):
-            logger.error("All weather chunks failed — returning fallback")
-            fallback: dict[str, dict] = {}
-            for name, _lat, _lon in ports:
-                fallback[name] = {
-                    "score": 75.0,
+            # No measurement: return score None for every port and do NOT
+            # cache it under the 4-hour key, so the next cycle retries.
+            logger.error("All weather chunks failed — no port weather this cycle")
+            return {
+                name: {
+                    "score": None,
                     "summary": "Weather data temporarily unavailable",
                     "temp": None,
                     "wind": None,
                     "precip": None,
                     "wmo_code": None,
                 }
-            # Cache fallback briefly so we don't hammer a failing API
-            set_cached(cache_key, fallback)
-            return fallback
+                for name, _lat, _lon in ports
+            }
 
         result: dict[str, dict] = {}
         for i, (name, _lat, _lon) in enumerate(ports):
             if i >= len(all_results) or all_results[i] is None:
                 result[name] = {
-                    "score": 75.0, "summary": "No data", "temp": None,
+                    "score": None, "summary": "No data", "temp": None,
                     "wind": None, "precip": None, "wmo_code": None,
                 }
                 continue
@@ -310,7 +311,8 @@ class WeatherProvider(BaseProvider):
             wmo = current.get("weather_code", 0) or 0
             wind = current.get("wind_speed_10m", 0) or 0
             precip = current.get("precipitation", 0) or 0
-            temp = current.get("temperature_2m", 20) or 20
+            temp = current.get("temperature_2m")
+            temp = 20.0 if temp is None else temp
 
             # Build human-readable summary from real conditions
             wmo_desc = _WMO_DESCRIPTIONS.get(wmo, f"Code {wmo}")
@@ -354,7 +356,7 @@ class WeatherProvider(BaseProvider):
         results: list[dict] = []
         for name, lat, lon in _SHIPPING_HUBS:
             wx = batch.get(name, {})
-            score = wx.get("score", 75.0)
+            score = wx.get("score")
 
             # Build human-readable reason string from weather details
             reasons: list[str] = []
@@ -404,8 +406,14 @@ class WeatherProvider(BaseProvider):
 
         hub_scores: list[float] = []
         for name, _lat, _lon in _SHIPPING_HUBS:
-            wx = batch.get(name, {})
-            hub_scores.append(wx.get("score", 75.0))
+            score = batch.get(name, {}).get("score")
+            if score is not None:
+                hub_scores.append(score)
+
+        if not hub_scores:
+            # Raising lets the aggregator serve a flagged fallback instead of
+            # an unflagged made-up value labelled as Open-Meteo data.
+            raise RuntimeError("Open-Meteo returned no port weather")
 
         avg_score = round(float(np.mean(hub_scores)), 1)
 
@@ -416,8 +424,9 @@ class WeatherProvider(BaseProvider):
             "raw_value": f"{len(_SHIPPING_HUBS)} Major Ports",
             "raw_label": "Global Port Weather",
             "description": (
-                f"Real-time weather analysis of {len(_SHIPPING_HUBS)} major shipping ports. "
-                f"Currently tracking {bad_weather_count} locations with suboptimal operating conditions."
+                f"Real-time weather analysis of {len(hub_scores)} of {len(_SHIPPING_HUBS)} major "
+                f"shipping ports. Currently tracking {bad_weather_count} locations with "
+                "suboptimal operating conditions."
             ),
             "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
@@ -479,12 +488,13 @@ class WeatherProvider(BaseProvider):
                 if s is not None:
                     all_hub_series.append(s)
 
-        if all_hub_series:
-            df = pd.concat(all_hub_series, axis=1)
-            avg_scores = df.mean(axis=1).round(1)
-        else:
-            dates_idx = pd.date_range(start=start_date, end=end_date, freq="D")
-            avg_scores = pd.Series(75.0, index=dates_idx)
+        if not all_hub_series:
+            # Empty history renders as a gap; a flat line would be invented.
+            logger.error("All weather history fetches failed — returning empty history")
+            return pd.Series(dtype=float, name="weather")
+
+        df = pd.concat(all_hub_series, axis=1)
+        avg_scores = df.mean(axis=1).round(1)
 
         result = avg_scores.rename("weather")
 

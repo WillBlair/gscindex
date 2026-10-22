@@ -9,7 +9,7 @@ import html
 import re
 import markdown
 
-from config import AI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
+from config import NEWS_BRIEFING_CACHE_KEY, NEWS_CACHE_MAX_AGE_SECONDS
 from data.cache import get_cached
 
 report_bp = Blueprint("report", __name__)
@@ -235,12 +235,15 @@ def serve_report():
     from markupsafe import Markup
     from zoneinfo import ZoneInfo
 
-    cached = get_cached(NEWS_BRIEFING_CACHE_KEY, ttl=AI_CACHE_TTL_SECONDS)
+    cached = get_cached(NEWS_BRIEFING_CACHE_KEY, ttl=NEWS_CACHE_MAX_AGE_SECONDS)
     report_md = ""
     report_generated = None
-    
+
     if cached and isinstance(cached, dict):
         report_md = cached.get("full_report", "")
+        generated_at = cached.get("generated_at")
+        if report_md and isinstance(generated_at, (int, float)):
+            report_generated = datetime.fromtimestamp(generated_at, tz=ZoneInfo("UTC"))
 
     if not report_md:
         # Fallback: try the persisted dashboard snapshot (survives deploys)

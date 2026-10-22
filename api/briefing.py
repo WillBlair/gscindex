@@ -5,18 +5,17 @@ Generates AI briefing only when user requests it, reducing automatic API usage.
 """
 from __future__ import annotations
 
-import json
 import logging
 from flask import jsonify
 
-from config import AI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
+from config import AI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY, NEWS_CACHE_MAX_AGE_SECONDS
 from data.ai_analyst import generate_briefing
 from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
 ALERTS_CACHE_KEY = NEWS_BRIEFING_CACHE_KEY
-_AI_OD_BRIEFING_KEY = "claude_on_demand_briefing_v1"
+_AI_OD_BRIEFING_KEY = "claude_on_demand_briefing_v2"
 
 
 def get_on_demand_briefing() -> dict:
@@ -28,7 +27,7 @@ def get_on_demand_briefing() -> dict:
         {"briefing": str, "success": bool, "error": str | None}
     """
     # Try to get existing alerts from cache
-    cached = get_cached(ALERTS_CACHE_KEY, ttl=AI_CACHE_TTL_SECONDS)
+    cached = get_cached(ALERTS_CACHE_KEY, ttl=NEWS_CACHE_MAX_AGE_SECONDS)
     
     if not cached or not cached.get("alerts"):
         return {
@@ -58,18 +57,17 @@ def get_on_demand_briefing() -> dict:
         }
 
     logger.info("Generating on-demand briefing from %d cached alerts (Claude)...", len(alerts))
-    try:
-        briefing_text = generate_briefing(alerts[:10])
-        set_cached(_AI_OD_BRIEFING_KEY, {"briefing": briefing_text})
-        return {
-            "success": True,
-            "briefing": briefing_text,
-            "error": None
-        }
-    except Exception as e:
-        logger.error(f"On-demand briefing generation failed: {e}")
+    briefing_text = generate_briefing(alerts[:10])
+    if not briefing_text:
+        # Never cache or show a made-up "all clear" when the model call fails.
         return {
             "success": False,
             "briefing": "",
-            "error": str(e)
+            "error": "The briefing could not be generated right now. Please try again later.",
         }
+    set_cached(_AI_OD_BRIEFING_KEY, {"briefing": briefing_text})
+    return {
+        "success": True,
+        "briefing": briefing_text,
+        "error": None,
+    }

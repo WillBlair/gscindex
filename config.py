@@ -17,17 +17,27 @@ import os
 # Background work still runs every few minutes, but each AI-powered
 # component consults its own cache and only calls the API when this TTL
 # expires (~once per day by default). Set AI_CACHE_TTL_SECONDS=43200
-# for roughly twice daily. GEMINI_CACHE_TTL_SECONDS is still read as a fallback.
-AI_CACHE_TTL_SECONDS: int = int(
-    os.environ.get("AI_CACHE_TTL_SECONDS")
-    or os.environ.get("GEMINI_CACHE_TTL_SECONDS", "86400")
-)
+# for roughly twice daily.
+AI_CACHE_TTL_SECONDS: int = int(os.environ.get("AI_CACHE_TTL_SECONDS", "86400"))
+
+# After a failed Claude call, wait this long before trying again instead of
+# re-sending the full prompt every 5-minute refresh cycle.
+AI_FAILURE_RETRY_SECONDS: int = int(os.environ.get("AI_FAILURE_RETRY_SECONDS", "3600"))
+
+# Bounds on model output that feeds scores. The prompts document these
+# ranges; the code enforces them so one bad value cannot swing a category.
+AI_SEVERITY_MAX: float = 10.0      # per-article severity is clamped to +/- this
+PORT_PENALTY_MAX: float = 50.0     # per-port disruption_penalty is clamped to 0..this
+
+# How long a news payload stays usable as a fallback while the next Claude
+# run is pending. Freshness of the AI analysis is tracked inside the payload.
+NEWS_CACHE_MAX_AGE_SECONDS: int = 7 * 86400
 
 # Re-score geopolitical alerts from live RSS between full AI runs (no API cost).
 NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
 
 # Shared disk cache key for RSS/AI news payload (alerts, briefing, report).
-NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v16"
+NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v17"
 
 # FRED inverse/direct scoring uses a trailing window (not full 5yr history).
 # Avoids COVID-era spikes from pinning "normal" prices in the middle of the scale.
@@ -117,6 +127,9 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "geopolitical":        0.20,
 }
 
+# Categories scoring below this appear in the disruptions table.
+DISRUPTION_SCORE_THRESHOLD: float = 70.0
+
 # Fallback scores when a provider fails — visible and tunable in one place.
 DEFAULT_FALLBACK_SCORES: dict[str, float] = {
     "weather":      75.0,   # Conservative — assumes minor disruptions
@@ -141,8 +154,6 @@ CATEGORY_LABELS: dict[str, str] = {
     "aero_orders":         "Aircraft Orders",
     "aero_production":     "Aero Production",
     "aero_ppi":            "Aircraft PPI",
-    # Strait of Hormuz chokepoint monitor (additional signal)
-    "hormuz_oil_flow":     "Hormuz Oil Flow",
 }
 
 # ---------------------------------------------------------------------------
