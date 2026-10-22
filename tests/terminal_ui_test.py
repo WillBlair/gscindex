@@ -260,3 +260,78 @@ def test_map_uses_terminal_palette_and_tier_colors():
     assert list(fig.data[0].marker.color) == [
         TIER_COLORS["Healthy"], TIER_COLORS["Stable"], TIER_COLORS["Stressed"], TIER_COLORS["Critical"]]
     assert min(fig.data[0].marker.size) >= 11
+
+
+# --- loading state, report and docs ------------------------------------------------
+
+def _class_names(node) -> set:
+    names = set()
+    for c in walk(node):
+        names.update(str(getattr(c, "className", None) or "").split())
+    return names
+
+
+def test_skeleton_uses_terminal_grid():
+    from components.skeleton import build_skeleton_layout
+
+    skeleton = build_skeleton_layout()
+    names = _class_names(skeleton)
+    assert "shell" in names and "pane" in names and "head" in names
+    for old in ["overview-card", "dashboard", "dash-header", "tech-card", "chart-panel",
+                "hero-row", "cards-row", "skeleton-pulse"]:
+        assert old not in names, old
+    # Same panes, same order as the live grid
+    panes = [c for c in walk(skeleton) if "pane" in str(getattr(c, "className", "") or "").split()]
+    assert len(panes) == 6
+    assert "wide" in panes[3].className and "full" in panes[5].className
+    # app.py's boot callbacks need these
+    assert {"loading-message", "boot-reload-trigger", "boot-interval"} <= ids(skeleton)
+    assert "Satoshi" not in repr(skeleton)
+
+
+def test_report_and_docs_use_terminal_palette(monkeypatch):
+    import flask
+    from api import docs, report
+
+    monkeypatch.setattr(report, "get_cached", lambda *a, **k: None)
+    monkeypatch.setattr("data.cache.get_cached_dashboard", lambda: None)
+    app = flask.Flask(__name__)
+    app.register_blueprint(report.report_bp)
+    app.register_blueprint(docs.docs_bp)
+    client = app.test_client()
+    for path in ("/report", "/docs"):
+        body = client.get(path).get_data(as_text=True)
+        assert "#000000" in body and "JetBrains Mono" in body and "#FFB020" in body, path
+        assert "family=JetBrains+Mono" in body and "Inter" in body, path
+        for old in ("#0c1216", "#6366f1", "backdrop-filter"):
+            assert old not in body, (path, old)
+
+
+def test_report_still_escapes_html_and_blocks_script_links(monkeypatch):
+    import flask
+    from api import report
+
+    md = "## Title\n<script>alert(1)</script>\n\n[x](javascript:alert(1))"
+    monkeypatch.setattr(report, "get_cached", lambda *a, **k: {"full_report": md, "generated_at": 0})
+    app = flask.Flask(__name__)
+    app.register_blueprint(report.report_bp)
+    body = app.test_client().get("/report").get_data(as_text=True)
+    assert "<script>alert" not in body and "&lt;script&gt;" in body
+    assert 'href="javascript:' not in body
+
+
+def test_phone_rules_in_stylesheet():
+    from pathlib import Path
+
+    css = Path(__file__).resolve().parents[1].joinpath("assets", "terminal.css").read_text()
+    assert "@media (max-width: 760px)" in css
+    phone = css.split("@media (max-width: 760px)", 1)[1]
+    assert ".hide-s" in phone and "grid-template-columns: minmax(0, 1fr)" in phone
+
+
+def test_category_detail_opens_above_or_below_so_it_fits_a_phone():
+    # "right" has no room beside the name on a 375px screen and popper cannot
+    # flip it, so the tooltip pushed the page sideways.
+    table = term.build_category_table(snapshot(), "baseline")
+    for tip in (c for c in walk(table) if isinstance(c, dbc.Tooltip)):
+        assert tip.placement == "top-start" and getattr(tip, "flip", True) is not False

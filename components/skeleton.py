@@ -1,244 +1,59 @@
-"""Cold-start skeleton layout matching production chrome."""
+"""Cold-start loading state: the terminal grid with dim placeholder panes.
 
+Shown while the first fetch runs (app.serve_layout returns it when there is
+no snapshot yet). Same panes and order as components/layout.py, so the page
+does not jump when the real dashboard replaces it. The boot callbacks in
+app.py drive ``loading-message`` and ``boot-reload-trigger`` from
+``boot-interval``.
+"""
 from dash import dcc, html
 
-from config import COLORS
+
+def _ph(width="100%", height=10, class_name="ph"):
+    """A dim placeholder bar."""
+    return html.Div(className=class_name, style={"width": width, "height": f"{height}px"})
+
+
+def _title(left, right=""):
+    return html.Div([html.Span(left), html.Span(right)], className="ttl")
+
+
+def _rows(count, widths=("100%",), height=10):
+    return [_ph(widths[i % len(widths)], height) for i in range(count)]
 
 
 def build_skeleton_layout():
-    """Returns a skeleton version of the dashboard layout."""
+    """Returns the loading-state layout (same grid as the live dashboard)."""
+    header = html.Header([
+        html.Div([html.B("GSCI"), " Global Supply Chain Index"], className="brand"),
+        html.Div(_ph("180px", 22), className="sk-views"),
+        html.Div(_ph("92px", 22), className="hr"),
+    ], className="head", **{"aria-busy": "true"})
 
-    header = html.Header(
-        className="dash-header",
-        children=[
-            html.Div(
-                className="header-brand",
-                children=[
-                    html.Div(
-                        className="brand-title-row",
-                        children=[
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "34px", "width": "34px", "borderRadius": "50%", "flexShrink": "0"},
-                            ),
-                            html.Div(
-                                className="brand-text",
-                                children=[
-                                    html.Div(
-                                        className="skeleton-pulse",
-                                        style={"height": "26px", "width": "280px", "borderRadius": "var(--radius)"},
-                                    ),
-                                    html.Div(
-                                        className="skeleton-pulse",
-                                        style={"height": "14px", "width": "120px", "borderRadius": "var(--radius)", "marginTop": "6px"},
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            html.Div(
-                className="header-center",
-                children=[
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "34px", "width": "200px", "borderRadius": "var(--radius)", "margin": "0 auto"},
-                    ),
-                ],
-            ),
-            html.Div(
-                className="header-meta",
-                children=[
-                    html.Div(
-                        className="header-nav",
-                        children=[
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "28px", "width": "160px", "borderRadius": "var(--radius)"},
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-        ],
-    )
+    readout = html.Section([
+        _title("Index"),
+        html.Div("Loading", className="sk-v"),
+        html.Div("Initializing system...", id="loading-message", role="status", className="sk-msg dim"),
+        _ph("100%", 46, "ph sk-spark"),
+        html.Div(_rows(6, ("100%", "88%", "94%")), className="sk-kv"),
+    ], className="pane read-cell sk")
 
-    hero_row = html.Section(
-        className="hero-row",
-        children=[
-            html.Div(
-                className="chart-panel gauge-panel",
-                style={"height": "340px"},
-                children=[
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
-                    )
-                ],
-            ),
-            html.Div(
-                className="chart-panel",
-                style={"height": "340px"},
-                children=[
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
-                    )
-                ],
-            ),
-        ],
-    )
+    map_pane = html.Section(html.Div(className="ph sk-map"), className="pane map-pane sk",
+                            **{"aria-label": "Port map"})
 
-    ticker = html.Div(
-        className="market-section-ticker",
-        children=[
-            html.Div(
-                className="skeleton-pulse",
-                style={"height": "40px", "width": "100%", "borderRadius": "var(--radius)"},
-            )
-        ],
-    )
+    quotes = html.Section([_title("Markets", "last")] + _rows(5, height=14), className="pane sk sk-list")
 
-    cards = []
-    for _ in range(6):
-        cards.append(
-            html.Div(
-                className="tech-card",
-                children=[
-                    html.Div(
-                        style={"display": "flex", "justifyContent": "space-between", "marginBottom": "10px"},
-                        children=[
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "12px", "width": "60px", "borderRadius": "var(--radius)"},
-                            ),
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "12px", "width": "30px", "borderRadius": "var(--radius)"},
-                            ),
-                        ],
-                    ),
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "32px", "width": "80px", "borderRadius": "var(--radius)", "marginBottom": "4px"},
-                    ),
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"marginTop": "auto", "height": "40px", "width": "100%", "borderRadius": "var(--radius)"},
-                    ),
-                ],
-            )
-        )
+    headlines = html.Section([_title("Headlines")] + _rows(8, ("100%", "82%", "91%", "74%"), 12),
+                             className="pane wide sk sk-list")
 
-    cards_row = html.Section(className="cards-row", children=cards)
+    briefing = html.Section([_title("Briefing")] + _rows(7, ("100%", "96%", "70%"), 12),
+                            className="pane sk sk-list")
 
-    bottom_row = html.Section(
-        className="bottom-row",
-        children=[
-            html.Div(
-                className="bottom-panel",
-                children=[
-                    html.Div(
-                        className="panel",
-                        style={"height": "300px"},
-                        children=[
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
-                            )
-                        ],
-                    )
-                ],
-            ),
-            html.Div(
-                className="bottom-panel",
-                children=[
-                    html.Div(
-                        className="panel",
-                        style={"height": "300px"},
-                        children=[
-                            html.Div(
-                                className="skeleton-pulse",
-                                style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
-                            )
-                        ],
-                    )
-                ],
-            ),
-        ],
-    )
+    categories = html.Section([_title("Categories", "bar = today, tick = yesterday")] + _rows(7, height=12),
+                              className="pane full sk sk-list")
 
-    charts_row = html.Section(
-        className="charts-row",
-        children=[
-            html.Div(
-                className="chart-panel chart-narrow",
-                style={"height": "400px"},
-                children=[
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
-                    )
-                ],
-            ),
-            html.Div(
-                className="chart-panel chart-wide",
-                style={"height": "400px"},
-                children=[
-                    html.Div(
-                        className="skeleton-pulse",
-                        style={"height": "100%", "width": "100%", "borderRadius": "var(--radius)"},
-                    )
-                ],
-            ),
-        ],
-    )
-
-    return html.Div(
-        className="dashboard",
-        children=[
-            header,
-            hero_row,
-            ticker,
-            cards_row,
-            bottom_row,
-            charts_row,
-            html.Div(id="refresh-trigger", style={"display": "none"}),
-            html.Div(id="boot-trigger", style={"display": "none"}),
-            html.Div(
-                id="loading-message-wrapper",
-                style={
-                    "position": "fixed",
-                    "top": "50%",
-                    "left": "50%",
-                    "transform": "translate(-50%, -50%)",
-                    "backgroundColor": COLORS["card"],
-                    "border": f"1px solid {COLORS['card_border']}",
-                    "borderRadius": "var(--radius)",
-                    "padding": "20px 40px",
-                    "zIndex": "9999",
-                    "minWidth": "300px",
-                    "display": "flex",
-                    "flexDirection": "column",
-                    "alignItems": "center",
-                    "gap": "10px",
-                },
-                children=[
-                    html.Div(
-                        id="loading-message",
-                        children="Initializing system...",
-                        style={
-                            "color": COLORS["text"],
-                            "fontFamily": "Satoshi, IBM Plex Sans, sans-serif",
-                            "fontSize": "16px",
-                            "fontWeight": "600",
-                            "textAlign": "center",
-                        },
-                    ),
-                ],
-            ),
-            html.Div(id="boot-reload-trigger", style={"display": "none"}),
-            dcc.Interval(id="boot-interval", interval=1000, n_intervals=0),
-        ],
-    )
+    return html.Div([
+        header, readout, map_pane, quotes, headlines, briefing, categories,
+        html.Div(id="boot-reload-trigger", style={"display": "none"}),
+        dcc.Interval(id="boot-interval", interval=1000, n_intervals=0),
+    ], className="shell")

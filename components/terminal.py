@@ -338,7 +338,7 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
             html.Td([
                 html.Button(row["label"], id=target, n_clicks=0, className="cat-name", type="button"),
                 dbc.Tooltip(_detail_lines(row), target=target, trigger="hover focus",
-                            placement="right", className="cat-tip"),
+                            placement="top-start", className="cat-tip"),
             ]),
             html.Td(f"{round(row['weight'] * 100)}%", className="r hide-s dim num"),
             html.Td(_bar(row["today"], row["yday"], color)),

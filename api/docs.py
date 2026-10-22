@@ -19,362 +19,253 @@ _DOCS_TEMPLATE = """
     <title>Platform Documentation — GSC Index</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     
     <!-- Mermaid.js for Architecture Diagrams -->
     <script type="module">
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({ 
-            startOnLoad: true, 
+        mermaid.initialize({
+            startOnLoad: true,
             theme: 'dark',
-            fontFamily: 'Inter, sans-serif'
+            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+            themeVariables: { background: '#07090C', lineColor: '#8A94A3', fontSize: '13px' }
         });
     </script>
 
     <style>
-        /* ── Reset & Base ──────────────────────────────────────── */
+        /* Terminal look (assets/terminal.css): black, 1px rules, mono chrome, Inter prose, amber titles. */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #0c1216;
-            color: #d6e1de;
-            line-height: 1.7;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #000000;
+            color: #F2F4F7;
+            line-height: 1.65;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
+        a { color: inherit; }
+        :focus-visible { outline: 1px solid #FFB020; outline-offset: 2px; }
 
-        /* ── Top Bar ───────────────────────────────────────────── */
+        /* ── Top bar ───────────────────────────────────────────── */
         .topbar {
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(12, 18, 22, 0.96);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            padding: 14px 32px;
+            background: #000000;
+            border-bottom: 1px solid #1D232B;
+            padding: 0 16px;
+            height: 44px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 13px;
         }
         .topbar-back {
-            font-size: 13px;
-            color: #8a8f9e;
+            color: #8A94A3;
             text-decoration: none;
-            font-weight: 600;
-            transition: color 0.2s;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .topbar-back:hover { color: #f3f4f6; }
-        .topbar-tag {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            color: #6366f1;
-            background: rgba(99, 102, 241, 0.1);
-            padding: 4px 10px;
-            border-radius: 6px;
-            letter-spacing: 0.04em;
-        }
+        .topbar-back:hover { color: #F2F4F7; }
+        .topbar-tag { color: #FFB020; font-size: 12px; }
 
-        /* ── Main Container ────────────────────────────────────── */
+        /* ── Main pane ─────────────────────────────────────────── */
         .docs-container {
-            max-width: 780px;
-            margin: 0 auto;
-            padding: 56px 28px 120px;
+            max-width: 860px;
+            margin: 32px auto 80px;
+            background: #07090C;
+            border: 1px solid #1D232B;
+            padding: 24px 28px 28px;
         }
 
-        /* ── Page Header ───────────────────────────────────────── */
         .docs-header {
-            margin-bottom: 56px;
-            text-align: center;
+            margin-bottom: 8px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #1D232B;
         }
         .docs-title {
-            font-size: 1.8rem;
-            font-weight: 600;
-            color: #f3f4f6;
-            line-height: 1.2;
-            letter-spacing: -0.02em;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 13px;
+            font-weight: 400;
+            color: #FFB020;
         }
 
-        /* ── Section Headings ─────────────────────────────────── */
+        /* ── Section headings ─────────────────────────────────── */
         .section-heading {
             display: flex;
             align-items: baseline;
             gap: 10px;
-            margin-top: 64px;
-            margin-bottom: 12px;
+            margin-top: 40px;
+            margin-bottom: 0;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
         }
-        .section-num {
-            color: #4b5563;
-            font-size: 14px;
-            font-weight: 600;
-            flex-shrink: 0;
-        }
-        .section-heading h2 {
-            font-size: 1.3rem;
-            font-weight: 600;
-            color: #f3f4f6;
-            letter-spacing: -0.01em;
-            margin: 0;
-        }
-        .section-rule {
-            border: none;
-            height: 1px;
-            background: linear-gradient(90deg, #2a2d3a 0%, transparent 100%);
-            margin-bottom: 24px;
-        }
+        .section-num { color: #8A94A3; font-size: 13px; flex-shrink: 0; }
+        .section-heading h2 { font-size: 13px; font-weight: 400; color: #FFB020; margin: 0; }
+        .section-rule { border: none; height: 1px; background: #1D232B; margin: 10px 0 18px; }
 
         /* ── Prose ─────────────────────────────────────────────── */
-        .prose p {
-            margin-bottom: 24px;
-            font-size: 15px;
-            color: #9ca3af;
-            line-height: 1.75;
-        }
-        .prose strong {
-            color: #e5e7eb;
-            font-weight: 600;
-        }
+        .prose p { margin-bottom: 18px; font-size: 15px; color: #D6DBE3; line-height: 1.65; }
+        .prose strong { color: #F2F4F7; font-weight: 600; }
 
-        /* ── Card Grids ───────────────────────────────────────── */
-        .grid-3 {
+        /* ── Card grids: panes separated by 1px rules ─────────── */
+        .grid-3, .grid-2 {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 40px;
+            gap: 1px;
+            background: #1D232B;
+            border: 1px solid #1D232B;
+            margin-bottom: 32px;
         }
-        .grid-2 {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-            margin-bottom: 40px;
-        }
+        .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
         .p-card {
-            background: #1a1d26;
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            border-radius: 6px;
-            padding: 24px;
+            background: #07090C;
+            padding: 14px 16px;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 12px;
+            min-width: 0;
         }
         .p-card h3 {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #f3f4f6;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 12px;
+            font-weight: 400;
+            color: #FFB020;
             margin-bottom: 0;
-            padding-bottom: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
-            align-items: center;
+            align-items: baseline;
             gap: 8px;
             text-transform: none !important;
         }
-
         .card-badge {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            font-weight: 600;
-            color: #6b7280;
-            padding: 2px 8px;
-            border-radius: 6px;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 12px;
+            color: #8A94A3;
             margin-left: auto;
             white-space: nowrap;
         }
+        .p-card p { font-size: 14px; color: #D6DBE3; margin-bottom: 0; line-height: 1.55; }
 
-        .p-card p {
-            font-size: 13.5px;
-            color: #9ca3af;
-            margin-bottom: 0;
-            line-height: 1.65;
-        }
-
-        /* ── Step Lists ───────────────────────────────────────── */
-        .step-list {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            margin-top: 4px;
-        }
-        .step-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-        }
+        /* ── Step lists ───────────────────────────────────────── */
+        .step-list { display: flex; flex-direction: column; gap: 10px; }
+        .step-item { display: flex; align-items: flex-start; gap: 10px; }
         .step-num {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #6b7280;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            font-weight: 600;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-        .step-text {
-            font-size: 13.5px;
-            color: #9ca3af;
-            line-height: 1.55;
-        }
-        .step-text strong {
-            color: #e5e7eb;
-            font-weight: 600;
-        }
-
-        /* ── Highlight Colors ─────────────────────────────────── */
-        .highlight-green  { color: #34d399; }
-        .highlight-red    { color: #f87171; }
-        .highlight-blue   { color: #60a5fa; }
-        .highlight-amber  { color: #fbbf24; }
-        .highlight-purple { color: #a78bfa; }
-
-        /* ── Code Inline ──────────────────────────────────────── */
-        .code-inline {
-            font-family: 'JetBrains Mono', monospace;
+            color: #8A94A3;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
             font-size: 12px;
-            color: #a5b4fc;
-            background: rgba(99, 102, 241, 0.1);
-            padding: 2px 7px;
-            border-radius: 6px;
+            line-height: 1.55;
+            flex-shrink: 0;
+            min-width: 12px;
+        }
+        .step-text { font-size: 14px; color: #D6DBE3; line-height: 1.55; min-width: 0; }
+        .step-text strong { color: #F2F4F7; font-weight: 600; }
+
+        /* ── Highlights (tier colors from the dashboard) ──────── */
+        .highlight-green  { color: #35D07F; }
+        .highlight-red    { color: #FF4D5E; }
+        .highlight-blue   { color: #F2F4F7; }
+        .highlight-amber  { color: #F5C542; }
+        .highlight-purple { color: #FFB020; }
+
+        /* ── Inline code ──────────────────────────────────────── */
+        .code-inline {
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 12px;
+            color: #F2F4F7;
+            background: #000000;
+            border: 1px solid #1D232B;
+            padding: 0 5px;
         }
 
-        /* ── Visual Math Block ────────────────────────────────── */
+        /* ── Formula block ────────────────────────────────────── */
         .math-block {
-            background: #111827;
-            border: 1px solid #1e293b;
-            border-radius: 6px;
-            padding: 32px;
+            background: #000000;
+            border: 1px solid #1D232B;
+            padding: 24px 16px;
             text-align: center;
-            margin: 32px 0 40px;
+            margin: 24px 0 32px;
         }
         .math-block code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 18px;
-            color: #818cf8;
-            font-weight: 700;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 16px;
+            color: #FFB020;
+            font-weight: 500;
         }
-        .math-block span.operator { color: #d6e1de; margin: 0 8px; }
-        .math-block span.variable { color: #60a5fa; }
-        .math-caption {
-            display: block;
-            margin-top: 16px;
-            font-size: 13px;
-            color: #6b7280;
-            line-height: 1.5;
-        }
+        .math-block span.operator { color: #8A94A3; margin: 0 8px; }
+        .math-block span.variable { color: #F2F4F7; }
+        .math-caption { display: block; margin-top: 14px; font-size: 13px; color: #8A94A3; line-height: 1.5; }
 
-        /* ── Mermaid Container ────────────────────────────────── */
+        /* ── Mermaid diagram ──────────────────────────────────── */
         .mermaid {
-            background: #111827;
-            border: 1px solid #1e293b;
-            border-radius: 6px;
-            padding: 32px;
-            margin-bottom: 40px;
+            background: #000000;
+            border: 1px solid #1D232B;
+            padding: 24px 16px;
+            margin-bottom: 32px;
             display: flex;
             justify-content: center;
+            overflow-x: auto;
         }
 
         /* ── Tables ───────────────────────────────────────────── */
-        .prose table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 32px;
-            font-size: 13.5px;
-            background: #111827;
-            border-radius: 6px;
-            overflow: hidden;
-            border: 1px solid #1e293b;
-        }
+        .prose table { width: 100%; border-collapse: collapse; margin-bottom: 28px; font-size: 13px; }
         .prose th {
             text-align: left;
-            padding: 14px 20px;
-            background: #1a1d26;
-            color: #e5e7eb;
-            font-weight: 600;
+            padding: 0 12px 6px 0;
+            color: #8A94A3;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-weight: 400;
             font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid #1D232B;
         }
         .prose td {
             text-align: left;
-            padding: 14px 20px;
-            border-bottom: 1px solid rgba(30, 41, 59, 0.6);
-            color: #9ca3af;
+            padding: 8px 12px 8px 0;
+            border-bottom: 1px solid #1D232B;
+            color: #D6DBE3;
+            vertical-align: top;
         }
-        .prose tr:nth-child(even) td {
-            background: rgba(17, 24, 39, 0.5);
-        }
-        .prose tr:last-child td { border-bottom: none; }
+        .prose tr:hover td { background: #0D1117; }
 
-        /* ── Info Callout ─────────────────────────────────────── */
+        /* ── Callout ──────────────────────────────────────────── */
         .callout {
-            background: rgba(99, 102, 241, 0.06);
-            border: 1px solid rgba(99, 102, 241, 0.15);
-            border-radius: 6px;
-            padding: 20px 24px;
-            margin: 24px 0 40px;
+            border-left: 2px solid #FFB020;
+            background: #000000;
+            padding: 12px 16px;
+            margin: 24px 0 32px;
             display: flex;
-            gap: 14px;
+            gap: 12px;
             align-items: flex-start;
         }
-        .callout-icon {
-            font-size: 18px;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-        .callout p {
-            font-size: 13.5px;
-            color: #a5b4fc;
-            line-height: 1.6;
-            margin-bottom: 0 !important;
-        }
+        .callout-icon { font-size: 15px; flex-shrink: 0; }
+        .callout p { font-size: 14px; color: #D6DBE3; line-height: 1.6; margin-bottom: 0 !important; }
 
         /* ── Footer ───────────────────────────────────────────── */
         .docs-footer {
-            margin-top: 80px;
-            padding-top: 32px;
-            border-top: 1px solid #1e293b;
+            margin-top: 40px;
+            padding-top: 14px;
+            border-top: 1px solid #1D232B;
             display: flex;
             justify-content: space-between;
-            align-items: center;
-        }
-        .docs-footer-text {
+            align-items: baseline;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
             font-size: 12px;
-            color: #4b5563;
         }
-        .docs-footer-link {
-            font-size: 13px;
-            font-weight: 600;
-            color: #6366f1;
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-        .docs-footer-link:hover { color: #818cf8; }
-        
-        /* ── Responsive ───────────────────────────────────────── */
-        @media (max-width: 768px) {
-            .docs-title { font-size: 1.4rem; }
-            .grid-3, .grid-2 { grid-template-columns: 1fr; }
-            .docs-container { padding: 32px 16px 80px; }
-            .math-block code { font-size: 13px; }
-            .section-heading { margin-top: 48px; }
-            .section-heading h2 { font-size: 1.1rem; }
-        }
+        .docs-footer-text { color: #8A94A3; }
+        .docs-footer-link { color: #FFB020; text-decoration: none; }
+        .docs-footer-link:hover { text-decoration: underline; }
 
-        @media (max-width: 480px) {
-            .topbar { padding: 12px 16px; }
-            .topbar-tag { display: none; }
-            .docs-footer { flex-direction: column; gap: 12px; text-align: center; }
+        /* ── Phones ───────────────────────────────────────────── */
+        @media (max-width: 760px) {
+            .docs-container { margin: 0; border: 0; border-bottom: 1px solid #1D232B; padding: 20px 16px 28px; }
+            .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr); }
+            .math-block code { font-size: 13px; }
+            .prose table { display: block; overflow-x: auto; }
+            .prose { overflow-wrap: anywhere; }
         }
     </style>
 </head>

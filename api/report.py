@@ -23,179 +23,125 @@ _REPORT_TEMPLATE = """
     <title>Daily Intelligence Report — GSC Index</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <style>
-        /* ── Reset & Base ──────────────────────────────────────── */
+        /* Terminal look (assets/terminal.css): black, 1px rules, mono chrome, Inter prose, amber titles. */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #0c1216;
-            color: #d6e1de;
-            line-height: 1.7;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #000000;
+            color: #F2F4F7;
+            line-height: 1.65;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
+        a { color: inherit; }
+        :focus-visible { outline: 1px solid #FFB020; outline-offset: 2px; }
 
-        /* ── Top Bar ───────────────────────────────────────────── */
+        /* ── Top bar ───────────────────────────────────────────── */
         .topbar {
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(12, 18, 22, 0.96);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            padding: 14px 32px;
+            background: #000000;
+            border-bottom: 1px solid #1D232B;
+            padding: 0 16px;
+            height: 44px;
             display: flex;
             align-items: center;
-            justify-content: flex-start;
-        }
-        .topbar-back {
+            gap: 22px;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
             font-size: 13px;
-            color: #6b7280;
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.2s;
         }
-        .topbar-back:hover { color: #e5e7eb; }
+        .topbar-brand { font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; color: #F2F4F7; text-decoration: none; }
+        .topbar-brand b { color: #FFB020; }
+        .topbar-back { margin-left: auto; color: #8A94A3; text-decoration: none; white-space: nowrap; }
+        .topbar-back:hover { color: #F2F4F7; }
 
-        /* ── Article Container ─────────────────────────────────── */
+        /* ── Article pane ──────────────────────────────────────── */
         .article-container {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 60px 24px 120px;
+            max-width: 760px;
+            margin: 32px auto 80px;
+            background: #07090C;
+            border: 1px solid #1D232B;
+            padding: 24px 28px 28px;
         }
 
-        /* ── Meta Header ───────────────────────────────────────── */
         .article-meta {
-            margin-bottom: 40px;
-            padding-bottom: 32px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #1D232B;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 16px;
+            flex-wrap: wrap;
         }
-        .article-label {
-            display: inline-block;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            color: #6366f1;
-            margin-bottom: 16px;
-        }
-        .article-title {
-            font-size: 36px;
-            font-weight: 800;
-            color: #f0f2f5;
-            line-height: 1.2;
-            margin-bottom: 12px;
-            letter-spacing: -0.5px;
-        }
-        .article-date {
-            font-size: 14px;
-            color: #6b7280;
-            font-weight: 500;
-        }
+        .article-title { font-size: 13px; font-weight: 400; color: #FFB020; }
+        .article-date { font-size: 13px; color: #8A94A3; }
 
-        /* ── Prose Content ─────────────────────────────────────── */
-
+        /* ── Prose ─────────────────────────────────────────────── */
+        .prose { font-size: 15px; color: #D6DBE3; }
         .prose h2 {
-            font-size: 20px;
-            font-weight: 700;
-            color: #e5e7eb;
-            margin-top: 48px;
-            margin-bottom: 16px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            letter-spacing: -0.3px;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 13px;
+            font-weight: 400;
+            color: #FFB020;
+            margin: 32px 0 12px;
+            padding-top: 16px;
+            border-top: 1px solid #1D232B;
         }
-
-        .prose h3 {
-            font-size: 17px;
-            font-weight: 600;
-            color: #d1d5db;
-            margin-top: 28px;
-            margin-bottom: 10px;
-        }
-
-        .prose p {
-            margin-bottom: 20px;
-            font-size: 16px;
-            color: #b0b5bf;
-        }
-
-        .prose strong {
-            color: #e5e7eb;
-            font-weight: 600;
-        }
-
-        .prose em {
-            color: #9ca3af;
-        }
-
-        .prose ul, .prose ol {
-            margin-bottom: 20px;
-            padding-left: 24px;
-        }
-        .prose li {
-            margin-bottom: 8px;
-            font-size: 16px;
-            color: #b0b5bf;
-        }
-        .prose li::marker {
-            color: #4f46e5;
-        }
-
+        .prose > h2:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+        .prose h3 { font-size: 15px; font-weight: 600; color: #F2F4F7; margin: 24px 0 8px; }
+        .prose p { margin-bottom: 16px; }
+        .prose strong { color: #F2F4F7; font-weight: 600; }
+        .prose em { color: #8A94A3; }
+        .prose ul, .prose ol { margin-bottom: 16px; padding-left: 22px; }
+        .prose li { margin-bottom: 6px; }
+        .prose li::marker { color: #8A94A3; }
+        .prose a { color: #FFB020; text-decoration: none; }
+        .prose a:hover { text-decoration: underline; }
         .prose blockquote {
-            border-left: 3px solid #4f46e5;
-            padding: 12px 20px;
-            margin: 24px 0;
-            background: rgba(79, 70, 229, 0.06);
-            border-radius: 0 6px 6px 0;
-            color: #9ca3af;
-            font-style: italic;
+            border-left: 2px solid #FFB020;
+            padding: 4px 16px;
+            margin: 20px 0;
+            color: #8A94A3;
         }
-
         .prose code {
-            background: rgba(255,255,255,0.05);
-            padding: 2px 6px;
-            border-radius: 6px;
-            font-size: 14px;
-            color: #a5b4fc;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 13px;
+            background: #000000;
+            border: 1px solid #1D232B;
+            padding: 1px 5px;
         }
-
-        .prose hr {
-            border: none;
-            border-top: 1px solid rgba(255,255,255,0.06);
-            margin: 40px 0;
-        }
+        .prose hr { border: none; border-top: 1px solid #1D232B; margin: 28px 0; }
+        .prose table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+        .prose th { color: #8A94A3; font-weight: 400; text-align: left; padding: 0 10px 6px 0; border-bottom: 1px solid #1D232B; }
+        .prose td { padding: 7px 10px 7px 0; border-bottom: 1px solid #1D232B; }
 
         /* ── Footer ────────────────────────────────────────────── */
         .report-footer {
-            margin-top: 64px;
-            padding-top: 24px;
-            border-top: 1px solid rgba(255,255,255,0.06);
+            margin-top: 32px;
+            padding-top: 14px;
+            border-top: 1px solid #1D232B;
             display: flex;
             justify-content: space-between;
-            align-items: center;
-        }
-        .report-footer-text {
+            align-items: baseline;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
             font-size: 12px;
-            color: #4b5563;
         }
-        .report-footer-link {
-            font-size: 13px;
-            color: #6366f1;
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.2s;
-        }
-        .report-footer-link:hover { color: #818cf8; }
+        .report-footer-text { color: #8A94A3; }
+        .report-footer-link { color: #FFB020; text-decoration: none; }
+        .report-footer-link:hover { text-decoration: underline; }
 
-        /* ── Responsive ────────────────────────────────────────── */
-        @media (max-width: 640px) {
-            .article-title { font-size: 28px; }
-            .article-container { padding: 40px 16px 80px; }
-            .topbar { padding: 12px 16px; }
+        @media (max-width: 760px) {
+            .article-container { margin: 0; border: 0; border-bottom: 1px solid #1D232B; padding: 20px 16px 28px; }
+            .topbar-brand span { display: none; }
+            .prose { overflow-wrap: anywhere; }
         }
     </style>
 </head>
@@ -203,7 +149,8 @@ _REPORT_TEMPLATE = """
 
     <!-- Top Bar -->
     <nav class="topbar">
-        <a href="/" class="topbar-back">&larr; Back to Dashboard</a>
+        <a href="/" class="topbar-brand"><b>GSCI</b><span> Global Supply Chain Index</span></a>
+        <a href="/" class="topbar-back">&larr; Dashboard</a>
     </nav>
 
     <!-- Article -->
