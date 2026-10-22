@@ -9,6 +9,7 @@ import pytest
 from components.workspace import (plain_text, safe_url, select_news,
                                   daily_delta, composite_for, snapshot_csv, build_freshness)
 from components.charts import build_world_map
+from components.terminal_data import TIER_COLORS
 from config import INDUSTRY_PROFILES
 
 
@@ -79,18 +80,18 @@ def test_stale_snapshot_is_never_labelled_latest(snapshot):
     assert status.children[0].children[1] == "Cached snapshot"
 
 
-def test_relative_map_spreads_close_scores_without_changing_the_readings():
+def test_map_colors_by_tier_without_changing_the_readings():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": score, "description": ""}
                for i, score in enumerate([61, 62, 63])]
     fig = build_world_map(markers)
-    assert list(fig.data[0].marker.color) == [1.0, 0.5, 0.0]
+    assert list(fig.data[0].marker.color) == [TIER_COLORS["Stable"]] * 3
     assert "63.0 / 100" in fig.data[0].text[0]
     assert min(fig.data[0].marker.size) >= 11
 
 
-def test_relative_map_ties_do_not_invent_differences():
+def test_map_ties_do_not_invent_differences():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": 65, "description": ""} for i in range(3)]
-    assert set(build_world_map(markers).data[0].marker.color) == {0.5}
+    assert set(build_world_map(markers).data[0].marker.color) == {TIER_COLORS["Stable"]}
 
 
 def test_map_hover_restores_conditions_and_news_without_active_html():

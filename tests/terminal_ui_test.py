@@ -1,0 +1,262 @@
+"""Terminal panes: header, readout, quotes, headlines, briefing, category table, map.
+
+Snapshots are built by hand; nothing touches a database.
+"""
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+import dash_bootstrap_components as dbc
+from dash import dcc, html
+
+import config
+from components import terminal as term
+from components.charts import build_world_map
+from components.terminal_data import TIER_COLORS, category_rows, index_summary
+from components.workspace import plain_text
+
+
+# --- helpers -----------------------------------------------------------------
+
+def walk(node):
+    """Yield every Dash component in a tree (children only, depth first)."""
+    if isinstance(node, (list, tuple)):
+        for child in node:
+            yield from walk(child)
+        return
+    if not hasattr(node, "_prop_names"):
+        return
+    yield node
+    yield from walk(getattr(node, "children", None))
+
+
+def text_of(node) -> str:
+    if node is None:
+        return ""
+    if isinstance(node, (str, int, float)):
+        return str(node)
+    if isinstance(node, (list, tuple)):
+        return " ".join(text_of(n) for n in node)
+    return text_of(getattr(node, "children", None))
+
+
+def ids(node) -> set:
+    return {getattr(c, "id", None) for c in walk(node)} - {None}
+
+
+def rows_of(table):
+    return [c for c in walk(table) if isinstance(c, html.Tr)]
+
+
+def cells(row):
+    return [c for c in row.children if isinstance(c, (html.Td, html.Th))]
+
+
+def snapshot(with_history=True):
+    cats = {c for p in config.INDUSTRY_PROFILES.values() for c in p["weights"]}
+    snap = {
+        "last_updated_utc": "2026-10-22T20:04:45Z",
+        "current_scores": {c: 70.0 + i for i, c in enumerate(sorted(cats))},
+        "category_metadata": {
+            c: {
+                "source": f"{c} source", "raw_value": "GSCPI +1.28", "raw_label": "Pressure",
+                "updated": "2026-10-22", "description": f"{c} desc", "calculation": f"{c} calc",
+            }
+            for c in cats
+        },
+        "fallback_categories": [],
+        "alerts": [], "map_markers": [], "market_data": {}, "briefing": "",
+    }
+    if with_history:
+        dates = [(date(2026, 10, 22) - timedelta(days=n)).isoformat() for n in range(91, -1, -1)]
+        scores = {}
+        for i, c in enumerate(sorted(cats)):
+            series = [None] * len(dates)
+            series[-2] = 60.0 + i
+            series[-3] = 55.0 + i
+            scores[c] = series
+        snap["daily_history"] = {"dates": dates, "scores": scores}
+    return snap
+
+
+# --- header ------------------------------------------------------------------
+
+def test_header_has_one_button_and_no_removed_controls():
+    header = term.build_header("Updated 5 min ago")
+    assert isinstance(header, html.Header)
+    found = ids(header)
+    for wanted in ["profile-switch", "updated-label", "api-btn", "export-btn", "newsletter-btn",
+                   "newsletter-popover", "newsletter-email", "newsletter-submit", "newsletter-feedback"]:
+        assert wanted in found, wanted
+    assert "refresh-btn" not in found and "profile-selector" not in found
+    text = text_of(header)
+    assert "higher is healthier" not in text
+    assert "Updated 5 min ago" in text
+
+    switch = next(c for c in walk(header) if getattr(c, "id", None) == "profile-switch")
+    assert isinstance(switch, dcc.RadioItems)
+    assert [(o["label"], o["value"]) for o in switch.options] == [
+        ("Global", "baseline"), ("Semis", "semiconductor"), ("Aero", "aerospace")]
+
+    popover = next(c for c in walk(header) if getattr(c, "id", None) == "newsletter-popover")
+    assert isinstance(popover, dbc.Popover)
+    assert popover.target == "newsletter-btn" and popover.trigger == "legacy"
+    email = next(c for c in walk(header) if getattr(c, "id", None) == "newsletter-email")
+    assert isinstance(email, dcc.Input) and email.type == "email"
+    assert any(isinstance(c, html.A) and c.href == "/docs" for c in walk(header))
+    for button_id in ["api-btn", "export-btn", "newsletter-btn"]:
+        assert isinstance(next(c for c in walk(header) if getattr(c, "id", None) == button_id), html.Button)
+
+
+# --- category table ------------------------------------------------------------
+
+def test_category_table_index_row_matches_summary():
+    snap = snapshot()
+    for key in config.INDUSTRY_PROFILES:
+        table = term.build_category_table(snap, key)
+        assert isinstance(table, html.Table)
+        body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
+        assert len(body) == len(category_rows(snap, key)) + 1
+        last = cells(body[-1])
+        assert "Index" in text_of(last[0])
+        assert text_of(last[3]) == f"{index_summary(snap, key)['today']:.1f}"
+
+
+def test_missing_yesterday_shows_dash():
+    snap = snapshot(with_history=False)
+    table = term.build_category_table(snap, "baseline")
+    assert "–" in text_of(table)
+    body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
+    for row in body:
+        change = text_of(cells(row)[5]).strip()
+        effect = text_of(cells(row)[6]).strip()
+        assert change == "–" and effect == "–"
+        assert "0.0" not in change
+
+
+def test_every_category_row_has_hover_detail():
+    snap = snapshot()
+    table = term.build_category_table(snap, "semiconductor")
+    tooltips = {c.target: c for c in walk(table) if isinstance(c, dbc.Tooltip)}
+    for row in category_rows(snap, "semiconductor"):
+        cat = row["cat"]
+        button = next(c for c in walk(table) if getattr(c, "id", None) == f"cat-detail-{cat}")
+        assert isinstance(button, html.Button) and "cat-name" in button.className
+        tip = tooltips[f"cat-detail-{cat}"]
+        assert tip.trigger == "hover focus"
+        tip_text = text_of(tip)
+        for piece in [f"{cat} source", "GSCPI +1.28", "Pressure", "2026-10-22", f"{cat} desc", f"{cat} calc"]:
+            assert piece in tip_text, piece
+
+
+def test_fallback_rows_are_marked():
+    snap = snapshot()
+    snap["fallback_categories"] = ["energy"]
+    table = term.build_category_table(snap, "baseline")
+    row = next(r for r in rows_of(table)
+               if any(getattr(c, "id", None) == "cat-detail-energy" for c in walk(r)))
+    assert "is-fallback" in (row.className or "")
+    assert "fallback" in text_of(cells(row)[-1])
+
+
+def test_missing_live_score_renders_dash_not_zero():
+    snap = snapshot()
+    del snap["current_scores"]["energy"]
+    table = term.build_category_table(snap, "baseline")
+    body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
+    assert text_of(cells(body[-1])[3]).strip() == "–"
+    readout = term.build_readout(snap, "baseline")
+    assert "–" in text_of(readout)
+    assert "0.0" not in text_of(readout).split("vs yesterday")[0]
+
+
+# --- readout -------------------------------------------------------------------
+
+def test_readout_shows_index_tier_and_categories():
+    snap = snapshot()
+    summary = index_summary(snap, "aerospace")
+    readout = term.build_readout(snap, "aerospace", days=90)
+    assert isinstance(readout, html.Section)
+    text = text_of(readout)
+    assert f"{summary['today']:.1f}" in text
+    assert summary["tier"]["label"] in text
+    assert "Aero" in text and "90 days" in text
+    for row in category_rows(snap, "aerospace"):
+        assert row["label"] in text
+    assert any(isinstance(c, html.Img) and c.src.startswith("data:image/svg+xml") for c in walk(readout))
+
+
+def test_readout_renders_without_daily_history():
+    readout = term.build_readout(snapshot(with_history=False), "baseline", days=7)
+    assert "–" in text_of(readout)
+
+
+# --- headlines, quotes, briefing -------------------------------------------------
+
+def test_headlines_link_out_and_strip_web_search_label():
+    alerts = [
+        {"title": "Port strike <b>widens</b>", "url": "https://example.org/a", "source": "Reuters (web search)",
+         "severity": "high", "category": "ports", "timestamp": "2026-10-22T10:00:00Z"},
+        {"title": "Bad link story", "url": "javascript:alert(1)", "source": "Wire",
+         "severity": "low", "category": "energy", "timestamp": "2026-10-21T10:00:00Z"},
+    ]
+    table = term.build_headlines(alerts)
+    assert isinstance(table, html.Table)
+    text = text_of(table)
+    assert "Reuters" in text and "(web search)" not in text
+    assert "HIGH" in text and "LOW" in text
+    links = [c for c in walk(table) if isinstance(c, html.A)]
+    assert [a.href for a in links] == ["https://example.org/a"]
+    assert all(a.target == "_blank" and "noopener" in a.rel for a in links)
+    assert "Bad link story" in text
+    assert "<b>" not in text and "Port strike widens" in text
+    sev = [c for c in walk(table) if isinstance(c, html.Td) and "sev" in (c.className or "")]
+    assert sev[0].style["color"] == TIER_COLORS["Critical"]
+
+
+def test_headlines_empty_state():
+    assert "No headlines" in text_of(term.build_headlines([]))
+
+
+def test_quotes_show_price_and_change():
+    quotes = term.build_quotes({
+        "Crude Oil": {"price": 99.22, "prev": 97.15, "change_pct": 2.13},
+        "Gold": {"price": 4039.1, "prev": 4150.0},
+    })
+    text = text_of(quotes)
+    assert "Crude Oil" in text and "99.22" in text and "+2.1%" in text
+    assert "4,039.10" in text and "−2.7%" in text
+    assert "unavailable" in text_of(term.build_quotes({})).lower()
+
+
+def test_briefing_bullets_and_report_link():
+    brief = term.build_briefing("• First point.\n- Second point.\n\n* Third point.")
+    paragraphs = [text_of(p) for p in walk(brief) if isinstance(p, html.P)]
+    assert paragraphs == ["First point.", "Second point.", "Third point."]
+    link = next(c for c in walk(brief) if isinstance(c, html.A))
+    assert link.href == "/report" and "Read full report" in text_of(link)
+    assert any(isinstance(c, html.A) and c.href == "/report" for c in walk(term.build_briefing("")))
+
+
+# --- map -------------------------------------------------------------------------
+
+def test_map_keeps_port_hover_text():
+    marker = {"name": "Test port", "lat": 1, "lon": 2, "score": 43.0,
+              "description": '<b>Region:</b> East Asia<br><b>AI Status:</b> Delays after storm.<br><b>[HIGH]</b> Terminal closure reported'}
+    hover = build_world_map([marker]).data[0].text[0]
+    assert "Region: East Asia" in plain_text(hover)
+    assert "Delays after storm." in hover
+    assert "Terminal closure reported" in hover
+    assert "43.0 / 100" in hover
+    assert "<b>Port update:</b>" in hover
+
+
+def test_map_uses_terminal_palette_and_tier_colors():
+    markers = [{"name": str(i), "lat": i, "lon": i, "score": s, "description": ""}
+               for i, s in enumerate([90, 70, 50, 20])]
+    fig = build_world_map(markers)
+    geo = fig.layout.geo
+    assert geo.landcolor == "#151B22" and geo.oceancolor == "#07090C" and geo.countrycolor == "#1E252E"
+    assert list(fig.data[0].marker.color) == [
+        TIER_COLORS["Healthy"], TIER_COLORS["Stable"], TIER_COLORS["Stressed"], TIER_COLORS["Critical"]]
+    assert min(fig.data[0].marker.size) >= 11

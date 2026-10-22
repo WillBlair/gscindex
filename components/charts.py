@@ -5,7 +5,7 @@ All Plotly figures and Dash panels that appear in the main dashboard body:
 
     - ``build_history_chart``  — 90-day multi-line trend of every category
     - ``build_category_panel`` — Horizontal health bars for each category
-    - ``build_world_map``      — Responsive tile map with regional risk dots
+    - ``build_world_map``      — Natural-earth port map with tier-colored risk dots
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from config import (
     CATEGORY_WEIGHTS,
     COLORS,
     HEALTH_TIERS,
-    MAP_RISK_SCALE,
 )
+from components.terminal_data import tier_for
 from scoring import get_health_tier
 
 import pandas as pd
@@ -208,8 +208,15 @@ def _port_hover_text(marker: dict) -> str:
     return heading + "<br><br>" + ("<br><br>".join(paragraphs) or "Port context unavailable.")
 
 
+# Global Constraints palette for the Terminal map.
+MAP_LAND = "#151B22"
+MAP_BG = "#07090C"
+MAP_BORDER = "#1E252E"
+MAP_COAST = "#27303B"
+
+
 def build_world_map(map_markers: list[dict]) -> go.Figure:
-    """Show relative port risk with source-provided conditions directly on hover."""
+    """Show port risk by health tier with source-provided conditions directly on hover."""
     lats: list[float] = []
     lons: list[float] = []
     scores: list[float] = []
@@ -232,12 +239,11 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
 
         hover_texts.append(_port_hover_text(marker))
 
-    # Ties share a hue; identical readings stay neutral.
-    ranks = pd.Series(scores, dtype=float).rank(method="average")
-    colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist() if len(set(scores)) > 1 else [0.5] * len(scores)
+    # Absolute tier colors (Terminal palette); thresholds stay in HEALTH_TIERS.
+    colors = [tier_for(score)["color"] for score in scores]
 
     fig = go.Figure(
-        go.Scattermap(
+        go.Scattergeo(
             lat=lats,
             lon=lons,
             text=hover_texts,
@@ -246,10 +252,8 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             marker={
                 "size": sizes,
                 "color": colors,
-                "colorscale": MAP_RISK_SCALE,
-                "cmin": 0, "cmax": 1,
-                "showscale": False,
                 "opacity": 1.0,  # Full opacity for maximum contrast
+                "line": {"width": 1, "color": MAP_BG},
             },
         )
     )
@@ -261,23 +265,29 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             "x": 0,
             "xanchor": "left",
         },
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor=MAP_BG,
+        plot_bgcolor=MAP_BG,
         margin={"t": 0, "b": 0, "l": 0, "r": 0},
         autosize=True,
         uirevision="port-map-fill",
         dragmode="pan",
         hoverlabel={
-            "bgcolor": "#101923",
-            "bordercolor": "#9ab0c8",
-            "font": {"family": "Arial, sans-serif", "size": 14, "color": "#f4f7fb"},
+            "bgcolor": "#0D1117",
+            "bordercolor": "#1D232B",
+            "font": {"family": "Arial, sans-serif", "size": 14, "color": "#F2F4F7"},
             "align": "left",
             "namelength": -1,
         },
-        map={
-            "style": "carto-darkmatter",
-            "fitbounds": "locations",
-            "uirevision": "port-map-fill",
+        geo={
+            "projection": {"type": "natural earth"},
+            "showland": True, "landcolor": MAP_LAND,
+            "showocean": True, "oceancolor": MAP_BG,
+            "showcountries": True, "countrycolor": MAP_BORDER,
+            "showcoastlines": True, "coastlinecolor": MAP_COAST,
+            "showlakes": False,
+            "showframe": False,
+            "bgcolor": MAP_BG,
+            "lataxis": {"range": [-50, 72]},
         },
     )
 
