@@ -28,11 +28,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Use /tmp in serverless environments (Vercel), otherwise local .cache
-if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-    _CACHE_DIR = Path(tempfile.gettempdir()) / "supply_chain_cache"
-else:
-    _CACHE_DIR = Path(__file__).parent / ".cache"
+_CACHE_DIR = Path(__file__).parent / ".cache"
 
 # Default TTL: 1 hour. Override per call if needed.
 DEFAULT_TTL_SECONDS = 3600

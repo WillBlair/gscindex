@@ -16,7 +16,7 @@ Real-time supply chain health dashboard built with Python/Dash. Aggregates data 
 - **Caching:** File-based with atomic writes, 1-hour default TTL
 - **Rate limiting:** Flask-Limiter on `/api/v1/*` only: 500/hour and 2000/day per visitor IP
 - **Python:** 3.13.1 (`.python-version`)
-- **Deployment:** Render (primary), Vercel (serverless alt)
+- **Deployment:** Render
 
 ## Running the App
 
@@ -27,7 +27,7 @@ python -m pytest tests/                          # Tests (pytest is not in requi
 RUN_LIVE_CLAUDE=1 python -m pytest tests/test_claude_integration.py   # Paid: real Claude calls
 ```
 
-`GSC_DISABLE_BACKGROUND=1` stops the background updater when the app is imported (tests, Vercel).
+`GSC_DISABLE_BACKGROUND=1` stops the background updater when the app is imported (tests, local previews).
 
 ## Environment Variables
 
@@ -107,7 +107,6 @@ api/
   briefing.py             # On-demand AI briefing (button)
   report.py               # /report page
   docs.py                 # /docs page
-  index.py                # Vercel entry
 scripts/
   send_newsletter.py      # Cron job for email delivery
   refresh_fallback_snapshot.py  # Rewrites data/fallback_snapshot_safe.json from DB/disk
@@ -355,7 +354,7 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 
 - Cache keys are versioned (e.g., `weather_batch_ports_v2`, `newsapi_briefing_v17`, `ai_port_summaries_v5`). Bump the version to bust stale cache on schema changes
 - Always use `set_cached()` / `_write_text_atomic()`, never write cache files directly
-- Cache dir: `data/.cache/` (dev) or `/tmp/supply_chain_cache/` (Vercel/Lambda)
+- Cache dir: `data/.cache/`
 - Only `fallback_snapshot_safe.json` is committed to git. The app never rewrites it; refresh it with `python scripts/refresh_fallback_snapshot.py` and commit
 
 ---
