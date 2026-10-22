@@ -64,7 +64,7 @@ The index is a weighted average of six category scores (0–100, where **100 = h
 | Freight Flow | 10% | BTS freight throughput growth, supplemented by a minority daily transportation proxy |
 | Geopolitical Risk | 20% | 17 RSS feeds scored by Claude, or VADER without it, blended 85/15 with an AI port-disruption signal |
 
-Energy & Fuel is a cost-pressure gauge; Freight Flow measures throughput growth. Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (UI badge, `/api/v1/latest`, and `/health`).
+Energy & Fuel is a cost-pressure gauge; Freight Flow measures throughput growth. Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (a "fallback" suffix in the category table, `/api/v1/latest`, and `/health`).
 
 Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–59), **Critical** (0–39).
 

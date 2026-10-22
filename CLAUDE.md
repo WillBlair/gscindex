@@ -185,7 +185,7 @@ CATEGORY_WEIGHTS = {
 
 The engine validates `sum(weights) ≈ 1.0` (atol=0.01) and raises `ValueError` if not. It does NOT auto-normalize.
 
-`INDUSTRY_PROFILES` holds per-profile weights (each must sum to 1.0) and `card_categories`:
+`INDUSTRY_PROFILES` holds per-profile weights (each must sum to 1.0) and `card_categories` (not used by the Terminal UI):
 - `baseline`: same weights as `CATEGORY_WEIGHTS`
 - `semiconductor`: weather 0.05, supply_chain 0.15, freight 0.05, energy 0.10, tariffs 0.10, geopolitical 0.15, chip_fab_util 0.20, chip_memory_prices 0.10, chip_lead_times 0.05, chip_wafer_prices 0.05
 - `aerospace`: weather 0.05, supply_chain 0.10, freight 0.10, energy 0.10, tariffs 0.10, geopolitical 0.15, aero_metals 0.15, aero_orders 0.10, aero_production 0.10, aero_ppi 0.05
@@ -315,7 +315,7 @@ except Exception as exc:
 ```
 
 Fallback categories are flagged: `metadata["is_fallback"]`, snapshot keys
-`degraded` / `fallback_categories`, a card badge, `/api/v1/latest`, and
+`degraded` / `fallback_categories`, a "fallback" suffix in the category table's source column (plus a "Live source unavailable" line in the row's hover detail), `/api/v1/latest`, and
 `/health`. Fallback scores are never written to the daily score history.
 
 ---
@@ -391,7 +391,7 @@ Region profiles still list a legacy `trucking` weight; it is folded into `energy
 
 - Fresh news score (blended with the port-disruption signal) overwrites the geopolitical score and history's last point
 - Claude score explanation, stored as `score_explanation` (cached 24h, reused only while the tier is unchanged); the Terminal UI does not display it
-- `daily_history` loaded from `get_daily_category_scores(91)` (see Snapshot Structure)
+- `daily_history` loaded from `get_daily_category_scores(91)`: the last 91 days plus today (92 dates) (see Snapshot Structure)
 - Disruptions generated from measured (non-fallback) categories scoring < `DISRUPTION_SCORE_THRESHOLD` (70), plus high-severity news alerts
 - Measured (non-fallback) daily scores persisted via `record_daily_scores()` (at most hourly)
 - Dashboard snapshot saved to the database via `save_dashboard_snapshot()` (at most hourly, skipped when a baseline category is on a fallback)
@@ -406,7 +406,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 {
     "last_updated_utc": "2026-03-10T15:30:00Z",
     "dates": pd.DatetimeIndex,                       # 90 daily dates
-    "daily_history": dict,                           # {"dates": ["YYYY-MM-DD", ...], "scores": {cat: [float | None, ...]}}, 91 days, stored daily scores
+    "daily_history": dict,                           # {"dates": ["YYYY-MM-DD", ...], "scores": {cat: [float | None, ...]}}, last 91 days plus today (92 dates), stored daily scores
     "category_history": dict[str, pd.Series],        # 6 baseline + industry categories
     "current_scores": dict[str, float],              # 6 baseline + chip_* and aero_* when available
     "category_metadata": dict[str, dict],            # one per category
@@ -524,7 +524,7 @@ Call types:
 3. Implement `fetch_current()` → `tuple[float, dict]` with required metadata keys
 4. Implement `fetch_history(days)` → `pd.Series` with `DatetimeIndex`
 5. Register in `data/aggregator.py`'s `_PROVIDERS` list
-6. Add weight in `config.py` `CATEGORY_WEIGHTS` and every `INDUSTRY_PROFILES` weight set (adjust others so each sums to 1.0), plus `card_categories` where it should show
+6. Add weight in `config.py` `CATEGORY_WEIGHTS` and every `INDUSTRY_PROFILES` weight set (adjust others so each sums to 1.0), (`card_categories` is a config key the Terminal UI does not use)
 7. Add to `CATEGORY_LABELS`, `CATEGORY_COLORS` in `config.py`
 8. Check the category table (`components/terminal.py`) and the readout render it
 
