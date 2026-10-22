@@ -29,3 +29,6 @@ app_errors.log
 
 # Local design mockups (not part of the app)
 design-drafts/
+
+# Plan execution scratch
+.superpowers/
