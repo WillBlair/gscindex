@@ -13,6 +13,7 @@ import math
 import re
 from textwrap import wrap
 
+import pandas as pd
 import plotly.graph_objects as go
 
 from components.terminal_data import tier_for
@@ -53,6 +54,10 @@ MAP_LAND = "#151B22"
 MAP_BG = "#07090C"
 MAP_BORDER = "#1E252E"
 MAP_COAST = "#27303B"
+# Terminal tier colors as a continuous scale: red (most at risk) to green.
+MAP_RELATIVE_SCALE = [
+    [0.0, "#FF4D5E"], [0.33, "#FF8A3D"], [0.66, "#F5C542"], [1.0, "#35D07F"],
+]
 
 
 def _finite_score(score) -> bool:
@@ -88,8 +93,15 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
 
         hover_texts.append(_port_hover_text(marker))
 
-    # Absolute tier colors (Terminal palette); thresholds stay in HEALTH_TIERS.
-    colors = [tier_for(score)["color"] for score in scores]
+    # Relative risk: rank ports against each other so the map always spans
+    # red (most at risk today) to green (least), even when every port sits in
+    # one or two health tiers. Ties share a color; the hover keeps the absolute
+    # score and tier.
+    if len(set(scores)) > 1:
+        ranks = pd.Series(scores, dtype=float).rank(method="average")
+        colors = ((ranks - ranks.min()) / (ranks.max() - ranks.min())).tolist()
+    else:
+        colors = [0.5] * len(scores)
 
     fig = go.Figure(
         go.Scattergeo(
@@ -101,6 +113,9 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
             marker={
                 "size": sizes,
                 "color": colors,
+                "colorscale": MAP_RELATIVE_SCALE,
+                "cmin": 0, "cmax": 1,
+                "showscale": False,
                 "opacity": 1.0,  # Full opacity for maximum contrast
                 "line": {"width": 1, "color": MAP_BG},
             },

@@ -58,18 +58,18 @@ def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
     assert weather["snapshot_utc"] == snapshot["last_updated_utc"]
 
 
-def test_map_colors_by_tier_without_changing_the_readings():
+def test_map_colors_relative_risk_without_changing_the_readings():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": score, "description": ""}
                for i, score in enumerate([61, 62, 63])]
     fig = build_world_map(markers)
-    assert list(fig.data[0].marker.color) == [TIER_COLORS["Stable"]] * 3
+    assert list(fig.data[0].marker.color) == [1.0, 0.5, 0.0]
     assert "63.0 / 100" in fig.data[0].text[0]
     assert min(fig.data[0].marker.size) >= 11
 
 
 def test_map_ties_do_not_invent_differences():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": 65, "description": ""} for i in range(3)]
-    assert set(build_world_map(markers).data[0].marker.color) == {TIER_COLORS["Stable"]}
+    assert set(build_world_map(markers).data[0].marker.color) == {0.5}
 
 
 def test_map_hover_restores_conditions_and_news_without_active_html():
@@ -236,7 +236,7 @@ def test_refresh_updates_context_panes_and_interval(terminal_app, monkeypatch):
     assert figure.data[0].type == "scattergeo"
     assert "Read full report" in _text(briefing)
     assert updated.startswith("Updated")
-    assert caption.endswith("ports, colored by tier")
+    assert caption.endswith("ports, colored by relative risk")
     assert interval == 300_000
     monkeypatch.setattr(terminal_app, "_DATA_IS_FRESH", False)
     assert refresh(4)[-1] == 20_000

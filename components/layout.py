@@ -32,7 +32,7 @@ MAP_CONFIG = {"displayModeBar": False, "scrollZoom": True, "responsive": True, "
 def map_caption(markers) -> str:
     """Pane caption; counts the markers the map actually draws."""
     count = sum(1 for m in markers or [] if _finite_score(m.get("score", 100)))
-    return f"{count} ports, colored by tier"
+    return f"{count} ports, colored by relative risk"
 
 
 def _title(left, right=""):
@@ -110,12 +110,8 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         ], className="pane"),
 
         html.Section([
-            html.Div([
-                html.Span("Headlines"),
-                _news_filters(),
-                html.Span(id="news-results-count", role="status", className="count"),
-            ], className="ttl news-head"),
-            html.Div(build_headlines(alerts, limit=None), id="news-results", className="news-scroll"),
+            _title("Categories"),
+            html.Div(build_category_table(data, DEFAULT_PROFILE), id="category-table"),
         ], className="pane wide"),
         html.Section([
             _title("Briefing"),
@@ -123,8 +119,12 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         ], className="pane"),
 
         html.Section([
-            _title("Categories", "bar = today, tick = yesterday"),
-            html.Div(build_category_table(data, DEFAULT_PROFILE), id="category-table"),
+            html.Div([
+                html.Span("Headlines"),
+                _news_filters(),
+                html.Span(id="news-results-count", role="status", className="count"),
+            ], className="ttl news-head"),
+            html.Div(build_headlines(alerts, limit=None), id="news-results", className="news-scroll"),
         ], className="pane full"),
 
         _api_modal(),

@@ -29,6 +29,25 @@ class SeverityClampTests(unittest.TestCase):
         self.assertGreaterEqual(_risk_score_from_alerts(alerts), 90.0)
 
 
+class FallbackBriefingTests(unittest.TestCase):
+    def test_fallback_briefing_states_headlines_plainly_without_repeating_a_category(self):
+        from data.providers.geopolitical import _build_fallback_briefing
+
+        alerts = [
+            {"title": "Ships struck near Hormuz", "category": "energy", "severity": "high", "sentiment": -9, "source": "gCaptain"},
+            {"title": "RICO case against freight brokers", "category": "geopolitical", "severity": "high", "sentiment": -8, "source": "The Loadstar"},
+            {"title": "Autonomous logistics network launches", "category": "geopolitical", "severity": "high", "sentiment": -7, "source": "Logistics Viewpoints"},
+            {"title": "Tariff ruling on steel imports", "category": "tariffs", "severity": "medium", "sentiment": -5, "source": "Reuters"},
+        ]
+        text = _build_fallback_briefing(alerts)
+        bullets = [line for line in text.splitlines() if line.strip()]
+        self.assertEqual(len(bullets), 3)
+        self.assertNotIn("high priority after reports that", text)
+        self.assertIn("Ships struck near Hormuz", text)
+        self.assertIn("Tariff ruling on steel imports", text)
+        self.assertNotIn("Autonomous logistics network launches", text)
+
+
 class NewsCacheClockTests(unittest.TestCase):
     def test_refresh_due_uses_payload_timestamp(self):
         from data.providers.geopolitical import _ai_refresh_due

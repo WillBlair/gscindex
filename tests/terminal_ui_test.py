@@ -162,7 +162,13 @@ def test_fallback_rows_are_marked():
     row = next(r for r in rows_of(table)
                if any(getattr(c, "id", None) == "cat-detail-energy" for c in walk(r)))
     assert "is-fallback" in (row.className or "")
-    assert "fallback" in text_of(cells(row)[-1])
+    assert "fallback" in text_of(cells(row)[0])
+
+
+def test_category_table_has_no_source_column():
+    table = term.build_category_table(snapshot(), "baseline")
+    header = [text_of(c).strip() for c in walk(table) if isinstance(c, html.Th)]
+    assert "Source" not in header
 
 
 def test_missing_live_score_renders_dash_not_zero():
@@ -235,6 +241,16 @@ def test_quotes_show_price_and_change():
     assert "unavailable" in text_of(term.build_quotes({})).lower()
 
 
+def test_quotes_are_grouped_in_order():
+    quotes = term.build_quotes({
+        "WTI crude": {"price": 99.0, "change_pct": 1.0, "group": "Energy"},
+        "Brent crude": {"price": 112.0, "change_pct": 1.0, "group": "Energy"},
+        "Dry bulk (BDRY)": {"price": 12.4, "change_pct": -1.0, "group": "Shipping"},
+    })
+    groups = [text_of(c) for c in walk(quotes) if "quote-group" in str(getattr(c, "className", "") or "")]
+    assert groups == ["Energy", "Shipping"]
+
+
 def test_briefing_bullets_and_report_link():
     brief = term.build_briefing("• First point.\n- Second point.\n\n* Third point.")
     paragraphs = [text_of(p) for p in walk(brief) if isinstance(p, html.P)]
@@ -263,15 +279,25 @@ def test_map_keeps_port_hover_text():
     assert "<b>Port update:</b>" in hover
 
 
-def test_map_uses_terminal_palette_and_tier_colors():
+def test_map_uses_terminal_palette_and_relative_red_to_green_scale():
     markers = [{"name": str(i), "lat": i, "lon": i, "score": s, "description": ""}
                for i, s in enumerate([90, 70, 50, 20])]
     fig = build_world_map(markers)
     geo = fig.layout.geo
     assert geo.landcolor == "#151B22" and geo.oceancolor == "#07090C" and geo.countrycolor == "#1E252E"
-    assert list(fig.data[0].marker.color) == [
-        TIER_COLORS["Healthy"], TIER_COLORS["Stable"], TIER_COLORS["Stressed"], TIER_COLORS["Critical"]]
-    assert min(fig.data[0].marker.size) >= 11
+    marker = fig.data[0].marker
+    # Drawn healthiest first; the healthiest port is fully green, the worst fully red.
+    assert list(marker.color) == [1.0, 2 / 3, 1 / 3, 0.0]
+    scale = [c[1] for c in marker.colorscale]
+    assert scale[0] == TIER_COLORS["Critical"] and scale[-1] == TIER_COLORS["Healthy"]
+    assert min(marker.size) >= 11
+
+
+def test_map_spreads_ports_that_share_one_tier_from_red_to_green():
+    markers = [{"name": str(i), "lat": i, "lon": i, "score": s, "description": ""}
+               for i, s in enumerate([66, 63, 60])]
+    colors = list(build_world_map(markers).data[0].marker.color)
+    assert colors == [1.0, 0.5, 0.0]
 
 
 # --- loading state, report and docs ------------------------------------------------
@@ -396,5 +422,5 @@ def test_map_skips_markers_without_a_finite_score():
 def test_map_caption_counts_drawn_ports():
     from components.layout import map_caption
     markers = [{"score": 80.0}, {"score": None}, {"score": 40.0}, {}]
-    assert map_caption(markers) == "3 ports, colored by tier"
-    assert map_caption([]) == "0 ports, colored by tier"
+    assert map_caption(markers) == "3 ports, colored by relative risk"
+    assert map_caption([]) == "0 ports, colored by relative risk"

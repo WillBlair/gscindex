@@ -223,8 +223,13 @@ def build_quotes(market_data: dict) -> html.Div:
     if not market_data:
         return html.Div(html.P("Market quotes are unavailable right now.", className="dim"), className="quotes")
     rows = []
+    last_group = None
     for name, quote_data in market_data.items():
         quote_data = quote_data or {}
+        group = quote_data.get("group")
+        if group and group != last_group:
+            rows.append(html.Div(group, className="quote-group"))
+            last_group = group
         price = _num(quote_data.get("price"))
         pct = _num(quote_data.get("change_pct"))
         prev = _num(quote_data.get("prev"))
@@ -328,19 +333,17 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
     head = html.Thead(html.Tr([
         html.Th("Category"), html.Th("Wt", className="r hide-s"), html.Th("Score", className="score-col"),
         html.Th("Today", className="r"), html.Th("Yest.", className="r hide-s"), html.Th("Chg", className="r"),
-        html.Th("Effect", className="r"), html.Th("30 days", className="hide-s"), html.Th("Source", className="hide-s"),
+        html.Th("Effect", className="r"), html.Th("30 days", className="hide-s"),
     ]))
 
     body = []
     for row in rows:
         cat, color = row["cat"], _tier_color(row["today"])
         target = f"cat-detail-{cat}"
-        source = plain_text(row.get("source")) or ""
-        if row["is_fallback"]:
-            source = f"{source} · fallback" if source else "fallback"
         body.append(html.Tr([
             html.Td([
                 html.Button(row["label"], id=target, n_clicks=0, className="cat-name", type="button"),
+                html.Span("fallback", className="fallback-tag") if row["is_fallback"] else None,
                 dbc.Tooltip(_detail_lines(row), target=target, trigger="hover focus",
                             placement="top-start", className="cat-tip"),
             ]),
@@ -351,7 +354,6 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
             html.Td(signed(row["change"]), className=f"r num {change_class(row['change'])}"),
             html.Td(signed(row["effect"], 2), className=f"r num {change_class(row['effect'])}"),
             html.Td(sparkline(row["history"], 110, 18, color), className="hide-s"),
-            html.Td(source, className="hide-s dim"),
         ], className="is-fallback" if row["is_fallback"] else None))
 
     tier = summary["tier"]
@@ -364,7 +366,6 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
         html.Td(fmt(summary["yday"]), className="r hide-s dim num"),
         html.Td(signed(summary["change"]), className=f"r num {change_class(summary['change'])}"),
         html.Td(signed(summary["change"], 2), className=f"r num {change_class(summary['change'])}"),
-        html.Td(className="hide-s"),
         html.Td(className="hide-s"),
     ], className="index-row")
 

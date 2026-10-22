@@ -69,21 +69,30 @@ def _fetch_market_data() -> dict:
     import yfinance as yf
     from data.cache import get_cached, set_cached
     
-    tickers = {
-        "Crude Oil": "CL=F", 
-        "Natural Gas": "NG=F", 
-        "Copper": "HG=F",
-        "Gold": "GC=F",
-        "Volatility (VIX)": "^VIX",
-    }
-    
-    cache_key = "raw_market_data"
+    # (label, symbol, group). Order is the display order in the Markets pane.
+    tickers = [
+        ("WTI crude", "CL=F", "Energy"),
+        ("Brent crude", "BZ=F", "Energy"),
+        ("Diesel (ULSD)", "HO=F", "Energy"),
+        ("Natural gas", "NG=F", "Energy"),
+        ("Dry bulk (BDRY)", "BDRY", "Shipping"),
+        ("Shipping stocks (BOAT)", "BOAT", "Shipping"),
+        ("Transports (IYT)", "IYT", "Shipping"),
+        ("Copper", "HG=F", "Materials"),
+        ("Aluminum", "ALI=F", "Materials"),
+        ("Steel (SLX)", "SLX", "Materials"),
+        ("Gold", "GC=F", "Materials"),
+        ("US dollar index", "DX-Y.NYB", "Macro"),
+        ("Volatility (VIX)", "^VIX", "Macro"),
+    ]
+
+    cache_key = "raw_market_data_v2"
     cached = get_cached(cache_key, ttl=3600)
     if cached: 
         return cached
     
     data = {}
-    for name, sym in tickers.items():
+    for name, sym, group in tickers:
         try:
             t = yf.Ticker(sym)
             hist = t.history(period="5d")
@@ -96,6 +105,7 @@ def _fetch_market_data() -> dict:
                     "price": current,
                     "prev": prev,
                     "symbol": sym,
+                    "group": group,
                     "change_pct": ((current - prev) / prev) * 100 if prev else 0.0
                 }
         except Exception as e:

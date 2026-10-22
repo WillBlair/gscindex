@@ -239,18 +239,27 @@ def _build_fallback_briefing(alerts: list[dict]) -> str:
             "• Monitoring remains active for weather, trade policy, and geopolitical events that could shift risk quickly."
         )
 
-    top = sorted(alerts, key=lambda a: float(a.get("sentiment", 0.0)))[:3]
+    # Most severe first, one headline per category so the three bullets
+    # cover different risks instead of repeating one template.
+    ranked = sorted(alerts, key=lambda a: float(a.get("sentiment", 0.0)))
+    top: list[dict] = []
+    seen: set[str] = set()
+    for alert in ranked:
+        category = str(alert.get("category", "geopolitical"))
+        if category in seen:
+            continue
+        seen.add(category)
+        top.append(alert)
+        if len(top) == 3:
+            break
     bullets: list[str] = []
     for alert in top:
-        title = str(alert.get("title", "Supply chain development")).strip()
-        category = str(alert.get("category", "geopolitical")).replace("_", " ")
-        severity = str(alert.get("severity", "low")).lower()
+        title = str(alert.get("title", "Supply chain development")).strip().rstrip(".")
         source = str(alert.get("source", "news source")).strip()
+        source = source[: -len("(web search)")].rstrip() if source.endswith("(web search)") else source
         if len(title) > 140:
             title = f"{title[:137]}..."
-        bullets.append(
-            f"• {category.title()} risk is {severity} priority after reports that {title} (source: {source})."
-        )
+        bullets.append(f"• {title} ({source}).")
 
     while len(bullets) < 3:
         bullets.append(
