@@ -544,13 +544,6 @@ def _derive_map_markers(
         tier = get_health_tier(score)
 
         # ── Build hover tooltip (transparent about data sources) ─
-        # Find the worst-performing category relevant to this port's region.
-        # Only consider categories with meaningful weight (>10%) for this region.
-        relevant_cats = [c for c, w in macro_weights.items() if w >= 0.10]
-        top_risk_cat = min(relevant_cats, key=lambda c: current_scores.get(c, 50))
-        top_risk_label = CATEGORY_LABELS.get(top_risk_cat, top_risk_cat.title())
-        top_risk_score = current_scores.get(top_risk_cat, 50)
-
         region_label = (region or "global").replace("_", " ").title()
 
         lines: list[str] = [
@@ -560,8 +553,21 @@ def _derive_map_markers(
         ]
         if vulnerability > 0:
             lines.append(f"<b>Structural risk:</b> -{vulnerability} pts (zone vulnerability)")
-        if top_risk_score < 60:
-            lines.append(f"<b>Top risk:</b> {top_risk_label} ({top_risk_score:.0f})")
+        # Why this port scores what it does, from measured data only: the two
+        # regional categories that pull its score down the most (weight x
+        # shortfall from 100), plus today's weather reading at the port.
+        drags = sorted(
+            ((w * (100 - current_scores.get(c, 50)), c) for c, w in macro_weights.items()),
+            reverse=True,
+        )[:2]
+        drag_text = ", ".join(
+            f"{CATEGORY_LABELS.get(c, c.title())} ({current_scores.get(c, 50):.0f})"
+            for d, c in drags if d > 0
+        )
+        if drag_text:
+            lines.append(f"<b>Main drags:</b> {drag_text}")
+        if local_weather is not None:
+            lines.append(f"<b>Weather:</b> {weather_summary} ({local_weather:.0f})")
 
         if ai_summary:
             wrapped_summary = _wrap_text(ai_summary, max_chars=45)
@@ -569,9 +575,10 @@ def _derive_map_markers(
             if ai_penalty > 0:
                 lines.append(f"<b>AI Penalty:</b> -{ai_penalty:.1f} pts")
         else:
-            # Fallback to old global context if no AI summary
-            critical = [k for k, v in current_scores.items() if k != "weather" and v < 40]
-            stressed = [k for k, v in current_scores.items() if k != "weather" and 40 <= v < 60]
+            # Fallback to global context if no AI summary (baseline categories only;
+            # chip and aero signals say nothing about a port)
+            critical = [k for k in CATEGORY_WEIGHTS if k != "weather" and current_scores.get(k, 100) < 40]
+            stressed = [k for k in CATEGORY_WEIGHTS if k != "weather" and 40 <= current_scores.get(k, 100) < 60]
             if critical:
                 names = ", ".join(CATEGORY_LABELS[c] for c in critical)
                 lines.append(f"<b>Global alert:</b> {names} at critical levels")
