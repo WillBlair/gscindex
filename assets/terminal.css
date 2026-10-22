@@ -211,7 +211,7 @@ button { font: inherit; color: inherit; }
 .map-graph > div:empty { display: none; }
 
 /* ── Markets ──────────────────────────────────────────────────────── */
-.quote { display: grid; grid-template-columns: 1fr auto 58px; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--grid); }
+.quote { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--grid); }
 /* The quote list scrolls inside its pane, so it never makes the top row
    taller than the readout and map. */
 .quotes-pane { position: relative; min-height: 0; }

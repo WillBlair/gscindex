@@ -41,7 +41,7 @@ def build_skeleton_layout():
     map_pane = html.Section(html.Div(className="ph sk-map"), className="pane map-pane sk",
                             **{"aria-label": "Port map"})
 
-    quotes = html.Section([_title("Markets", "last")] + _rows(5, height=14), className="pane sk sk-list")
+    quotes = html.Section([_title("Markets")] + _rows(5, height=14), className="pane sk sk-list")
 
     categories = html.Section([_title("Categories")] + _rows(7, height=12),
                               className="pane wide sk sk-list")

@@ -105,7 +105,7 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
                       responsive=True, className="map-graph"),
         ], className="pane map-pane", **{"aria-label": "Port map"}),
         html.Section([
-            _title("Markets", "last"),
+            _title("Markets"),
             html.Div(build_quotes(data.get("market_data", {})), id="quotes", className="quotes-scroll"),
         ], className="pane quotes-pane"),
 

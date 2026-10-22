@@ -235,10 +235,10 @@ def build_quotes(market_data: dict) -> html.Div:
         prev = _num(quote_data.get("prev"))
         if pct is None and price is not None and prev:
             pct = (price - prev) / prev * 100
+        # Price only, colored by today's direction (green up, red down).
         rows.append(html.Div([
             html.Span(name),
-            html.B(f"{price:,.2f}" if price is not None else DASH, className="num"),
-            html.Small(signed(pct) + ("%" if pct is not None else ""), className=f"num {change_class(pct)}"),
+            html.B(f"{price:,.2f}" if price is not None else DASH, className=f"num {change_class(pct)}"),
         ], className="quote"))
     return html.Div(rows, className="quotes")
 

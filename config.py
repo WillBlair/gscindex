@@ -34,7 +34,7 @@ PORT_PENALTY_MAX: float = 50.0     # per-port disruption_penalty is clamped to 0
 NEWS_WEB_SEARCH_MAX_USES: int = int(os.environ.get("NEWS_WEB_SEARCH_MAX_USES", "8"))
 NEWS_WEB_SEARCH_MAX_ARTICLES: int = 15
 NEWS_AI_MAX_ARTICLES: int = 35     # articles Claude scores per run (web + RSS)
-PORT_WEB_SEARCH_MAX_USES: int = int(os.environ.get("PORT_WEB_SEARCH_MAX_USES", "10"))
+PORT_WEB_SEARCH_MAX_USES: int = int(os.environ.get("PORT_WEB_SEARCH_MAX_USES", "25"))
 
 # How long a news payload stays usable as a fallback while the next Claude
 # run is pending. Freshness of the AI analysis is tracked inside the payload.

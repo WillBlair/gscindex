@@ -236,8 +236,10 @@ def test_quotes_show_price_and_change():
         "Gold": {"price": 4039.1, "prev": 4150.0},
     })
     text = text_of(quotes)
-    assert "Crude Oil" in text and "99.22" in text and "+2.1%" in text
-    assert "4,039.10" in text and "−2.7%" in text
+    assert "Crude Oil" in text and "99.22" in text and "4,039.10" in text
+    assert "%" not in text
+    prices = {text_of(c): str(c.className) for c in walk(quotes) if isinstance(c, html.B)}
+    assert "pos" in prices["99.22"] and "neg" in prices["4,039.10"]
     assert "unavailable" in text_of(term.build_quotes({})).lower()
 
 

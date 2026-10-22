@@ -508,7 +508,7 @@ All Claude calls go through `data/llm.py`: model `ANTHROPIC_MODEL` (default `cla
 Call types:
 - `analyze_news_batch()`: severity + summary for up to 25 articles and the 3-bullet briefing, in one call
 - `generate_full_report()`: Markdown report for `/report` (up to 50 articles)
-- `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles
+- `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles plus up to 25 Claude web searches (PORT_WEB_SEARCH_MAX_USES)
 - `generate_score_explanation()`: stored as `score_explanation` in the snapshot
 - `generate_briefing()`: on-demand briefing helper, only when the cached payload has no briefing (no UI button calls it)
 - `generate_newsletter_briefing()`: newsletter cron
