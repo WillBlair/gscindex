@@ -74,7 +74,7 @@ def register_workspace_callbacks(app, get_snapshot):
 
     @app.callback(Output("news-results", "children"), Output("news-results-count", "children"),
                   Input("news-search", "value"), Input("news-severity", "value"), Input("news-category", "value"),
-                  Input("refresh-request", "data"), prevent_initial_call=True)
+                  Input("refresh-request", "data"))
     def update_news(query, severity, category, _):
         data, _ = get_snapshot()
         if not data:
