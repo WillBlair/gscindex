@@ -35,7 +35,7 @@ public CSV download. Set optional provider credentials in an untracked `.env`
 file. Unavailable readings remain explicitly marked; history is never invented.
 `GSC_DISABLE_BACKGROUND=1` disables background fetches when importing the app for
 offline tests. Install `pytest` and run `python -m pytest tests/workspace_test.py`
-for the monitoring behavior tests. Gemini integration tests require credentials.
+for the monitoring behavior tests. Claude integration tests require credentials.
 
 ## What It Does
 
@@ -52,7 +52,7 @@ The index is a weighted average of six category scores (0–100, where **100 = h
 | Energy & Fuel | 20% | Crude and diesel cost pressure, relative to trailing 2-year ranges |
 | Trade & Tariffs | 15% | Trade Policy Uncertainty categorical index (`EPUTRADE`) via [FRED](https://fred.stlouisfed.org/), monthly |
 | Freight Flow | 10% | BTS freight throughput growth, supplemented by a minority daily transportation proxy |
-| Geopolitical Risk | 20% | RSS/[NewsAPI](https://newsapi.org/) + VADER severity, with optional Gemini AI analysis |
+| Geopolitical Risk | 20% | RSS/[NewsAPI](https://newsapi.org/) + VADER severity, with optional Claude AI analysis |
 
 Energy & Fuel is a cost-pressure gauge; Freight Flow measures throughput growth. Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (UI badge, `/api/v1/latest`, and `/health`).
 
@@ -65,7 +65,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 - **World map** — 37 ports colored by blended local weather (40%) + regional macro (60%)
 - **90-day trend chart** — multi-line history for all six categories
 - **News alerts** — supply-chain articles scored by VADER negativity
-- **AI briefing** — Gemini-generated summary (optional; cached ~24h)
+- **AI briefing** — Claude-generated summary (optional; cached ~24h)
 - **Market indicators** — crude oil, natural gas, copper, gold, VIX via yfinance
 - **Port conditions** — source-provided disruption context directly on map hover
 - **Newsletter signup** — email collection stored in PostgreSQL (prod) or SQLite (dev)
@@ -77,7 +77,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 |-----|-------------|
 | `/` | Main dashboard |
 | `/docs` | Platform documentation |
-| `/report` | Daily intelligence report (Gemini-generated markdown) |
+| `/report` | Daily intelligence report (Claude-generated markdown) |
 | `/health` | Operational health check (JSON) |
 
 ## Tech Stack
@@ -87,7 +87,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 8 gthreads)
 - **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers + daily score history
-- **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Google Generative AI
+- **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Anthropic API (Claude Sonnet 5.5)
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes (1-hour default TTL)
 - **Rate limiting:** Flask-Limiter (2000/day, 500/hour)
@@ -138,7 +138,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 |----------|----------|---------|
 | `FRED_API_KEY` | Recommended | Uses the authenticated FRED API; public CSV downloads support keyless previews |
 | `NEWSAPI_KEY` | Yes | Geopolitical scoring, news alerts, and briefing input |
-| `GEMINI_API_KEY` | No | AI briefing, daily report, and news analysis |
+| `ANTHROPIC_API_KEY` | No | AI briefing, daily report, and news analysis |
 | `DATABASE_URL` | No | PostgreSQL for newsletter subscribers (omit for SQLite fallback) |
 | `ADMIN_TOKEN` | No | Protects `/api/v1/newsletter-data` and admin endpoints |
 | `PORT` | No | Server port (default `10000` in prod, `8050` in dev) |
@@ -169,8 +169,9 @@ gscindex/
 │   ├── aggregator.py           # Orchestrates providers via ThreadPoolExecutor
 │   ├── cache.py                # Atomic file-based TTL cache
 │   ├── database.py             # PostgreSQL/SQLite abstraction (subscribers)
-│   ├── ai_analyst.py           # Gemini news analysis and briefing
-│   ├── ai_validator.py         # Gemini score validation
+│   ├── ai_analyst.py           # Claude news analysis and briefing
+│   ├── port_analyst.py         # Claude per-port summaries + disruption penalties
+│   ├── llm.py                  # Shared Anthropic client (model, effort, fallbacks)
 │   ├── ports_data.py           # 37 major port definitions
 │   └── providers/              # weather, supply_chain, energy, tariffs, trucking, geopolitical
 ├── scoring/

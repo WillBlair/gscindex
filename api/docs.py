@@ -412,7 +412,7 @@ _DOCS_TEMPLATE = """
 _DOCS_MARKDOWN = """
 <div class="section-heading"><span class="section-num">1.</span><h2>System Architecture</h2></div>
 <hr class="section-rule">
-<p>A daemon thread fetches raw data from 6 providers in parallel every 5 minutes, passes articles through Google's Gemini API for severity analysis, saves the daily composite score to a Neon PostgreSQL database, and caches the final layout as JSON for instant page loads.</p>
+<p>A daemon thread fetches raw data from 6 providers in parallel every 5 minutes, passes articles through Anthropic's Claude API for severity analysis, saves the daily composite score to a Neon PostgreSQL database, and caches the final layout as JSON for instant page loads.</p>
 
 <div class="mermaid">
 flowchart LR
@@ -430,7 +430,7 @@ flowchart LR
     C["Yahoo Finance<br>(CL=F · HO=F)"] --> E
     D["RSS Feeds<br>(12 Industry Outlets)"] --> E
     
-    E["Background Thread<br>Parallel Aggregator"] --> F["Gemini Flash<br>News Analyzer"]
+    E["Background Thread<br>Parallel Aggregator"] --> F["Claude Sonnet<br>News Analyzer"]
     F --> G["Neon Postgres<br>Daily Scores"]
     E --> H["Dash UI<br>Live Dashboard"]
 </div>
@@ -460,7 +460,7 @@ flowchart LR
         <h3>Geopolitical Risk <span class="card-badge">20%</span></h3>
         <div class="step-list">
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> 12 industry RSS feeds (FreightWaves, gCaptain, Supply Chain Dive, etc.).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analysis:</strong> Gemini Flash scores each article's severity (<span class="highlight-red">-10 to +10</span>). VADER sentiment as fallback.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analysis:</strong> Claude Sonnet scores each article's severity (<span class="highlight-red">-10 to +10</span>). VADER sentiment as fallback.</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Starts at 100, deducts cumulative severity. Also generates the <span class="highlight-green">AI Daily Briefing</span>.</div></div>
         </div>
     </div>
@@ -498,7 +498,7 @@ flowchart LR
 |:---|:---|:---|:---|
 | **Supply Chain Activity** | 25% | NY Fed WEI (FRED) | Fixed calibration (WEI × 12.5 + 50) |
 | **Energy & Fuel** | 20% | WTI Crude (CL=F) + DOE Diesel (GASDESW) | Average inverse percentile vs trailing 2-year range |
-| **Geopolitical Risk** | 20% | RSS + Gemini AI | Severity deductions from baseline |
+| **Geopolitical Risk** | 20% | RSS + Claude AI | Severity deductions from baseline |
 | **Trade & Tariffs** | 15% | EPU Index (FRED) | Inverse against trailing range |
 | **Port Weather** | 10% | Open-Meteo | Continuous weather deductions |
 | **Freight Flow** | 10% | BTS Freight TSI + BDRY proxy | YoY growth mapped to 0–100 |
@@ -528,7 +528,7 @@ flowchart LR
 
 <div class="section-heading"><span class="section-num">4.</span><h2>AI Intelligence Layer</h2></div>
 <hr class="section-rule">
-<p>Google's Gemini Flash model processes supply chain news in a <strong>single consolidated API call</strong> to minimize usage, producing both article analysis and the executive briefing simultaneously.</p>
+<p>Anthropic's Claude Sonnet model processes supply chain news in a <strong>single consolidated API call</strong> to minimize usage, producing both article analysis and the executive briefing simultaneously.</p>
 
 <div class="grid-2">
     <div class="p-card">
@@ -536,7 +536,7 @@ flowchart LR
         <div class="step-list">
             <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Ingest:</strong> The aggregator fetches up to 50 articles from <span class="highlight-purple">12 industry RSS feeds</span> in parallel.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Filter:</strong> Irrelevant articles (sports, crypto, fashion, market research spam) are pre-filtered via keyword exclusion.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Gemini assigns each article a severity from <span class="highlight-red">-10</span> (catastrophic) to <span class="highlight-green">+10</span> (miracle).</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Claude assigns each article a severity from <span class="highlight-red">-10</span> (catastrophic) to <span class="highlight-green">+10</span> (miracle).</div></div>
         </div>
     </div>
     <div class="p-card">

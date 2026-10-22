@@ -13,7 +13,7 @@ positive).
 Score Logic
 -----------
 1. Fetch recent supply chain articles (RSS primary, NewsAPI fallback)
-2. Score each article's severity (Gemini analysis when available,
+2. Score each article's severity (Claude analysis when available,
    VADER compound × 6 as the deterministic fallback)
 3. Classify each article into a supply chain category via keywords
 4. Compute the score: deduplicate articles by title, take the 10 most
@@ -38,7 +38,7 @@ import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from config import (
-    GEMINI_CACHE_TTL_SECONDS,
+    AI_CACHE_TTL_SECONDS,
     NEWS_BRIEFING_CACHE_KEY,
     NEWS_RSS_REFRESH_SECONDS,
     PORT_DISRUPTION_WEIGHT,
@@ -238,7 +238,7 @@ def _build_vader_alerts(candidates: list[dict]) -> list[dict]:
 
 
 def _refresh_cached_news_from_rss(cached: dict) -> dict | None:
-    """Re-fetch RSS and re-score with VADER while keeping Gemini briefing/report."""
+    """Re-fetch RSS and re-score with VADER while keeping Claude briefing/report."""
     from data.rss_fetcher import fetch_rss_articles
 
     rss_articles = fetch_rss_articles(max_items=50)
@@ -273,7 +273,7 @@ def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
     This is intentionally fast and non-blocking so provider calls never trigger
     long AI/RSS fetches. Fresh news fetch runs in the aggregator job.
     """
-    cached = get_cached(_NEWS_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
+    cached = get_cached(_NEWS_CACHE_KEY, ttl=AI_CACHE_TTL_SECONDS)
     if not cached:
         return None
     return (
@@ -286,7 +286,7 @@ def _get_cached_news_tuple() -> tuple[float, list[dict], str, str] | None:
 
 @serialized
 def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
-    """Fetch news and analyze using AI (Gemini) with VADER fallback.
+    """Fetch news and analyze using AI (Claude) with VADER fallback.
     
     Returns
     -------
@@ -294,7 +294,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
         (score, alerts, briefing_text, full_report_md)
     """
     cache_key = _NEWS_CACHE_KEY
-    cached = get_cached(cache_key, ttl=GEMINI_CACHE_TTL_SECONDS)
+    cached = get_cached(cache_key, ttl=AI_CACHE_TTL_SECONDS)
     if cached is not None:
         cache_age = get_cache_age_seconds(cache_key)
         if cache_age is not None and cache_age > NEWS_RSS_REFRESH_SECONDS:
@@ -342,7 +342,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     rss_articles = fetch_rss_articles(max_items=50)
     
     # Optional: We can still fetch from NewsAPI if RSS is empty, 
-    # but the user requested "make sure gemini does it based on these", so we prioritize RSS heavily.
+    # but the user requested "make sure the AI does it based on these", so we prioritize RSS heavily.
     # If RSS returns < 5 items, we might fall back, but let's stick to RSS for now to ensure quality.
     
     candidates = []
@@ -397,7 +397,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     # Ensure internal intelligence is always included by prioritizing items with 'is_rss' = True
     ai_candidates = candidates[:25]
     
-    # 3. Analyze with Gemini
+    # 3. Analyze with Claude
     ai_results, ai_briefing = analyze_news_batch(ai_candidates)
     
     # Generate Full Report (New Feature)
@@ -435,7 +435,7 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     # Fallback VADER for non-AI analyzed items or if AI failed
     if not alerts and candidates:
         logger.warning(
-            "Gemini returned no usable alerts; using deterministic VADER fallback for %d candidates.",
+            "Claude returned no usable alerts; using deterministic VADER fallback for %d candidates.",
             len(candidates),
         )
         alerts = _build_vader_alerts(candidates[:30])
@@ -488,7 +488,7 @@ class GeopoliticalProvider(BaseProvider):
         """Best-effort blend of the aggregate port-disruption score into a
         base geopolitical score. Returns (blended_score, source_suffix, note).
         Falls back to the unmodified base score if port data isn't available
-        (e.g. GEMINI_API_KEY unset) — never raises.
+        (e.g. ANTHROPIC_API_KEY unset) — never raises.
         """
         try:
             from data.port_analyst import get_aggregate_disruption_score
@@ -515,11 +515,11 @@ class GeopoliticalProvider(BaseProvider):
             med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
 
             blended_score, source_suffix, port_note = self._blend_port_disruption(
-                score, "RSS + Gemini (cached)"
+                score, "RSS + Claude (cached)"
             )
 
             return blended_score, {
-                "source": f"RSS + Gemini (cached){source_suffix}",
+                "source": f"RSS + Claude (cached){source_suffix}",
                 "raw_value": f"{len(alerts)} articles",
                 "raw_label": "Analyzed News Volume",
                 "description": (
@@ -527,7 +527,7 @@ class GeopoliticalProvider(BaseProvider):
                     f"and {med_sev} medium-severity risk events.{port_note}"
                 ),
                 "calculation": (
-                    "Score is derived from Gemini severity analysis of recent supply-chain "
+                    "Score is derived from Claude severity analysis of recent supply-chain "
                     "articles and used as the current anchor for geopolitical risk."
                     + (
                         f" Blended {1 - PORT_DISRUPTION_WEIGHT:.0%}/{PORT_DISRUPTION_WEIGHT:.0%} "

@@ -1,9 +1,9 @@
 """
-Test Gemini API Integration
+Test Claude API Integration
 ============================
-Generates and displays data for map points to verify the Gemini API is working.
+Generates and displays data for map points to verify the Claude API is working.
 
-Run with: python tests/test_gemini_integration.py
+Run with: python tests/test_claude_integration.py
 """
 from __future__ import annotations
 
@@ -29,20 +29,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def check_gemini_api_key() -> bool:
-    """Check if Gemini API key is configured."""
-    key = os.environ.get("GEMINI_API_KEY")
+def check_anthropic_api_key() -> bool:
+    """Check if Claude API key is configured."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
     if key:
-        logger.info("✓ GEMINI_API_KEY found")
+        logger.info("✓ ANTHROPIC_API_KEY found")
         return True
-    logger.error("✗ GEMINI_API_KEY not found in environment")
+    logger.error("✗ ANTHROPIC_API_KEY not found in environment")
     return False
 
 
 def test_port_summaries() -> dict[str, str]:
-    """Generate AI-powered port summaries via Gemini."""
+    """Generate AI-powered port summaries via Claude."""
     logger.info("=" * 60)
-    logger.info("TESTING: Port Summaries via Gemini API")
+    logger.info("TESTING: Port Summaries via Claude API")
     logger.info("=" * 60)
     
     from data.port_analyst import generate_port_summaries
@@ -70,9 +70,9 @@ def test_port_summaries() -> dict[str, str]:
 
 
 def test_news_analysis() -> tuple[dict, str]:
-    """Test news analysis and briefing generation via Gemini."""
+    """Test news analysis and briefing generation via Claude."""
     logger.info("=" * 60)
-    logger.info("TESTING: News Analysis via Gemini API")
+    logger.info("TESTING: News Analysis via Claude API")
     logger.info("=" * 60)
     
     from data.providers.geopolitical import fetch_supply_chain_news
@@ -159,7 +159,7 @@ def test_map_marker_generation() -> list[dict]:
 
 def save_test_output(port_summaries: dict, markers: list) -> None:
     """Save test output to JSON for inspection."""
-    output_path = Path(__file__).parent / "gemini_test_output.json"
+    output_path = Path(__file__).parent / "claude_test_output.json"
     
     output = {
         "generated_at": datetime.now().isoformat(),
@@ -175,15 +175,15 @@ def save_test_output(port_summaries: dict, markers: list) -> None:
 
 
 def main() -> int:
-    """Run all Gemini integration tests."""
+    """Run all Claude integration tests."""
     logger.info("╔════════════════════════════════════════════════════════════╗")
-    logger.info("║       GEMINI API INTEGRATION TEST                          ║")
+    logger.info("║       CLAUDE API INTEGRATION TEST                          ║")
     logger.info("║       Global Supply Chain Index Dashboard                  ║")
     logger.info("╚════════════════════════════════════════════════════════════╝\n")
     
     # Check API key first
-    if not check_gemini_api_key():
-        logger.error("\nCannot proceed without GEMINI_API_KEY.")
+    if not check_anthropic_api_key():
+        logger.error("\nCannot proceed without ANTHROPIC_API_KEY.")
         logger.error("Please set it in your .env file.")
         return 1
     
@@ -213,7 +213,7 @@ def main() -> int:
     all_ok = bool(port_summaries and news_result.get("alerts") and markers)
     
     if all_ok:
-        logger.info("\n🎉 All Gemini integrations are working correctly!\n")
+        logger.info("\n🎉 All Claude integrations are working correctly!\n")
         return 0
     else:
         logger.warning("\n⚠️ Some tests failed. Check the logs above for details.\n")

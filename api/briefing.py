@@ -9,14 +9,14 @@ import json
 import logging
 from flask import jsonify
 
-from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
+from config import AI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
 from data.ai_analyst import generate_briefing
 from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
 ALERTS_CACHE_KEY = NEWS_BRIEFING_CACHE_KEY
-_GEMINI_OD_BRIEFING_KEY = "gemini_on_demand_briefing_v1"
+_AI_OD_BRIEFING_KEY = "claude_on_demand_briefing_v1"
 
 
 def get_on_demand_briefing() -> dict:
@@ -28,7 +28,7 @@ def get_on_demand_briefing() -> dict:
         {"briefing": str, "success": bool, "error": str | None}
     """
     # Try to get existing alerts from cache
-    cached = get_cached(ALERTS_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
+    cached = get_cached(ALERTS_CACHE_KEY, ttl=AI_CACHE_TTL_SECONDS)
     
     if not cached or not cached.get("alerts"):
         return {
@@ -48,19 +48,19 @@ def get_on_demand_briefing() -> dict:
             "error": None
         }
     
-    od_cached = get_cached(_GEMINI_OD_BRIEFING_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
+    od_cached = get_cached(_AI_OD_BRIEFING_KEY, ttl=AI_CACHE_TTL_SECONDS)
     if od_cached and od_cached.get("briefing"):
-        logger.info("Returning cached on-demand Gemini briefing")
+        logger.info("Returning cached on-demand Claude briefing")
         return {
             "success": True,
             "briefing": od_cached["briefing"],
             "error": None,
         }
 
-    logger.info("Generating on-demand briefing from %d cached alerts (Gemini)...", len(alerts))
+    logger.info("Generating on-demand briefing from %d cached alerts (Claude)...", len(alerts))
     try:
         briefing_text = generate_briefing(alerts[:10])
-        set_cached(_GEMINI_OD_BRIEFING_KEY, {"briefing": briefing_text})
+        set_cached(_AI_OD_BRIEFING_KEY, {"briefing": briefing_text})
         return {
             "success": True,
             "briefing": briefing_text,

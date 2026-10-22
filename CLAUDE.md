@@ -11,7 +11,7 @@ Real-time supply chain health dashboard built with Python/Dash. Aggregates data 
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 8 gthreads)
 - **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback) — subscribers + daily score history
-- **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Google Generative AI
+- **External APIs:** FRED, NewsAPI, Open-Meteo (free, no key), yfinance, Anthropic API (Claude Sonnet 5.5)
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes, 1-hour default TTL
 - **Rate limiting:** Flask-Limiter (2000/day, 500/hour)
@@ -32,7 +32,7 @@ FRED_API_KEY        # Required — energy, tariffs, trucking scoring + WEI conte
 NEWSAPI_KEY         # Required — geopolitical scoring + alerts
 DATABASE_URL        # PostgreSQL (omit for SQLite fallback)
 ADMIN_TOKEN         # Protects /api/v1/newsletter-data
-GEMINI_API_KEY      # Optional — AI briefing + news analysis
+ANTHROPIC_API_KEY   # Optional — AI briefing, report, news + port analysis (Claude)
 PORT                # Server port (default 10000)
 ```
 
@@ -46,6 +46,7 @@ data/
   cache.py                # Atomic file-based TTL cache
   database.py             # PostgreSQL/SQLite lazy-resolved abstraction
   status.py               # Loading status messaging
+  llm.py                  # Shared Anthropic client (Claude Sonnet 5.5) for all AI calls
   providers/
     base.py               # Abstract BaseProvider interface
     weather.py            # Open-Meteo: 14 shipping hubs, linear deductions
@@ -53,7 +54,7 @@ data/
     energy.py             # WTI crude (yfinance), percentile vs trailing 2yr FRED range
     tariffs.py            # Trade Policy Uncertainty (EPUTRADE, monthly) via FRED
     trucking.py           # DOE weekly diesel + live HO=F nowcast for today
-    geopolitical.py       # RSS/NewsAPI + VADER/Gemini severity, three-tier fallback
+    geopolitical.py       # RSS/NewsAPI + VADER/Claude severity, three-tier fallback
     fred_client.py        # Shared FRED API wrapper
   fallback_snapshot_safe.json  # Committed cold-start fallback (only cache file in git)
 components/
@@ -203,7 +204,7 @@ return max(0.0, min(100.0, score))
 
 **Geopolitical** — Three-tier fallback, negative-only, volume-invariant scoring:
 ```
-Tier 1: Cached Gemini AI analysis (4h cache)
+Tier 1: Cached Claude AI analysis (4h cache)
 Tier 2: Live RSS + VADER sentiment (2–3 seconds)
 Tier 3: Neutral baseline 85.0
 

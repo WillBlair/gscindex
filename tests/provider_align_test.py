@@ -1,4 +1,4 @@
-"""Tests for aggregator history alignment and Gemini port-summary coercion."""
+"""Tests for aggregator history alignment and Claude port-summary coercion."""
 
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ import html
 import re
 import markdown
 
-from config import GEMINI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
+from config import AI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY
 from data.cache import get_cached
 
 report_bp = Blueprint("report", __name__)
@@ -235,7 +235,7 @@ def serve_report():
     from markupsafe import Markup
     from zoneinfo import ZoneInfo
 
-    cached = get_cached(NEWS_BRIEFING_CACHE_KEY, ttl=GEMINI_CACHE_TTL_SECONDS)
+    cached = get_cached(NEWS_BRIEFING_CACHE_KEY, ttl=AI_CACHE_TTL_SECONDS)
     report_md = ""
     report_generated = None
     

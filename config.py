@@ -12,18 +12,21 @@ from __future__ import annotations
 import os
 
 # ---------------------------------------------------------------------------
-# Gemini API — refresh budget (file-backed cache, per server)
+# Claude (Anthropic API) — refresh budget (file-backed cache, per server)
 # ---------------------------------------------------------------------------
-# Background work still runs every few minutes, but each Gemini-powered
+# Background work still runs every few minutes, but each AI-powered
 # component consults its own cache and only calls the API when this TTL
-# expires (~once per day by default). Set GEMINI_CACHE_TTL_SECONDS=43200
-# for roughly twice daily.
-GEMINI_CACHE_TTL_SECONDS: int = int(os.environ.get("GEMINI_CACHE_TTL_SECONDS", "86400"))
+# expires (~once per day by default). Set AI_CACHE_TTL_SECONDS=43200
+# for roughly twice daily. GEMINI_CACHE_TTL_SECONDS is still read as a fallback.
+AI_CACHE_TTL_SECONDS: int = int(
+    os.environ.get("AI_CACHE_TTL_SECONDS")
+    or os.environ.get("GEMINI_CACHE_TTL_SECONDS", "86400")
+)
 
-# Re-score geopolitical alerts from live RSS between full Gemini runs (no API cost).
+# Re-score geopolitical alerts from live RSS between full AI runs (no API cost).
 NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
 
-# Shared disk cache key for RSS/Gemini news payload (alerts, briefing, report).
+# Shared disk cache key for RSS/AI news payload (alerts, briefing, report).
 NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v16"
 
 # FRED inverse/direct scoring uses a trailing window (not full 5yr history).

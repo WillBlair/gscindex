@@ -337,7 +337,7 @@ def _severity_label(severity: float) -> str:
     """Human-readable label for an alert severity score.
 
     Alert ``sentiment`` values are on the severity scale (roughly -6..0,
-    VADER compound x 6 or Gemini severity_score) — NOT raw VADER compound.
+    VADER compound x 6 or Claude severity_score) — NOT raw VADER compound.
     Thresholds match ``_score_to_severity`` in the geopolitical provider.
     """
     if severity <= -4.0:
@@ -785,12 +785,12 @@ def aggregate_data(status_callback=None) -> dict:
         except Exception as e:
             logger.warning("Market data fetch timed out or failed: %s", e)
 
-        # D. Process Port Summaries (Gemini AI generation)
+        # D. Process Port Summaries (Claude generation)
         port_summaries = {}
         try:
             if status_callback:
                 status_callback("Generating port summaries...")
-            port_summaries = future_port_summaries.result(timeout=60) or {}
+            port_summaries = future_port_summaries.result(timeout=120) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
     finally:
@@ -826,7 +826,7 @@ def aggregate_data(status_callback=None) -> dict:
         med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
         geo_meta.update(
             {
-                "source": "RSS + Gemini AI",
+                "source": "RSS + Claude AI",
                 "raw_value": f"{len(alerts)} articles",
                 "raw_label": "Analyzed News Volume",
                 "description": (
@@ -846,15 +846,15 @@ def aggregate_data(status_callback=None) -> dict:
 
     composite = compute_composite_index(current_scores)
 
-    # AI score context for gauge hover — at most once per day (GEMINI_CACHE_TTL_SECONDS).
+    # AI score context for gauge hover — at most once per day (AI_CACHE_TTL_SECONDS).
     score_explanation = ""
     try:
         from data.cache import get_cached, set_cached
-        from config import GEMINI_CACHE_TTL_SECONDS
+        from config import AI_CACHE_TTL_SECONDS
         from data.ai_analyst import generate_score_explanation
 
-        _score_cache_key = "gemini_score_explanation_v1"
-        cached_explanation = get_cached(_score_cache_key, ttl=GEMINI_CACHE_TTL_SECONDS)
+        _score_cache_key = "claude_score_explanation_v1"
+        cached_explanation = get_cached(_score_cache_key, ttl=AI_CACHE_TTL_SECONDS)
 
         if cached_explanation and cached_explanation.get("text"):
             score_explanation = str(cached_explanation["text"])

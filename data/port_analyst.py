@@ -1,43 +1,47 @@
 """
 Port Analyst Module
 ====================
-Uses Gemini AI to generate supply chain status summaries for each major port.
-Cached with ``config.GEMINI_CACHE_TTL_SECONDS`` (default ~24h) to cap API usage.
+Uses Claude to generate supply chain status summaries for each major port.
+Cached with ``config.AI_CACHE_TTL_SECONDS`` (default ~24h) to cap API usage.
 """
 from __future__ import annotations
 
-import json
 import logging
 from data.runtime import serialized
-import os
 from datetime import datetime
 
-import warnings
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    import google.generativeai as genai
-from dotenv import load_dotenv
-
-from config import GEMINI_CACHE_TTL_SECONDS
+from config import AI_CACHE_TTL_SECONDS
+from data import llm
 from data.cache import get_cached, set_cached
 from data.ports_data import MAJOR_PORTS
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Configure Gemini
-api_key = os.environ.get("GEMINI_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
-
-CACHE_TTL = GEMINI_CACHE_TTL_SECONDS
+CACHE_TTL = AI_CACHE_TTL_SECONDS
 CACHE_KEY = "ai_port_summaries_v4"
 
-GENERATION_CONFIG = {
-    "temperature": 0.7,  # Higher for more varied, specific responses
-    "top_p": 0.9,
-    "response_mime_type": "application/json",
-}
+
+def _port_schema(port_names: list[str]) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "ports": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "port": {"type": "string", "enum": port_names},
+                        "summary": {"type": "string"},
+                        "disruption_penalty": {"type": "number"},
+                    },
+                    "required": ["port", "summary", "disruption_penalty"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["ports"],
+        "additionalProperties": False,
+    }
 
 SYSTEM_PROMPT = """You are a senior supply chain intelligence analyst providing LIVE OPERATIONAL BRIEFINGS for major global shipping ports.
 
@@ -68,7 +72,7 @@ Return a JSON object with port names as exact keys matching the input list.
 
 
 def _coerce_port_payload(raw) -> dict:
-    """Turn Gemini's JSON into ``{port_name: payload}``.
+    """Turn the model's JSON into ``{port_name: payload}``.
 
     The model is asked for an object, but it often returns a list of
     ``{"port": ..., "summary": ...}`` rows, a list of single-key objects,
@@ -105,13 +109,13 @@ def _coerce_port_payload(raw) -> dict:
 
 
 def _normalize_summaries(raw, port_names: list[str]) -> dict[str, dict]:
-    """Reconcile Gemini's response keys with our canonical port names.
+    """Reconcile the model's response keys with our canonical port names.
 
     Handles four common failure modes:
-      1. Gemini returns a *string* instead of ``{"summary": ..., "disruption_penalty": ...}``
-      2. Gemini uses slightly different casing, accents, or whitespace in key names
-      3. Gemini omits some ports entirely
-      4. Gemini returns a JSON *list* instead of an object
+      1. The model returns a *string* instead of ``{"summary": ..., "disruption_penalty": ...}``
+      2. The model uses slightly different casing, accents, or whitespace in key names
+      3. The model omits some ports entirely
+      4. The model returns a JSON *list* instead of an object
     """
     raw = _coerce_port_payload(raw)
     if not isinstance(raw, dict):
@@ -130,10 +134,10 @@ def _normalize_summaries(raw, port_names: list[str]) -> dict[str, dict]:
             folded = unicodedata.normalize("NFKD", key).encode("ascii", "ignore").decode().lower().strip()
             match = canonical.get(folded)
         if not match:
-            logger.debug("Gemini returned unknown port key %r — skipping", key)
+            logger.debug("Model returned unknown port key %r — skipping", key)
             continue
 
-        # Handle plain-string values (Gemini sometimes skips the dict wrapper)
+        # Handle plain-string values (models sometimes skips the dict wrapper)
         if isinstance(value, str):
             value = {"summary": value, "disruption_penalty": 0.0}
         elif not isinstance(value, dict):
@@ -152,7 +156,7 @@ def _normalize_summaries(raw, port_names: list[str]) -> dict[str, dict]:
     missing = set(port_names) - set(normalized)
     if missing:
         logger.warning(
-            "Gemini did not return summaries for %d/%d ports: %s",
+            "Model did not return summaries for %d/%d ports: %s",
             len(missing), len(port_names), ", ".join(sorted(missing)),
         )
 
@@ -179,8 +183,8 @@ def generate_port_summaries() -> dict[str, dict]:
             summaries = _normalize_summaries(summaries, port_names)
         return summaries if isinstance(summaries, dict) else {}
 
-    if not api_key:
-        logger.warning("GEMINI_API_KEY not set. Using fallback summaries.")
+    if not llm.is_configured():
+        logger.warning("ANTHROPIC_API_KEY not set. Using fallback summaries.")
         return {}
 
     # 1. Gather context: get top 100 recent news articles (grounding AI in reality)
@@ -212,24 +216,16 @@ CRITICAL REQUIREMENTS:
    - 10.0-20.0 means moderate delays or friction.
    - 30.0-40.0 means severe disruption (major strikes, heavy congestion).
    - 50.0 means catastrophic closure or complete blockade (e.g., trapped ships, war zone, complete port strike).
-5. Use the EXACT port names provided as JSON keys. Do not rename or rephrase them.
+5. Use the EXACT port names provided as each entry's 'port' value. Do not rename or rephrase them.
 
-Return a JSON object where the keys are the EXACT port names provided, and the values are objects containing the 'summary' and 'disruption_penalty'.
+Return a "ports" array with one object per port, each containing the EXACT 'port' name provided, its 'summary', and its 'disruption_penalty'.
 
-Example Output Format:
-{{
-    "Rotterdam": {{"summary": "Operating at 94% capacity with minor 6-hour berth wait times. Inland rail is clear.", "disruption_penalty": 5.0}},
-    "Dubai": {{"summary": "Severe congestion as ships redirect due to Red Sea attacks. Yard saturation resulting in 4-day delays.", "disruption_penalty": 25.5}}
-}}
+Example entries:
+{{"port": "Rotterdam", "summary": "Operating at 94% capacity with minor 6-hour berth wait times. Inland rail is clear.", "disruption_penalty": 5.0}}
+{{"port": "Dubai", "summary": "Severe congestion as ships redirect due to Red Sea attacks. Yard saturation resulting in 4-day delays.", "disruption_penalty": 25.5}}
 """
 
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-3-flash-preview",
-            generation_config=GENERATION_CONFIG,
-            system_instruction=SYSTEM_PROMPT
-        )
-
         prompt = f"""{news_context}
 
 Analyze the current supply chain status for these {len(port_names)} major shipping ports:
@@ -239,8 +235,9 @@ Analyze the current supply chain status for these {len(port_names)} major shippi
 You MUST return a JSON entry for EVERY port listed above ({len(port_names)} total).
 Provide the JSON status summary and disruption_penalty for each port."""
 
-        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
-        raw_summaries = json.loads(response.text)
+        raw_summaries = llm.complete_json(
+            prompt, schema=_port_schema(port_names), system=SYSTEM_PROMPT
+        )
         summaries = _normalize_summaries(raw_summaries, port_names)
 
         # Cache the result
@@ -256,7 +253,7 @@ Provide the JSON status summary and disruption_penalty for each port."""
         return summaries
 
     except Exception as e:
-        logger.error("Gemini dynamic port analysis failed: %s", e)
+        logger.error("Claude port analysis failed: %s", e)
         return {}
 
 
@@ -278,13 +275,13 @@ def get_aggregate_disruption_score() -> tuple[float, int, str]:
     -------
     tuple[float, int, str]
         (score_0_100, port_count_with_data, summary_str). Raises if no port
-        summaries are available (e.g. GEMINI_API_KEY unset) — the caller
+        summaries are available (e.g. ANTHROPIC_API_KEY unset) — the caller
         decides how to fall back (blend skipped, geopolitical score used
         as-is).
     """
     summaries = generate_port_summaries()
     if not summaries:
-        raise ValueError("No port summaries available (Gemini unset or fetch failed)")
+        raise ValueError("No port summaries available (Claude unset or fetch failed)")
 
     penalties = []
     for data in summaries.values():

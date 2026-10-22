@@ -1,43 +1,45 @@
 """
 AI Analyst Module
 ==================
-Uses Google's Gemini API to analyze supply chain news.
+Uses the Anthropic API (Claude) to analyze supply chain news.
 """
 from __future__ import annotations
-import json
 import logging
-import os
 from datetime import datetime
-import warnings
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    import google.generativeai as genai
-from dotenv import load_dotenv
 
-load_dotenv()
+from data import llm
+
 logger = logging.getLogger(__name__)
 
-# Configure Gemini
-api_key = os.environ.get("GEMINI_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
-else:
-    logger.warning("GEMINI_API_KEY not found. AI analysis will be skipped.")
+if not llm.is_configured():
+    logger.warning("ANTHROPIC_API_KEY not found. AI analysis will be skipped.")
 
-# Model configuration
-GENERATION_CONFIG = {
-    "temperature": 0.2,
-    "top_p": 0.8,
-    "top_k": 40,
-    "response_mime_type": "application/json",
-}
-
-# Briefing configuration (Plain Text)
-BRIEFING_CONFIG = {
-    "temperature": 0.4,
-    "top_p": 0.8,
-    "top_k": 40,
-    "response_mime_type": "text/plain",
+ANALYSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "analysis": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "is_relevant": {"type": "boolean"},
+                    "category": {
+                        "type": "string",
+                        "enum": ["ports", "shipping", "energy", "tariffs", "geopolitical", "weather"],
+                    },
+                    "severity_score": {"type": "number"},
+                    "summary": {"type": "string"},
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["id", "is_relevant", "category", "severity_score", "summary", "reasoning"],
+                "additionalProperties": False,
+            },
+        },
+        "briefing": {"type": "string"},
+    },
+    "required": ["analysis", "briefing"],
+    "additionalProperties": False,
 }
 
 SYSTEM_PROMPT = """
@@ -79,7 +81,7 @@ Focus on: Disruptions, Risks, and Major Market Moves. Be punchy and concise."""
 
 def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
     """
-    Analyze a batch of articles using Gemini Flash.
+    Analyze a batch of articles using Claude.
     
     Returns both analysis AND briefing in a single API call to reduce usage.
     
@@ -91,20 +93,14 @@ def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
         - analysis_map: Dict mapping article_id -> analysis_dict
         - briefing_text: 3-bullet executive summary
     """
-    if not api_key:
+    if not llm.is_configured():
         return {}, ""
         
     if not articles:
         return {}, ""
 
     # detailed usage logging
-    logger.info(f"Sending {len(articles)} articles to Gemini for analysis + briefing...")
-
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview",
-        generation_config=GENERATION_CONFIG,
-        system_instruction=SYSTEM_PROMPT
-    )
+    logger.info(f"Sending {len(articles)} articles to Claude for analysis + briefing...")
 
     # Construct the user prompt
     prompt_lines = ["Analyze these news items:"]
@@ -114,8 +110,7 @@ def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
     prompt = "\n".join(prompt_lines)
 
     try:
-        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
-        result = json.loads(response.text)
+        result = llm.complete_json(prompt, schema=ANALYSIS_SCHEMA, system=SYSTEM_PROMPT)
         
         # Map back to ID
         analysis_map = {}
@@ -128,22 +123,17 @@ def analyze_news_batch(articles: list[dict]) -> tuple[dict[int, dict], str]:
         return analysis_map, briefing
         
     except Exception as e:
-        logger.error(f"Gemini API Analysis failed: {e}")
+        logger.error(f"Claude news analysis failed: {e}")
         return {}, ""
 
 def generate_briefing(articles: list[dict]) -> str:
     """
     Generate a 3-bullet executive summary of the provided articles.
     """
-    if not api_key or not articles:
+    if not llm.is_configured() or not articles:
         return "No briefing available."
 
     logger.info(f"Generating briefing from {len(articles)} articles...")
-    
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview",
-        generation_config=BRIEFING_CONFIG,
-    )
 
     prompt_lines = [
         "You are a global supply chain intelligence officer.",
@@ -161,8 +151,7 @@ def generate_briefing(articles: list[dict]) -> str:
     prompt = "\n".join(prompt_lines)
 
     try:
-        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
-        return response.text.strip()
+        return llm.complete_text(prompt)
     except Exception as e:
         logger.error(f"Briefing generation failed: {e}")
         return "Global supply chain outlook is stable. No major disruptions reported at this time."
@@ -186,7 +175,7 @@ def generate_newsletter_briefing(
     if not articles:
         return _newsletter_no_fresh_articles_fallback(score, tier_label)
 
-    if not api_key:
+    if not llm.is_configured():
         bullets = []
         for article in articles[:4]:
             source_group = str(article.get("source_group", "news")).replace("_", " ")
@@ -201,11 +190,6 @@ def generate_newsletter_briefing(
     if score_delta is not None:
         sign = "+" if score_delta >= 0 else ""
         delta_text = f"{sign}{score_delta:.1f} points versus the previous recorded score"
-
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview",
-        generation_config=BRIEFING_CONFIG,
-    )
 
     prompt_lines = [
         "You are writing the morning email for the Global Supply Chain Index.",
@@ -228,8 +212,7 @@ def generate_newsletter_briefing(
         )
 
     try:
-        response = model.generate_content("\n".join(prompt_lines), request_options={"timeout": 45, "retry": None})
-        return response.text.strip()
+        return llm.complete_text("\n".join(prompt_lines))
     except Exception as exc:
         logger.error("Newsletter briefing generation failed: %s", exc)
         return _newsletter_no_fresh_articles_fallback(score, tier_label)
@@ -277,7 +260,7 @@ def generate_score_explanation(
     top_alerts: list[dict],
 ) -> str:
     """Write 2–3 plain-text sentences explaining why the composite is at this level."""
-    if not api_key:
+    if not llm.is_configured():
         return ""
 
     from config import CATEGORY_LABELS, CATEGORY_WEIGHTS
@@ -311,19 +294,8 @@ def generate_score_explanation(
     if alert_lines:
         prompt_lines.extend(["", "Recent high-signal headlines:", *alert_lines])
 
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview",
-        generation_config={
-            "temperature": 0.3,
-            "top_p": 0.8,
-            "top_k": 40,
-            "response_mime_type": "text/plain",
-        },
-    )
-
     try:
-        response = model.generate_content("\n".join(prompt_lines), request_options={"timeout": 45, "retry": None})
-        return response.text.strip()
+        return llm.complete_text("\n".join(prompt_lines))
     except Exception as exc:
         logger.error("Score explanation generation failed: %s", exc)
         return ""
@@ -333,21 +305,10 @@ def generate_full_report(articles: list[dict]) -> str:
     """
     Generate a long-form Markdown report from a large batch of articles.
     """
-    if not api_key or not articles:
+    if not llm.is_configured() or not articles:
         return "## System Error\nAI service unavailable or no news data found."
 
     logger.info(f"Generating full report from {len(articles)} articles...")
-    
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview",
-        generation_config={
-            "temperature": 0.3,
-            "top_p": 0.8,
-            "top_k": 40,
-            "response_mime_type": "text/plain",
-        },
-        system_instruction=REPORT_PROMPT
-    )
 
     from zoneinfo import ZoneInfo
     prompt_lines = [
@@ -363,8 +324,7 @@ def generate_full_report(articles: list[dict]) -> str:
     prompt = "\n".join(prompt_lines)
 
     try:
-        response = model.generate_content(prompt, request_options={"timeout": 45, "retry": None})
-        return response.text.strip()
+        return llm.complete_text(prompt, system=REPORT_PROMPT)
     except Exception as e:
         logger.error(f"Full report generation failed: {e}")
         return f"## Generation Failed\nError: {e}"
