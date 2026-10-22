@@ -326,6 +326,7 @@ def create_app() -> dash.Dash:
     from api.report import report_bp
     from api.admin import admin_bp
     from api.docs import docs_bp
+    from api.newsletter import newsletter_bp
 
     # Rate-limit the JSON API and admin routes per visitor IP. Dash page
     # loads and callbacks are not limited (one page view makes several).
@@ -337,8 +338,23 @@ def create_app() -> dash.Dash:
     app.server.register_blueprint(report_bp)
     app.server.register_blueprint(admin_bp)
     app.server.register_blueprint(docs_bp)
+    app.server.register_blueprint(newsletter_bp)
 
     import flask
+
+    @app.server.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+        response.headers.setdefault(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        return response
 
     @app.server.get("/health")
     @app.server.get("/healthz")
@@ -750,6 +766,10 @@ def create_app() -> dash.Dash:
         return is_open
 
     # ── Newsletter Submit Callback ────────────────────────────────────────────
+    # Letters, digits and . _ % + - in the local part; no quotes, commas or
+    # spaces, which could otherwise end up inside the email To header.
+    _EMAIL_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")
+
     @app.callback(
         Output("newsletter-feedback", "children"),
         Output("newsletter-feedback", "style"),
@@ -760,7 +780,7 @@ def create_app() -> dash.Dash:
     )
     def handle_newsletter_submit(n_clicks, email):
         email = str(email or "").strip().lower()
-        if len(email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
             return "Please enter a valid email address.", {"color": "#ef4444", "marginTop": "15px", "fontSize": "14px"}, dash.no_update
         
         from data.database import add_subscriber

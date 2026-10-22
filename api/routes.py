@@ -1,4 +1,3 @@
-import os
 
 from flask import Blueprint, jsonify, request
 from flask_limiter import Limiter
@@ -74,11 +73,11 @@ def get_newsletter_data():
     """Return dashboard snapshot for the newsletter cron job.
 
     Protected by ADMIN_TOKEN to prevent public access to the full briefing text.
-    The cron job passes ?token=<ADMIN_TOKEN> to authenticate.
+    The cron job sends ``Authorization: Bearer <ADMIN_TOKEN>``.
     """
-    token = request.args.get("token", "")
-    expected = os.environ.get("ADMIN_TOKEN", "")
-    if not expected or token != expected:
+    from api.admin import verify_admin
+
+    if not verify_admin():
         return jsonify({"error": "Unauthorized"}), 401
 
     from data.cache import get_cached_dashboard

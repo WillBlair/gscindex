@@ -1,20 +1,26 @@
 from flask import Blueprint, jsonify, request
+import hmac
+import logging
 import os
-from data.database import get_connection, DB_TYPE
+from data.database import get_connection
+
+logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
-def verify_admin():
-    """Verify the request has the correct ADMIN_TOKEN."""
-    token = os.environ.get("ADMIN_TOKEN")
+def verify_admin() -> bool:
+    """True when the request carries ``Authorization: Bearer <ADMIN_TOKEN>``.
+
+    The token is only accepted in a header (query strings land in proxy
+    access logs) and compared in constant time.
+    """
+    token = os.environ.get("ADMIN_TOKEN", "")
     if not token:
         return False
-        
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
         return False
-        
-    return auth_header.split(" ")[1] == token
+    return hmac.compare_digest(auth_header[len("Bearer "):], token)
 
 @admin_bp.route('/subscribers', methods=['GET'])
 def get_subscribers():
@@ -47,6 +53,7 @@ def get_subscribers():
         }), 200
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Subscriber listing failed: %s", e)
+        return jsonify({"error": "Internal error"}), 500
     finally:
         conn.close()

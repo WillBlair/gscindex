@@ -185,6 +185,13 @@ def init_db():
     finally:
         conn.close()
 
+_OPTED_OUT_RESULT = {
+    "success": False,
+    "message": "This address unsubscribed earlier, so it can't be re-added from the form. "
+               "Reply to any past briefing to resubscribe.",
+}
+
+
 def add_subscriber(email: str) -> dict:
     conn = get_connection()
     if not conn:
@@ -195,20 +202,30 @@ def add_subscriber(email: str) -> dict:
         with conn:
             cursor = conn.cursor()
             if db_type == "postgres":
-                # Use ON CONFLICT DO UPDATE to reactivate if previously unsubscribed
+                # Anyone can type any address into the form, so an address
+                # that unsubscribed is never silently reactivated.
+                cursor.execute(
+                    "SELECT unsubscribed_at FROM subscribers WHERE email = %s", (email,)
+                )
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    return _OPTED_OUT_RESULT
                 cursor.execute("""
                     INSERT INTO subscribers (email, is_active)
                     VALUES (%s, TRUE)
-                    ON CONFLICT (email) DO UPDATE 
-                    SET is_active = TRUE
+                    ON CONFLICT (email) DO NOTHING
                 """, (email,))
             elif db_type == "sqlite":
-                # SQLite upsert
+                cursor.execute(
+                    "SELECT unsubscribed_at FROM subscribers WHERE email = ?", (email,)
+                )
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    return _OPTED_OUT_RESULT
                 cursor.execute("""
                     INSERT INTO subscribers (email, is_active)
                     VALUES (?, 1)
-                    ON CONFLICT(email) DO UPDATE 
-                    SET is_active = 1
+                    ON CONFLICT(email) DO NOTHING
                 """, (email,))
         return {"success": True, "message": "Successfully subscribed!"}
     except Exception as e:
@@ -255,9 +272,17 @@ def unsubscribe_user(email: str) -> bool:
         with conn:
             cursor = conn.cursor()
             if db_type == "postgres":
-                cursor.execute("UPDATE subscribers SET is_active = FALSE WHERE email = %s", (email,))
+                cursor.execute(
+                    "UPDATE subscribers SET is_active = FALSE, "
+                    "unsubscribed_at = COALESCE(unsubscribed_at, CURRENT_TIMESTAMP) WHERE email = %s",
+                    (email,),
+                )
             elif db_type == "sqlite":
-                cursor.execute("UPDATE subscribers SET is_active = 0 WHERE email = ?", (email,))
+                cursor.execute(
+                    "UPDATE subscribers SET is_active = 0, "
+                    "unsubscribed_at = COALESCE(unsubscribed_at, CURRENT_TIMESTAMP) WHERE email = ?",
+                    (email,),
+                )
         return True
     except Exception as e:
         logger.error(f"Failed to unsubscribe: {e}")
@@ -466,5 +491,41 @@ def load_dashboard_snapshot() -> dict | None:
     except Exception as e:
         logger.warning("Failed to load dashboard snapshot: %s", e)
         return None
+    finally:
+        conn.close()
+
+
+def get_sent_today(send_date: date) -> set[str]:
+    """Addresses that already received the newsletter for ``send_date``."""
+    conn = get_connection()
+    if not conn:
+        return set()
+    ph = "%s" if get_db_type() == "postgres" else "?"
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT email FROM newsletter_sends WHERE send_date = {ph}", (send_date,))
+        return {row[0] for row in cursor.fetchall()}
+    except Exception as e:
+        logger.warning("Failed to read newsletter sends: %s", e)
+        return set()
+    finally:
+        conn.close()
+
+
+def record_newsletter_send(send_date: date, email: str) -> None:
+    """Mark one delivery so a retried run does not email the same person twice."""
+    conn = get_connection()
+    if not conn:
+        return
+    ph = "%s" if get_db_type() == "postgres" else "?"
+    try:
+        with conn:
+            conn.cursor().execute(
+                f"INSERT INTO newsletter_sends (send_date, email) VALUES ({ph}, {ph}) "
+                "ON CONFLICT (send_date, email) DO NOTHING",
+                (send_date, email),
+            )
+    except Exception as e:
+        logger.warning("Failed to record newsletter send: %s", e)
     finally:
         conn.close()

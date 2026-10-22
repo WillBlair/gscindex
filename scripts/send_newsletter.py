@@ -14,11 +14,16 @@ Configuration via Environment Variables:
 - SMTP_USERNAME: The SMTP username (e.g., your generic sender email).
 - SMTP_PASSWORD: The SMTP password or app password.
 - WEBSITE_URL: The URL to the live site (default: https://gscindex.com).
+- ADMIN_TOKEN: Bearer token for /api/v1/newsletter-data.
+- NEWSLETTER_SECRET: Signs unsubscribe links (falls back to ADMIN_TOKEN).
+- NEWSLETTER_POSTAL_ADDRESS: Sender postal address for the footer. CAN-SPAM
+  requires one in commercial email; the run warns when it is missing.
 """
 
 import os
 import smtplib
 import logging
+import time
 import html as html_utils
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
@@ -39,6 +44,11 @@ from data.ai_analyst import generate_newsletter_briefing
 from data.cache import get_cached, set_cached
 from data.news_selection import select_fresh_articles
 from data.rss_fetcher import fetch_rss_articles
+from data.unsubscribe import make_token
+
+# The web service returns 503 for about a minute after a deploy or restart.
+_API_ATTEMPTS = 5
+_API_RETRY_SECONDS = 60
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("Newsletter")
@@ -62,21 +72,37 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
 
     Falls back to local disk cache for local development / testing.
     """
-    api_url = f"{website_url.rstrip('/')}/api/v1/newsletter-data?token={admin_token}"
-    logger.info("Fetching dashboard data from %s ...", website_url)
-    try:
-        req = Request(api_url, headers={"User-Agent": "GSCIndex-Newsletter/1.0"})
-        with urlopen(req, timeout=30) as resp:
-            import json
-            data = json.loads(resp.read().decode())
+    import json
+    from urllib.error import HTTPError
+
+    api_url = f"{website_url.rstrip('/')}/api/v1/newsletter-data"
+    headers = {
+        "User-Agent": "GSCIndex-Newsletter/1.0",
+        "Authorization": f"Bearer {admin_token}",
+    }
+    for attempt in range(1, _API_ATTEMPTS + 1):
+        logger.info("Fetching dashboard data from %s (attempt %d) ...", website_url, attempt)
+        try:
+            with urlopen(Request(api_url, headers=headers), timeout=30) as resp:
+                data = json.loads(resp.read().decode())
             if "current_scores" in data:
                 logger.info("Successfully fetched data from live API.")
                 return data
             logger.warning("API returned unexpected payload: %s", list(data.keys()))
-    except URLError as e:
-        logger.warning("Could not reach live API (%s). Trying local cache...", e)
-    except Exception as e:
-        logger.warning("API fetch failed (%s). Trying local cache...", e)
+            break
+        except HTTPError as e:
+            if e.code != 503 or attempt == _API_ATTEMPTS:
+                logger.warning("API fetch failed (HTTP %s).", e.code)
+                break
+            logger.info("Service warming up (503); retrying in %ds.", _API_RETRY_SECONDS)
+            time.sleep(_API_RETRY_SECONDS)
+        except URLError as e:
+            logger.warning("Could not reach live API (%s).", e)
+            break
+        except Exception as e:
+            logger.warning("API fetch failed (%s).", e)
+            break
+    logger.info("Trying local cache...")
 
     # Fallback: local disk cache (works in development)
     try:
@@ -155,7 +181,23 @@ def _build_daily_newsletter_briefing(
         return fallback_briefing
 
 
-def generate_html_email(score: float, tier: dict, briefing: str, website_url: str) -> str:
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:2]}***@{domain}"
+
+
+def _unsubscribe_url(website_url: str, email: str) -> str:
+    return f"{website_url.rstrip('/')}/unsubscribe?t={make_token(email)}"
+
+
+def generate_html_email(
+    score: float,
+    tier: dict,
+    briefing: str,
+    website_url: str,
+    unsubscribe_url: str = "",
+    postal_address: str = "",
+) -> str:
     """Constructs the HTML body for the newsletter."""
     color = tier.get("color", "#ffffff")
     label = tier.get("label", "Unknown")
@@ -173,6 +215,21 @@ def generate_html_email(score: float, tier: dict, briefing: str, website_url: st
 
     if not bullet_points:
         bullet_points = "<li>No briefing data available today.</li>"
+
+    footer_lines = []
+    if unsubscribe_url:
+        footer_lines.append(
+            f'<a href="{html_utils.escape(unsubscribe_url)}" style="color: #9ca3af;">Unsubscribe</a>'
+        )
+    if postal_address:
+        footer_lines.append(html_utils.escape(postal_address))
+    footer_html = (
+        '<p style="margin: 12px 0 0 0; color: #6b7280; font-size: 12px;">'
+        + "<br>".join(footer_lines)
+        + "</p>"
+        if footer_lines
+        else ""
+    )
 
     html = f"""
     <!DOCTYPE html>
@@ -223,6 +280,7 @@ def generate_html_email(score: float, tier: dict, briefing: str, website_url: st
                         This is an automated operational intelligence briefing.<br>
                         Data is aggregated and analyzed continuously.
                     </p>
+                    {footer_html}
                 </td>
             </tr>
         </table>
@@ -233,7 +291,14 @@ def generate_html_email(score: float, tier: dict, briefing: str, website_url: st
     return html
 
 
-def generate_text_email(score: float, tier: dict, briefing: str, website_url: str) -> str:
+def generate_text_email(
+    score: float,
+    tier: dict,
+    briefing: str,
+    website_url: str,
+    unsubscribe_url: str = "",
+    postal_address: str = "",
+) -> str:
     """Constructs the plain text fallback version."""
     label = tier.get("label", "Unknown")
     
@@ -251,6 +316,10 @@ def generate_text_email(score: float, tier: dict, briefing: str, website_url: st
             text += f"- {line}\n"
                 
     text += f"\nView the full interactive dashboard here: {website_url}\n"
+    if unsubscribe_url:
+        text += f"\nUnsubscribe: {unsubscribe_url}\n"
+    if postal_address:
+        text += f"{postal_address}\n"
     return text
 
 def main():
@@ -312,10 +381,19 @@ def main():
         fallback_briefing=briefing,
     )
 
-    html_content = generate_html_email(score, tier, briefing, website_url)
-    text_content = generate_text_email(score, tier, briefing, website_url)
-    
-    from data.database import get_active_subscribers, get_db_type
+    postal_address = os.environ.get("NEWSLETTER_POSTAL_ADDRESS", "").strip()
+    if not postal_address:
+        logger.warning(
+            "NEWSLETTER_POSTAL_ADDRESS is not set. CAN-SPAM requires a postal address "
+            "in commercial email; set it in the cron service's environment."
+        )
+
+    from data.database import (
+        get_active_subscribers,
+        get_db_type,
+        get_sent_today,
+        record_newsletter_send,
+    )
     subscribers = get_active_subscribers()
     logger.info(
         "Database backend: %s | Active subscribers from DB: %d",
@@ -334,9 +412,29 @@ def main():
         )
         return
     
+    send_date = datetime.now(timezone.utc).date()
+    already_sent = get_sent_today(send_date)
+    if already_sent:
+        logger.info("Skipping %d subscriber(s) already sent today.", len(already_sent))
+    subscribers = [email for email in subscribers if email not in already_sent]
+    if not subscribers:
+        logger.info("Everyone has already received today's newsletter.")
+        return
+
     if args.dry_run:
-        logger.info(f"DRY RUN MODE: Skipping actual SMTP dispatch.")
-        logger.info(f"Would send to {len(subscribers)} subscribers: {subscribers}")
+        sample = subscribers[0]
+        text_content = generate_text_email(
+            score, tier, briefing, website_url, _unsubscribe_url(website_url, sample), postal_address
+        )
+        html_content = generate_html_email(
+            score, tier, briefing, website_url, _unsubscribe_url(website_url, sample), postal_address
+        )
+        logger.info("DRY RUN MODE: Skipping actual SMTP dispatch.")
+        logger.info(
+            "Would send to %d subscribers: %s",
+            len(subscribers),
+            ", ".join(_mask_email(e) for e in subscribers),
+        )
         print("-" * 50)
         print("--- Text Version ---")
         print(text_content)
@@ -359,6 +457,13 @@ def main():
 
             for email in subscribers:
                 try:
+                    unsubscribe_url = _unsubscribe_url(website_url, email)
+                    text_content = generate_text_email(
+                        score, tier, briefing, website_url, unsubscribe_url, postal_address
+                    )
+                    html_content = generate_html_email(
+                        score, tier, briefing, website_url, unsubscribe_url, postal_address
+                    )
                     msg = EmailMessage()
                     msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"
                     msg["From"] = from_header
@@ -367,8 +472,11 @@ def main():
                     # ── Deliverability headers ──────────────────────
                     # Unique ID prevents duplicate-detection filters.
                     msg["Message-ID"] = make_msgid(domain="gscindex.com")
-                    # Gmail checks for List-Unsubscribe; missing = spam risk.
-                    msg["List-Unsubscribe"] = f"<mailto:{sender_addr}?subject=unsubscribe>"
+                    # Gmail and Yahoo require one-click unsubscribe (RFC 8058).
+                    msg["List-Unsubscribe"] = (
+                        f"<{unsubscribe_url}>, <mailto:{sender_addr}?subject=unsubscribe>"
+                    )
+                    msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
                     # Signals legitimate bulk mail to receiving servers.
                     msg["Precedence"] = "bulk"
 
@@ -376,9 +484,10 @@ def main():
                     msg.add_alternative(html_content, subtype='html')
                     
                     server.send_message(msg)
+                    record_newsletter_send(send_date, email)
                     successful_sends += 1
                 except Exception as e:
-                    logger.error(f"Failed to send to {email}: {e}")
+                    logger.error("Failed to send to %s: %s", _mask_email(email), e)
                     failed_emails.append(f"{email} ({e})")
                     
             logger.info(f"Successfully sent {successful_sends}/{len(subscribers)} emails.")
