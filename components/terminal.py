@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote
 
 import dash_bootstrap_components as dbc
@@ -203,7 +203,70 @@ def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:
             html.Div(f"{days} days", className="dim spk-label"),
             sparkline(index_history(data, profile_key, days), 268, 46, AMBER),
         ], className="spk"),
+        build_chokepoints(data.get("chokepoints")),
     ], className="pane read")
+
+
+# --- chokepoint traffic -----------------------------------------------------------------
+
+CHOKE_SCALE_MAX = 200  # bar spans 0-200% of normal; the tick marks 100%
+
+
+def chokepoint_color(pct) -> str:
+    """Red when traffic collapses, green near normal, amber when far above
+    normal (ships rerouted there from a blocked route)."""
+    if pct is None:
+        return DIM
+    if pct < 50:
+        return TIER_COLORS["Critical"]
+    if pct < 80:
+        return TIER_COLORS["Stressed"]
+    if pct < 95:
+        return TIER_COLORS["Stable"]
+    if pct <= 120:
+        return TIER_COLORS["Healthy"]
+    return AMBER
+
+
+def build_chokepoints(traffic: dict | None) -> html.Div:
+    """Ship transits through major chokepoints, last 7 days vs normal."""
+    items = (traffic or {}).get("chokepoints") or []
+    if not items:
+        return html.Div([
+            html.Div("Chokepoint traffic", className="ttl choke-ttl"),
+            html.P("Chokepoint traffic is unavailable right now.", className="dim"),
+        ], className="choke")
+    try:
+        as_of = date.fromisoformat(traffic["as_of"]).strftime("%b %-d")
+    except (KeyError, TypeError, ValueError):
+        as_of = DASH
+    rows = []
+    for item in items:
+        pct = _num(item.get("pct_of_normal"))
+        color = chokepoint_color(pct)
+        width = 0 if pct is None else min(pct, CHOKE_SCALE_MAX) / CHOKE_SCALE_MAX * 100
+        detail = (
+            f"{fmt(item.get('recent_per_day'))} ships/day vs "
+            f"{fmt(item.get('normal_per_day'))} normal"
+        )
+        rows.append(html.Div([
+            html.Span(plain_text(item.get("name")), className="choke-name"),
+            html.Div([
+                html.I(style={"width": f"{width:.0f}%", "background": color}),
+                html.U(),
+            ], className="choke-bar"),
+            html.Span(DASH if pct is None else f"{pct:.0f}%", className="num choke-pct", style={"color": color}),
+        ], className="choke-row", title=detail))
+    return html.Div([
+        html.Div([html.Span("Chokepoint traffic"), html.Span(f"vs normal, as of {as_of}")],
+                 className="ttl choke-ttl"),
+        html.Div(rows, className="choke-rows"),
+        html.Div(
+            f"Ship transits, last {traffic.get('recent_days', 7)} days vs "
+            f"{traffic.get('baseline', 'normal')}. Source: {traffic.get('source', 'IMF PortWatch')}.",
+            className="dim choke-note",
+        ),
+    ], className="choke")
 
 
 # --- market quotes ------------------------------------------------------------------------

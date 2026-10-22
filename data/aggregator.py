@@ -46,6 +46,7 @@ from data.providers.weather import WeatherProvider
 from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
 from data.port_analyst import generate_port_summaries
+from data.portwatch import fetch_chokepoint_traffic
 from scoring import get_health_tier
 from data.runtime import RefreshTasks
 
@@ -718,6 +719,7 @@ def aggregate_data(status_callback=None) -> dict:
         future_news = executor.submit_once("news", fetch_supply_chain_news)
         future_market = executor.submit_once("market", _fetch_market_data)
         future_port_summaries = executor.submit_once("port_summaries", generate_port_summaries)
+        future_chokepoints = executor.submit_once("chokepoints", fetch_chokepoint_traffic)
 
         # -------------------------------------------------------------------
         # 2. Collect Results (with Timeout)
@@ -815,6 +817,13 @@ def aggregate_data(status_callback=None) -> dict:
             market_data = future_market.result(timeout=30) or {}
         except Exception as e:
             logger.warning("Market data fetch timed out or failed: %s", e)
+
+        # C2. Chokepoint traffic (IMF PortWatch, measured ship transits)
+        chokepoints = None
+        try:
+            chokepoints = future_chokepoints.result(timeout=30)
+        except Exception as e:
+            logger.warning("Chokepoint traffic fetch timed out or failed: %s", e)
 
         # D. Process Port Summaries (Claude generation)
         port_summaries = {}
@@ -1011,6 +1020,7 @@ def aggregate_data(status_callback=None) -> dict:
         "provider_errors": provider_errors,
         "category_metadata": category_metadata,
         "market_data": market_data,
+        "chokepoints": chokepoints,
         "score_explanation": score_explanation,
         "degraded": bool(fallback_categories),
         "fallback_categories": fallback_categories,

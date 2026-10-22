@@ -432,3 +432,36 @@ def test_map_caption_counts_drawn_ports():
     markers = [{"score": 80.0}, {"score": None}, {"score": 40.0}, {}]
     assert map_caption(markers) == "3 ports, colored by relative risk"
     assert map_caption([]) == "0 ports, colored by relative risk"
+
+
+def test_chokepoint_panel_shows_bars_colors_and_source():
+    traffic = {
+        "as_of": "2026-10-18", "recent_days": 7, "baseline": "same month in 2022-2023",
+        "source": "IMF PortWatch",
+        "chokepoints": [
+            {"name": "Hormuz", "recent_per_day": 3.7, "normal_per_day": 98.1, "pct_of_normal": 4},
+            {"name": "Malacca", "recent_per_day": 215.1, "normal_per_day": 218.9, "pct_of_normal": 98},
+            {"name": "Cape of Good Hope", "recent_per_day": 85.7, "normal_per_day": 46.6, "pct_of_normal": 184},
+        ],
+    }
+    panel = term.build_chokepoints(traffic)
+    text = text_of(panel)
+    assert "Hormuz" in text and "4%" in text and "184%" in text
+    assert "as of Oct 18" in text and "IMF PortWatch" in text
+    assert term.chokepoint_color(4) == TIER_COLORS["Critical"]
+    assert term.chokepoint_color(98) == TIER_COLORS["Healthy"]
+    assert term.chokepoint_color(184) == term.AMBER
+    rows = [c for c in walk(panel) if getattr(c, "className", None) == "choke-row"]
+    assert rows[0].title == "3.7 ships/day vs 98.1 normal"
+
+
+def test_chokepoint_panel_handles_missing_data():
+    assert "unavailable" in text_of(term.build_chokepoints(None)).lower()
+    assert "unavailable" in text_of(term.build_chokepoints({"chokepoints": []})).lower()
+
+
+def test_readout_includes_chokepoint_panel():
+    snap = snapshot()
+    snap["chokepoints"] = {"as_of": "2026-10-18", "chokepoints": [
+        {"name": "Suez", "recent_per_day": 44.3, "normal_per_day": 73.5, "pct_of_normal": 60}]}
+    assert "Suez" in text_of(term.build_readout(snap, "baseline"))
