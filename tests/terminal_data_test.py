@@ -176,11 +176,44 @@ def test_today_is_always_live_and_yesterday_is_utc_date_minus_one():
     assert all(r["history"][-1] == r["today"] for r in rows)
 
 
-def test_utc_date_comes_from_last_updated_utc_not_local_clock():
-    snap = _snapshot()
-    snap["last_updated_utc"] = "2026-10-22T00:30:00+00:00"
-    rows = td.category_rows(snap, "baseline")
-    assert all(isinstance(r["yday"], float) for r in rows)
+def _march_snapshot(last_updated, stored_days=range(1, 17)):
+    """Stored value for every category on 2026-03-DD is DD (far from the real date)."""
+    snap = _snapshot(with_history=False)
+    snap["last_updated_utc"] = last_updated
+    days = list(stored_days)
+    snap["daily_history"] = {
+        "dates": [f"2026-03-{d:02d}" for d in days],
+        "scores": {c: [float(d) for d in days] for c in snap["current_scores"]},
+    }
+    return snap
+
+
+@pytest.mark.parametrize(
+    "last_updated, expected_yday",
+    [
+        ("2026-03-14T20:04:45Z", 13.0),            # Z suffix
+        ("2026-03-14T23:30:00-07:00", 14.0),       # UTC date is already the 15th
+        ("2026-03-14T01:30:00+05:00", 12.0),       # UTC date is still the 13th
+        ("2026-03-14T20:04:45", 13.0),             # naive timestamp is treated as UTC
+        ("2026-03-14T20:04:45.123456+00:00", 13.0),
+    ],
+)
+def test_utc_date_comes_from_last_updated_utc_not_local_clock(last_updated, expected_yday):
+    rows = td.category_rows(_march_snapshot(last_updated), "baseline")
+    assert all(r["yday"] == expected_yday for r in rows)
+    # Today's own point is live, and yesterday's stored point sits just before it.
+    assert all(r["history"][-1] == r["today"] for r in rows)
+    assert all(r["history"][-2] == expected_yday for r in rows)
+
+
+def test_utc_date_without_stored_predecessor_gives_none():
+    # 01:30+05:00 on the 14th is the 13th in UTC; only the 13th is stored, not the 12th.
+    snap = _march_snapshot("2026-03-14T01:30:00+05:00", stored_days=[13])
+    assert all(r["yday"] is None for r in td.category_rows(snap, "baseline"))
+    assert td.index_summary(snap, "baseline")["yday"] is None
+    # Local-date reading (14th) would have found the 13th; UTC reading must not.
+    snap = _march_snapshot("2026-03-14T23:30:00-07:00", stored_days=[13])
+    assert all(r["yday"] is None for r in td.category_rows(snap, "baseline"))
 
 
 def test_row_history_uses_stored_days_and_live_today():
