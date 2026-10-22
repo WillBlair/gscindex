@@ -49,6 +49,7 @@ Your job is to analyze news headlines and determine if they are relevant to the 
 Relevance Rules:
 - RELEVANT: Port strikes, canal blockages, tariff announcements, major shipping company news, energy price shocks, trade wars, piracy, natural disasters hitting logistics hubs.
 - IRRELEVANT: Consumer product launches (e.g., "New Lego set"), retail sales promos ("Free shipping"), stock market daily moves (unless major logistics firm crash), sports, entertainment, local politics without trade impact.
+- IRRELEVANT: Consumer product shortages, launches or delivery delays (games, toys, collectibles, gadgets) unless the story names a port, carrier, chokepoint or trade policy.
 
 Severity Scoring (-10 to +10):
 - -10: Catastrophic (Suez Canal blocked, Global Pandemic)

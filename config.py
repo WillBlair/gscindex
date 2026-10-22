@@ -44,7 +44,7 @@ NEWS_CACHE_MAX_AGE_SECONDS: int = 7 * 86400
 NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
 
 # Shared disk cache key for RSS/AI news payload (alerts, briefing, report).
-NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v17"
+NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v18"
 
 # FRED inverse/direct scoring uses a trailing window (not full 5yr history).
 # Avoids COVID-era spikes from pinning "normal" prices in the middle of the scale.

@@ -31,6 +31,7 @@ measurements only. No proxy series, no synthetic backfill.
 
 from datetime import datetime
 import logging
+import re
 import time
 from data.runtime import serialized
 import pandas as pd
@@ -129,6 +130,8 @@ _IRRELEVANT_TERMS: set[str] = {
     
     # Toys & Consumer Junk
     "disney", "lego", "mattel", "hasbro", "funko",
+    "trading card", "magic: the gathering", "pokemon", "collectible",
+    "board game", "video game", "toy",
     
     # Health Supplements & niche products
     "supplement", "nutrition", "vitamin", "protein powder", "creatine", 
@@ -150,9 +153,18 @@ _IRRELEVANT_TERMS: set[str] = {
 }
 
 
+# Terms matched on word boundaries (plural "s" allowed) instead of as
+# substrings, so "toy" does not flag "Toyota".
+_WHOLE_WORD_IRRELEVANT_TERMS: frozenset[str] = frozenset({"toy"})
+_SUBSTRING_IRRELEVANT_TERMS: frozenset[str] = frozenset(_IRRELEVANT_TERMS - _WHOLE_WORD_IRRELEVANT_TERMS)
+_WHOLE_WORD_PATTERNS = [re.compile(rf"\b{re.escape(term)}s?\b") for term in _WHOLE_WORD_IRRELEVANT_TERMS]
+
+
 def _is_irrelevant_article(text: str) -> bool:
     """Return True if the article text contains clearly off-topic terms."""
-    return any(term in text for term in _IRRELEVANT_TERMS)
+    if any(term in text for term in _SUBSTRING_IRRELEVANT_TERMS):
+        return True
+    return any(pattern.search(text) for pattern in _WHOLE_WORD_PATTERNS)
 
 
 def _classify_category_keyword(text: str) -> str:

@@ -214,5 +214,26 @@ class GscpiParsingTests(unittest.TestCase):
         self.assertEqual(series.loc["2026-07-31"], 0.93)
 
 
+class NewsRelevanceTests(unittest.TestCase):
+    def test_hobby_and_collectible_stories_are_irrelevant(self):
+        from data.providers.geopolitical import _is_irrelevant_article
+
+        self.assertTrue(_is_irrelevant_article("el nino delays magic: the gathering trading cards"))
+        self.assertTrue(_is_irrelevant_article("pokemon cards sell out"))
+        self.assertTrue(_is_irrelevant_article("toy recall hits store shelves"))
+        self.assertFalse(_is_irrelevant_article("port strike halts container terminal"))
+        self.assertFalse(_is_irrelevant_article("toyota halts production after parts shortage"))
+
+    def test_analysis_prompt_rules_out_consumer_product_delays(self):
+        from data.ai_analyst import SYSTEM_PROMPT
+
+        self.assertIn("consumer product shortages, launches or delivery delays", SYSTEM_PROMPT.lower())
+
+    def test_briefing_cache_key_is_v18(self):
+        from config import NEWS_BRIEFING_CACHE_KEY
+
+        self.assertEqual(NEWS_BRIEFING_CACHE_KEY, "newsapi_briefing_v18")
+
+
 if __name__ == "__main__":
     unittest.main()
