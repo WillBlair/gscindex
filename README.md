@@ -54,7 +54,7 @@ The index is a weighted average of six category scores (0–100, where **100 = h
 | Energy & Fuel | 20% | Crude and diesel cost pressure, relative to trailing 2-year ranges |
 | Trade & Tariffs | 15% | Trade Policy Uncertainty categorical index (`EPUTRADE`) via [FRED](https://fred.stlouisfed.org/), monthly, plus a daily tariff news nowcast that can only lower the score |
 | Freight Flow | 10% | BTS freight throughput growth, supplemented by a minority daily transportation proxy |
-| Geopolitical Risk | 20% | 17 RSS feeds ([NewsAPI](https://newsapi.org/) fallback) scored by Claude, or VADER without it, blended 85/15 with an AI port-disruption signal |
+| Geopolitical Risk | 20% | 17 RSS feeds scored by Claude, or VADER without it, blended 85/15 with an AI port-disruption signal |
 
 Energy & Fuel is a cost-pressure gauge; Freight Flow measures throughput growth. Geopolitical history accumulates from real stored daily scores — there is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (UI badge, `/api/v1/latest`, and `/health`).
 
@@ -90,7 +90,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 4 gthreads)
 - **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback): subscribers, daily score history, latest dashboard snapshot
-- **External APIs:** FRED, NY Fed GSCPI, Open-Meteo (free, no key), yfinance, Silicon Analysts, NewsAPI (fallback), Anthropic API (default model `claude-sonnet-5-5`)
+- **External APIs:** FRED, NY Fed GSCPI, Open-Meteo (free, no key), yfinance, Silicon Analysts, Anthropic API (default model `claude-sonnet-5-5`)
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes (1-hour default TTL)
 - **Rate limiting:** Flask-Limiter on `/api/v1/*`: 500/hour and 2000/day per visitor IP
@@ -140,7 +140,6 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `FRED_API_KEY` | Recommended | Uses the authenticated FRED API; public CSV downloads support keyless previews |
-| `NEWSAPI_KEY` | No | News fallback, used only when every RSS feed returns nothing |
 | `ANTHROPIC_API_KEY` | No | Claude news scoring, briefing, daily report, port summaries, score explanation |
 | `ANTHROPIC_MODEL` | No | Claude model (default `claude-sonnet-5-5`) |
 | `ANTHROPIC_EFFORT` | No | Claude effort level (default `medium`) |

@@ -8,7 +8,7 @@ This is the main entry point for data. It:
     1. Instantiates every provider
     2. Calls ``fetch_current()`` and ``fetch_history()`` on each
     3. Handles provider failures gracefully (logs error, continues)
-    4. Assembles alerts from the NewsAPI provider
+    4. Assembles alerts from the RSS news pipeline
     5. Computes regional risk scores (derived from category scores)
     6. Returns everything in the shape the layout expects
 """

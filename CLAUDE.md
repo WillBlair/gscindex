@@ -11,7 +11,7 @@ Real-time supply chain health dashboard built with Python/Dash. Aggregates data 
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 4 gthreads, 120s timeout)
 - **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback). Subscribers, daily score history, latest dashboard snapshot, newsletter send log
-- **External APIs:** FRED, NY Fed GSCPI CSV, NewsAPI (fallback only), Open-Meteo (free, no key), yfinance, Silicon Analysts, Anthropic API (Claude, default model `claude-sonnet-5-5`)
+- **External APIs:** FRED, NY Fed GSCPI CSV, Open-Meteo (free, no key), yfinance, Silicon Analysts, Anthropic API (Claude, default model `claude-sonnet-5-5`)
 - **Sentiment:** VADER (local, no API)
 - **Caching:** File-based with atomic writes, 1-hour default TTL
 - **Rate limiting:** Flask-Limiter on `/api/v1/*` only: 500/hour and 2000/day per visitor IP
@@ -33,7 +33,6 @@ RUN_LIVE_CLAUDE=1 python -m pytest tests/test_claude_integration.py   # Paid: re
 
 ```bash
 FRED_API_KEY              # Recommended. Without it FRED series come from the public CSV download
-NEWSAPI_KEY               # Optional. Only used if every RSS feed returns nothing
 DATABASE_URL              # PostgreSQL (omit for SQLite fallback)
 ADMIN_TOKEN               # Bearer token for /api/v1/newsletter-data and /api/v1/admin/*
 ANTHROPIC_API_KEY         # Optional. AI news scoring, briefing, report, port summaries, score explanation
@@ -83,7 +82,7 @@ data/
     energy.py             # WTI crude (CL=F live, DCOILWTICO history) + DOE diesel (GASDESW)
     tariffs.py            # EPUTRADE (monthly) + tariff news nowcast that can only lower the score
     tariff_news_nowcast.py # VADER score of tariff-tagged RSS articles
-    geopolitical.py       # RSS (NewsAPI fallback) + Claude/VADER severity, port-disruption blend
+    geopolitical.py       # RSS + Claude/VADER severity, port-disruption blend
     silicon_analysts.py   # Semiconductor profile: 4 chip categories
     aerospace.py          # Aerospace profile: 4 aero categories
     fred_client.py        # Shared FRED API wrapper (public CSV when no key)

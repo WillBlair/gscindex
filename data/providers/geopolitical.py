@@ -1,9 +1,9 @@
 """
 Geopolitical Risk + News Intelligence Provider
 ================================================
-Uses NewsAPI to fetch supply chain articles, then applies VADER sentiment
-analysis to score each article's negativity and classify it into the
-correct supply chain category.
+Fetches supply chain articles from curated RSS feeds, scores each article's
+severity (Claude, with VADER sentiment as the fallback), and classifies it
+into the correct supply chain category.
 
 VADER (Valence Aware Dictionary and sEntiment Reasoner) runs locally —
 no AI API key needed. It's specifically designed for news/social media
@@ -12,7 +12,7 @@ positive).
 
 Score Logic
 -----------
-1. Fetch recent supply chain articles (RSS primary, NewsAPI fallback)
+1. Fetch recent supply chain articles from curated RSS feeds
 2. Score each article's severity (Claude analysis when available,
    VADER compound × 6 as the deterministic fallback)
 3. Classify each article into a supply chain category via keywords
@@ -29,12 +29,10 @@ History comes from the daily_category_scores table — real stored
 measurements only. No proxy series, no synthetic backfill.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import time
 from data.runtime import serialized
-import os
-import requests
 import pandas as pd
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -55,7 +53,6 @@ from data.ai_analyst import analyze_news_batch
 
 logger = logging.getLogger(__name__)
 
-_NEWSAPI_URL = "https://newsapi.org/v2/everything"
 _VADER = SentimentIntensityAnalyzer()
 _NEWS_CACHE_KEY = NEWS_BRIEFING_CACHE_KEY
 
@@ -157,17 +154,6 @@ def _is_irrelevant_article(text: str) -> bool:
     return any(term in text for term in _IRRELEVANT_TERMS)
 
 
-def _get_api_key() -> str:
-    key = os.environ.get("NEWSAPI_KEY", "").strip()
-    if not key:
-        raise EnvironmentError(
-            "NEWSAPI_KEY is not set.\n"
-            "  1. Sign up free at https://newsapi.org/register\n"
-            "  2. Add NEWSAPI_KEY=your_key to your .env file"
-        )
-    return key
-
-
 def _classify_category_keyword(text: str) -> str:
     """Assign an article to a supply chain category based on keyword matching (Fallback)."""
     for category, keywords in _CATEGORY_KEYWORDS.items():
@@ -242,7 +228,7 @@ def _build_fallback_briefing(alerts: list[dict]) -> str:
 
 
 def _build_vader_alerts(candidates: list[dict]) -> list[dict]:
-    """Generate alerts deterministically from RSS/NewsAPI using VADER fallback."""
+    """Generate alerts deterministically from RSS articles using VADER."""
     alerts: list[dict] = []
 
     for candidate in candidates:
@@ -387,10 +373,6 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     
     rss_articles = fetch_rss_articles(max_items=50)
     
-    # Optional: We can still fetch from NewsAPI if RSS is empty, 
-    # but the user requested "make sure the AI does it based on these", so we prioritize RSS heavily.
-    # If RSS returns < 5 items, we might fall back, but let's stick to RSS for now to ensure quality.
-    
     candidates = []
     
     # 2. Convert RSS to standard format
@@ -408,36 +390,11 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
             "published": art["published"]
         })
 
-    # If absolutely no RSS data, fallback to NewsAPI (Safety Net)
+    # No articles is an outage, not "no risk": raising lets the aggregator
+    # keep the cached or flagged-fallback geopolitical score instead of
+    # publishing a perfect 100 built from zero articles.
     if not candidates:
-        logger.warning("No RSS articles found! Falling back to NewsAPI.")
-        from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
-        api_key = _get_api_key()
-        try:
-            resp = requests.get(
-                _NEWSAPI_URL,
-                params={
-                   "q": '("supply chain" OR "freight") AND (port OR container)',
-                   "from": from_date,
-                   "sortBy": "publishedAt",
-                   "language": "en",
-                   "apiKey": api_key,
-                },
-                timeout=10
-            )
-            if resp.status_code == 200:
-                news_arts = resp.json().get("articles", [])
-                for i, art in enumerate(news_arts):
-                    candidates.append({
-                        "id": i + 1000, # Offset IDs
-                        "title": art.get("title"),
-                        "description": art.get("description"),
-                        "url": art.get("url"),
-                        "source": art.get("source", {}).get("name"),
-                        "published": art.get("publishedAt")
-                    })
-        except Exception as e:
-            logger.error(f"NewsAPI Fallback failed: {e}")
+        raise RuntimeError("No RSS articles available from any feed")
 
     # Limit to top 25 for AI analysis (RSS quality is higher, so we can process more)
     # Ensure internal intelligence is always included by prioritizing items with 'is_rss' = True

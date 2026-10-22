@@ -574,7 +574,7 @@ flowchart LR
 
 <div class="section-heading"><span class="section-num">6.</span><h2>News Sources</h2></div>
 <hr class="section-rule">
-<p>The geopolitical provider reads 17 curated RSS feeds from industry, trade-policy, and weather-alert sources rather than general news aggregators. NewsAPI serves only as a fallback if RSS returns no data.</p>
+<p>The geopolitical provider reads 17 curated RSS feeds from industry, trade-policy, and weather-alert sources rather than general news aggregators.</p>
 
 <div class="grid-2">
     <div class="p-card">
