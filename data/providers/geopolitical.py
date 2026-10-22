@@ -153,18 +153,37 @@ _IRRELEVANT_TERMS: set[str] = {
 }
 
 
-# Terms matched on word boundaries (plural "s" allowed) instead of as
-# substrings, so "toy" does not flag "Toyota".
-_WHOLE_WORD_IRRELEVANT_TERMS: frozenset[str] = frozenset({"toy"})
-_SUBSTRING_IRRELEVANT_TERMS: frozenset[str] = frozenset(_IRRELEVANT_TERMS - _WHOLE_WORD_IRRELEVANT_TERMS)
-_WHOLE_WORD_PATTERNS = [re.compile(rf"\b{re.escape(term)}s?\b") for term in _WHOLE_WORD_IRRELEVANT_TERMS]
+# Consumer-goods terms are dropped only when the story has no supply chain
+# anchor, so "Video game console shipments held at Long Beach port" stays
+# relevant while "pokemon cards sell out" is dropped. They match on word
+# boundaries (plural "s" allowed), so "toy" does not flag "Toyota".
+_CONSUMER_GOODS_TERMS: frozenset[str] = frozenset({
+    "trading card", "magic: the gathering", "pokemon", "collectible",
+    "board game", "video game", "toy",
+})
+_SUPPLY_CHAIN_ANCHORS: frozenset[str] = frozenset({
+    "port", "ports", "terminal", "shipping", "shipment", "shipments",
+    "container", "freight", "carrier", "tariff", "tariffs", "customs",
+    "import", "imports", "export", "exports", "sanction", "sanctions",
+    "chip", "chips", "semiconductor", "shortage", "factory", "production",
+    "suez", "panama canal", "red sea", "hormuz", "malacca",
+})
+_SUBSTRING_IRRELEVANT_TERMS: frozenset[str] = frozenset(_IRRELEVANT_TERMS - _CONSUMER_GOODS_TERMS)
+_CONSUMER_GOODS_PATTERNS = [
+    re.compile(rf"\b{re.escape(term)}s?\b") for term in sorted(_CONSUMER_GOODS_TERMS)
+]
+_SUPPLY_CHAIN_ANCHOR_PATTERN = re.compile(
+    r"\b(?:" + "|".join(re.escape(a) for a in sorted(_SUPPLY_CHAIN_ANCHORS, key=len, reverse=True)) + r")\b"
+)
 
 
 def _is_irrelevant_article(text: str) -> bool:
     """Return True if the article text contains clearly off-topic terms."""
     if any(term in text for term in _SUBSTRING_IRRELEVANT_TERMS):
         return True
-    return any(pattern.search(text) for pattern in _WHOLE_WORD_PATTERNS)
+    if not any(pattern.search(text) for pattern in _CONSUMER_GOODS_PATTERNS):
+        return False
+    return _SUPPLY_CHAIN_ANCHOR_PATTERN.search(text) is None
 
 
 def _classify_category_keyword(text: str) -> str:

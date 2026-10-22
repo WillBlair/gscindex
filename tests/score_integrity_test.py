@@ -223,6 +223,20 @@ class NewsRelevanceTests(unittest.TestCase):
         self.assertTrue(_is_irrelevant_article("toy recall hits store shelves"))
         self.assertFalse(_is_irrelevant_article("port strike halts container terminal"))
         self.assertFalse(_is_irrelevant_article("toyota halts production after parts shortage"))
+        self.assertTrue(_is_irrelevant_article("toys recalled over choking hazard"))
+        self.assertTrue(_is_irrelevant_article("toy-maker opens new studio"))
+
+    def test_consumer_goods_story_with_supply_chain_anchor_is_relevant(self):
+        from data.providers.geopolitical import _is_irrelevant_article
+
+        self.assertFalse(_is_irrelevant_article("US tariffs on Chinese toys raise import costs"))
+        self.assertFalse(_is_irrelevant_article("Video game console shipments held at Long Beach port"))
+        self.assertFalse(_is_irrelevant_article("Chip shortage hits video game console production"))
+
+    def test_anchor_matches_whole_words_only(self):
+        from data.providers.geopolitical import _is_irrelevant_article
+
+        self.assertTrue(_is_irrelevant_article("pokemon cards are important to support fans"))
 
     def test_analysis_prompt_rules_out_consumer_product_delays(self):
         from data.ai_analyst import SYSTEM_PROMPT
