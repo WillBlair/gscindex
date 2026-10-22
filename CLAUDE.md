@@ -56,7 +56,8 @@ Other tunables read from the environment in `config.py`: `NEWS_RSS_REFRESH_SECON
 app.py                    # Entry point, startup layers, background thread, Dash callbacks, /health, security headers
 config.py                 # ALL tunable constants: weights, profiles, tiers, colors, AI/cache settings
 gunicorn.conf.py          # 1 worker, 4 threads, gthread
-assets/style.css          # Global stylesheet (:root tokens kept in sync with config.COLORS)
+assets/terminal.css       # Terminal stylesheet: tokens, grid, panes, tablet and phone rules
+assets/terminal.js        # Tap-to-focus tooltips, Escape closes Subscribe, map drag/zoom off on touch
 data/
   aggregator.py           # Orchestrates providers via RefreshTasks(max_workers=3)
   cache.py                # Atomic file-based TTL cache
@@ -88,15 +89,14 @@ data/
     fred_client.py        # Shared FRED API wrapper (public CSV when no key)
   fallback_snapshot_safe.json  # Committed cold-start fallback (only cache file in git)
 components/
-  layout.py               # Main dashboard assembly, API and newsletter modals
-  workspace.py            # Overview, pressure drivers, freshness, CSV export, profiles
-  workspace_callbacks.py  # In-place refresh callbacks
-  cards.py                # Category health cards with sparklines
-  charts.py               # Trend lines + world map
-  gauge.py                # Composite gauge
-  feed.py                 # News alerts + AI briefing panel
-  market_costs.py         # Market indicators (oil, gas, copper, gold, VIX)
-  skeleton.py             # Loading skeleton UI
+  layout.py               # Terminal grid assembly and the API modal
+  terminal.py             # Pane builders: header, readout, quotes, headlines, briefing, category table
+  terminal_data.py        # Pure math: TIER_COLORS, tier_for, category_rows, index_summary, index_history
+  workspace.py            # Snapshot helpers: safe text and links, news selection, CSV export
+  workspace_callbacks.py  # Profile switch, in-place refresh, news filters, trend range, CSV
+  charts.py               # World map
+  feed.py                 # Relative-time formatting for headline ages
+  skeleton.py             # Loading skeleton grid
 scoring/
   engine.py               # Weighted composite with validation
   explanation.py          # Score explanation helpers
@@ -104,9 +104,9 @@ api/
   routes.py               # /api/v1/latest (public), /api/v1/newsletter-data (admin), limiter setup
   admin.py                # /api/v1/admin/subscribers, verify_admin()
   newsletter.py           # /unsubscribe (GET confirm page, POST unsubscribe)
-  briefing.py             # On-demand AI briefing (button)
-  report.py               # /report page
-  docs.py                 # /docs page
+  briefing.py             # On-demand AI briefing helper (no button in the Terminal UI)
+  report.py               # /report page (Terminal look)
+  docs.py                 # /docs page (Terminal look)
 scripts/
   send_newsletter.py      # Cron job for email delivery
   refresh_fallback_snapshot.py  # Rewrites data/fallback_snapshot_safe.json from DB/disk
@@ -163,7 +163,7 @@ All global state reads/writes MUST use `with _LOCK:`. The background thread runs
 - Panels update in place (no page reload) via `refresh-interval` in `components/workspace_callbacks.py`, which keeps filters and scroll position
 - **Provisional** (stale startup data): every 20s
 - **Fresh data**: every 5 min
-- The manual Refresh button re-reads the cache; it does not call providers
+- There is no Refresh button; the interval callbacks re-read the cache and never call providers
 - Only the skeleton screen does a full `window.location.reload()` (clientside callback) once data is ready
 
 ---
@@ -287,6 +287,7 @@ Score = 100 + sum(10 most severe negative severities)   # dedup by title,
 The aggregator overrides the provider score each cycle with the fresh news result and blends it 85/15 with the aggregate port-disruption score (`100 - 2 × mean port penalty`) via `blend_port_disruption()`.
 History comes from `daily_category_scores` in the database — real stored
 measurements only, no proxy series.
+News relevance: consumer-goods terms (`_CONSUMER_GOODS_TERMS` in `geopolitical.py`) are dropped unless the story also contains a supply chain anchor word (`_SUPPLY_CHAIN_ANCHORS`). Matching uses word boundaries, so "toy" does not flag "Toyota".
 
 **Energy**: cost-pressure gauge (NOT a demand gauge). Average of two inverse
 percentiles (WTI crude and DOE diesel, each within its trailing 2-year range).
@@ -352,7 +353,7 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 
 ### Critical Rules
 
-- Cache keys are versioned (e.g., `weather_batch_ports_v2`, `newsapi_briefing_v17`, `ai_port_summaries_v5`). Bump the version to bust stale cache on schema changes
+- Cache keys are versioned (e.g., `weather_batch_ports_v2`, `newsapi_briefing_v18`, `ai_port_summaries_v5`). Bump the version to bust stale cache on schema changes
 - Always use `set_cached()` / `_write_text_atomic()`, never write cache files directly
 - Cache dir: `data/.cache/`
 - Only `fallback_snapshot_safe.json` is committed to git. The app never rewrites it; refresh it with `python scripts/refresh_fallback_snapshot.py` and commit
@@ -389,7 +390,8 @@ Region profiles still list a legacy `trucking` weight; it is folded into `energy
 ### Post-Processing
 
 - Fresh news score (blended with the port-disruption signal) overwrites the geopolitical score and history's last point
-- Claude score explanation for the gauge hover (cached 24h, reused only while the tier is unchanged)
+- Claude score explanation, stored as `score_explanation` (cached 24h, reused only while the tier is unchanged); the Terminal UI does not display it
+- `daily_history` loaded from `get_daily_category_scores(91)` (see Snapshot Structure)
 - Disruptions generated from measured (non-fallback) categories scoring < `DISRUPTION_SCORE_THRESHOLD` (70), plus high-severity news alerts
 - Measured (non-fallback) daily scores persisted via `record_daily_scores()` (at most hourly)
 - Dashboard snapshot saved to the database via `save_dashboard_snapshot()` (at most hourly, skipped when a baseline category is on a fallback)
@@ -404,6 +406,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 {
     "last_updated_utc": "2026-03-10T15:30:00Z",
     "dates": pd.DatetimeIndex,                       # 90 daily dates
+    "daily_history": dict,                           # {"dates": ["YYYY-MM-DD", ...], "scores": {cat: [float | None, ...]}}, 91 days, stored daily scores
     "category_history": dict[str, pd.Series],        # 6 baseline + industry categories
     "current_scores": dict[str, float],              # 6 baseline + chip_* and aero_* when available
     "category_metadata": dict[str, dict],            # one per category
@@ -414,7 +417,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
     "disruptions": list[dict],                       # event, region, impact_score, categories, started, status
     "provider_errors": dict[str, str | None],        # None = OK, str = error message
     "market_data": dict,                             # Crude Oil, Natural Gas, Copper, Gold, VIX: price, prev, symbol, change_pct
-    "score_explanation": str,                        # Claude gauge hover text (may be empty)
+    "score_explanation": str,                        # Claude score explanation (may be empty; not shown in the Terminal UI)
     "degraded": bool,                                # True if any category is serving a fallback
     "fallback_categories": list[str],                # categories with is_fallback metadata
 }
@@ -426,24 +429,37 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 
 ### Styling
 
-- Dark theme: background `#0a0a0b`, cards `#111113`, text `#ececef`, grid `#1e1e22`
-- Colors defined in `config.py` `COLORS` and `CATEGORY_COLORS`; keep `COLORS` in sync with the `:root` tokens in `assets/style.css`
-- Fonts: Satoshi / IBM Plex Sans / IBM Plex Mono (`FONT_*` in `config.py`, since Plotly ignores CSS variables)
-- Dash Bootstrap Components (DARKLY) + `assets/style.css` + some inline styles
-- Trend chart uses `dragmode=False`, `hovermode="x unified"`; the world map uses `dragmode="pan"`
+- Terminal look: pure black page (`#000000`), panes `#07090C`, 1px `#1D232B` rules between panes, square corners, no shadows. Amber `#FFB020` for pane titles and focus rings, text `#F2F4F7`, dim text `#8A94A3`
+- Tokens live as `:root` custom properties in `assets/terminal.css` (it also maps Bootstrap's `--bs-*` variables to them)
+- Tier colors for the UI are `TIER_COLORS` in `components/terminal_data.py`: Healthy `#35D07F`, Stable `#F5C542`, Stressed `#FF8A3D`, Critical `#FF4D5E`. `config.HEALTH_TIERS` keeps its own colors for the newsletter and stored metadata. `config.COLORS` is the old palette, still used by the newsletter email
+- Fonts: JetBrains Mono for numbers, labels, tables and chrome; Inter for headlines and prose. Loaded from Google Fonts in `app.py`, `/report` and `/docs`
+- Dash Bootstrap Components (default theme, `data-bs-theme="dark"`) is still loaded for the modal, popover, tooltip and select, restyled by `terminal.css`
+- Responsive: desktop grid is `300px | 1fr | 300px`; at 1100px and below it is two columns; at 760px and below it is one column for phones
+- The world map uses `dragmode="pan"` on desktop. `assets/terminal.js` turns off map drag and scroll zoom on phones and touch screens so swipes scroll the page. A tap on a port still shows its hover box
 
-### Cards (cards.py)
+### Terminal panes (layout.py, terminal.py)
 
-Each card shows: label, weight badge, score (colored by tier), delta arrow, sparkline of the last 30 points, 30-day min/max range. Cards are clickable (pattern-matching id `{"type": "category-card", "index": cat}`) and open a details modal. Fallback categories show "History unavailable" instead of a sparkline.
+- Header: brand, profile switch (Global / Semis / Aero), updated label, Methodology link, API button, CSV button, Subscribe button
+- Readout: index value and tier, change vs yesterday, sparkline with a 7D / 30D / 90D range selector, per-category list
+- Map pane, Markets pane (oil, gas, copper, gold, VIX), Briefing pane with a "Read full report" link
+- Headlines: sorted HIGH, then MED, then LOW, newest first within each. Search, severity and topic filters
+- Category table: weight, score bar (today) with a tick (yesterday), today, yesterday, change, effect on the index (change x weight), 30-day sparkline, source. Hover or focus a category name, or tap it on a phone, for source, raw value, update time, description and calculation
+- Subscribe is a small popover (Escape closes it). API info is a modal
+- Filters, trend range and profile persist for the browser session (`persistence_type="session"`)
 
-### Charts (charts.py)
+### Terminal data rules (terminal_data.py)
 
-Trend chart (7, 30, or 90 days): one `go.Scatter` per category, lines colored by `CATEGORY_COLORS`. World map: port markers colored/sized by score.
+- All dates are UTC. "Today" is the UTC date of `last_updated_utc`; "yesterday" is exactly the previous UTC date in `daily_history`. If that date is missing, the value shows "–" (no nearest-day guess)
+- Today's value always comes from `current_scores`, since the stored history is read before today's hourly write
+- Index values and their history are weighted with the selected profile's weights. A past day is blank unless every category has a stored score for it
+- Missing history stays a gap. Never fill it
 
 ### Callbacks (app.py, components/workspace_callbacks.py)
 
-- Modal callback: uses `ctx.triggered_id` with pattern-matching `ALL` to detect which card was clicked
-- Newsletter callback: validates email, calls `add_subscriber()`
+- `profile-switch` writes `profile-store`; the readout and category table rebuild from `profile-store`, the refresh interval, and `trend-range`
+- The refresh interval also updates the map, quotes, briefing, updated label and the interval itself (`prevent_initial_call=True`, because `serve_layout` already rendered those panes)
+- News callback filters by search text, severity and topic; CSV callback downloads the selected profile
+- `app.py` holds the API modal toggle and the Subscribe handler (validates the email, calls `add_subscriber()`)
 - All callbacks read from `_DATA_CACHE` — never trigger fetches
 - Use `dash.no_update` to skip outputs that shouldn't change
 
@@ -493,8 +509,8 @@ Call types:
 - `analyze_news_batch()`: severity + summary for up to 25 articles and the 3-bullet briefing, in one call
 - `generate_full_report()`: Markdown report for `/report` (up to 50 articles)
 - `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles
-- `generate_score_explanation()`: gauge hover text
-- `generate_briefing()`: on-demand briefing button, only when the cached payload has no briefing
+- `generate_score_explanation()`: stored as `score_explanation` in the snapshot
+- `generate_briefing()`: on-demand briefing helper, only when the cached payload has no briefing (no UI button calls it)
 - `generate_newsletter_briefing()`: newsletter cron
 
 ---
@@ -510,15 +526,15 @@ Call types:
 5. Register in `data/aggregator.py`'s `_PROVIDERS` list
 6. Add weight in `config.py` `CATEGORY_WEIGHTS` and every `INDUSTRY_PROFILES` weight set (adjust others so each sums to 1.0), plus `card_categories` where it should show
 7. Add to `CATEGORY_LABELS`, `CATEGORY_COLORS` in `config.py`
-8. Check `components/cards.py` and `components/charts.py` render it
+8. Check the category table (`components/terminal.py`) and the readout render it
 
 ### Modifying the UI
 
 - Layout structure: `components/layout.py`
-- Cards: `components/cards.py` — follow existing card pattern (score + delta + sparkline)
-- Charts: `components/charts.py` — use `go.Scatter` with `CATEGORY_COLORS`
+- Panes: `components/terminal.py` builders; pure number logic goes in `components/terminal_data.py`
+- Map: `components/charts.py` (`build_world_map`)
 - Callbacks: `app.py` and `components/workspace_callbacks.py`. Use `ctx.triggered_id`, return `dash.no_update` for unchanged outputs
-- Styling: `assets/style.css` tokens and `config.py` colors
+- Styling: `assets/terminal.css` tokens. Tier colors for the UI live in `terminal_data.TIER_COLORS`
 
 ### Editing Scores and Thresholds
 

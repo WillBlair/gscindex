@@ -4,30 +4,38 @@ A real-time supply chain health dashboard that aggregates data from six provider
 
 Live site: [gscindex.com](https://gscindex.com)
 
-## Monitoring workspace
+## Terminal dashboard
 
-The dashboard now provides a responsive overview, ranked pressure drivers, and
-industry-specific scorecards. The existing provider calculations and profile
-weights are preserved.
+The dashboard is a dense dark grid of panes, built to be read at a glance. It
+works on desktop, tablet and phone. The provider calculations and profile
+weights are unchanged.
 
-- **Port map:** hover or tap a marker for its score, regional pressures,
-  disruption summary, and related reporting. Drag to pan, scroll to zoom, or use
-  the zoom/reset controls. Bright colors show relative risk.
-- **Market ticker:** continuously scrolling quotes; hover or focus to pause.
-- **Trend periods:** choose 7, 30, or 90 days; toggle signals through the legend.
-  Missing history remains a gap, and sparse series display individual points.
-- **Intelligence:** search news by headline, description, or source and filter
-  by severity and topic. Headlines are shown first, with descriptions and the
-  briefing expanded by default. News rows stay compact with optional details.
-  RSS markup is converted to readable text.
-- **Export CSV:** download the selected profile's scores, weights, weighted
-  contributions, source timestamps, and fallback status.
-- **Refresh:** updates panels in place and preserves filters and scroll position.
-  Manual refresh reads the latest cache; it does not trigger provider API calls.
-- **Data quality:** snapshot timestamps, cached-data notices, and fallback/missing
-  categories are explicit. Daily comparisons use the same profile's weights and
-  require consecutive, complete observations. Map colors compare relative risk;
-  each hover shows the absolute score and health tier alongside port conditions.
+- **Index readout:** the weighted index, its health tier, the change versus
+  yesterday, a sparkline with a 7D / 30D / 90D selector, and each category's
+  score and change.
+- **Profiles:** switch between Global, Semis and Aero in the header. Weights and
+  scores follow the selected profile.
+- **Port map:** hover or tap a marker for its score, regional pressures and
+  disruption summary. On desktop, drag to pan and scroll to zoom. On phones and
+  touch screens, drag and scroll zoom are off so swipes scroll the page.
+- **Markets:** oil, natural gas, copper, gold and VIX quotes.
+- **Headlines:** sorted HIGH, then MED, then LOW, newest first within each.
+  Search by text and filter by severity and topic. Filters, the trend range and
+  the profile are remembered for the browser session.
+- **Briefing:** the AI summary, with a link to the full report.
+- **Category table:** weight, today's score as a bar with a tick for yesterday,
+  change, effect on the index, a 30-day sparkline and the source. Hover a
+  category name, or tap it on a phone, for the source, raw value, update time
+  and calculation.
+- **Header actions:** Methodology (`/docs`), API (a modal), CSV (the selected
+  profile's scores, weights, contributions and fallback status) and Subscribe
+  (a small popover for the daily briefing email).
+- **Refresh:** panes update in place every 5 minutes (every 20 seconds while
+  warming up) and keep your filters and scroll position. Refreshing reads the
+  latest cache; it does not trigger provider API calls.
+- **Data quality:** "yesterday" is exactly the previous UTC date from stored daily
+  scores. If that day is missing, the value shows a dash instead of a guess.
+  Fallback categories are marked in the table.
 
 For local use, install `requirements.txt` and run `python app.py` at
 `http://127.0.0.1:8050`. FRED data uses the authenticated API when a key is configured, otherwise its
@@ -41,7 +49,7 @@ database; unset it to use SQLite.
 
 ## What It Does
 
-The dashboard fetches economic, weather, and news data on a background thread (every 5 minutes), caches results in memory and on disk, and renders instantly from cache on each page load. A single **Supply Chain Health Index** score summarizes overall stability, with six category breakdowns, a 37-port world map, 90-day trend charts, news alerts, and an optional AI briefing.
+The dashboard fetches economic, weather, and news data on a background thread (every 5 minutes), caches results in memory and on disk, and renders instantly from cache on each page load. A single **Supply Chain Health Index** score summarizes overall stability, with six category breakdowns, a 37-port world map, a 7/30/90-day trend, news headlines, and an optional AI briefing.
 
 ### Composite Score
 
@@ -62,16 +70,16 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
 ### Dashboard Features
 
-- **Composite overview**: readable score, health band, same-profile daily comparison, and ranked pressure drivers
-- **Category cards**: score, 30-day sparkline, 30-day range, delta, and clickable detail modal per category
-- **World map**: 37 ports scored by local weather (40%) + regional macro (60%), minus structural risk and news or AI disruption penalties
-- **Trend chart**: 7, 30, or 90 days of history for the selected profile's categories
-- **News alerts**: supply-chain articles scored by Claude severity (VADER when Claude is unavailable)
+- **Index readout**: score, health tier, same-profile change versus yesterday, and a 7, 30 or 90 day trend
+- **Category table**: weight, score bar with yesterday's tick, change, effect on the index, 30-day sparkline, source, and a hover or tap detail per category
+- **World map**: 37 ports scored by local weather (40%) + regional macro (60%), minus structural risk and news or AI disruption penalties, with port conditions on hover
+- **Headlines**: supply-chain articles scored by Claude severity (VADER when Claude is unavailable), sorted by severity then recency, with search and filters
 - **AI briefing**: Claude-generated summary (optional; cached ~24h)
 - **Market indicators**: crude oil, natural gas, copper, gold, VIX via yfinance
-- **Port conditions**: source-provided disruption context directly on map hover
+- **Profiles**: Global, Semis and Aero views
+- **CSV export**: the selected profile's scores and weights
 - **Newsletter signup**: email collection stored in PostgreSQL (prod) or SQLite (dev)
-- **Auto-refresh**: panels update in place every 5 min, or every 20s while warming up
+- **Auto-refresh**: panes update in place every 5 min, or every 20s while warming up
 
 ### Additional Pages
 
@@ -178,8 +186,8 @@ gscindex/
 ├── config.py                   # Weights, tiers, colors, regions, tunable constants
 ├── gunicorn.conf.py            # Production server config (Render)
 ├── .python-version             # Python 3.13.1
-├── assets/style.css            # Global stylesheet
-├── components/                 # Dash UI (layout, workspace, cards, charts, gauge, feed, market panel)
+├── assets/                     # terminal.css (styles), terminal.js (touch and keyboard helpers)
+├── components/                 # Dash UI (layout, terminal panes, terminal math, workspace helpers, map, skeleton)
 ├── data/
 │   ├── aggregator.py           # Orchestrates providers via ThreadPoolExecutor
 │   ├── cache.py                # Atomic file-based TTL cache
