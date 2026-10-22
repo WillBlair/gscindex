@@ -121,11 +121,15 @@ def clear_cache() -> None:
 
 def set_cached_dashboard(data: dict) -> None:
     """Save the full dashboard state as JSON (safe serialization).
-    
+
     Converts complex types (Pandas Series/Index) to standard lists/strings
     to avoid pickle dependency issues on production servers.
     """
-    
+    set_cached(_DASHBOARD_SNAPSHOT_KEY, dashboard_to_safe_dict(data))
+
+
+def dashboard_to_safe_dict(data: dict) -> dict:
+    """JSON-safe copy of a dashboard snapshot (no Pandas types)."""
     safe_data = data.copy()
     
     # 1. Convert Index to list of strings
@@ -143,7 +147,7 @@ def set_cached_dashboard(data: dict) -> None:
                 safe_history[cat] = series
         safe_data["category_history"] = safe_history
 
-    set_cached(_DASHBOARD_SNAPSHOT_KEY, safe_data)
+    return safe_data
 
 
 def reconstruct_dashboard_state(data: dict) -> dict:

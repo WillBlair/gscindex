@@ -17,7 +17,15 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pytest
 from dotenv import load_dotenv
+
+# These tests make real, billed Claude calls and write the production cache.
+# They only run when explicitly requested: RUN_LIVE_CLAUDE=1 pytest tests/test_claude_integration.py
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_CLAUDE") != "1",
+    reason="live Claude calls cost money; set RUN_LIVE_CLAUDE=1 to run",
+)
 
 load_dotenv()
 

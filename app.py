@@ -27,7 +27,7 @@ from dash import Input, Output, State, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
-from config import APP_TITLE, CATEGORY_WEIGHTS
+from config import APP_TITLE, CATEGORY_WEIGHTS, FALLBACK_SNAPSHOT_MAX_AGE_DAYS
 from data import aggregate_data
 
 # Load .env before anything reads API keys
@@ -52,6 +52,8 @@ _DATA_IS_FRESH = False  # True only after the background thread completes a real
 _LAST_FETCH_STATUS = "starting"
 _LAST_FETCH_ERROR = None
 _LAST_FETCH_DURATION_SECONDS = None
+_FETCH_STARTED_AT: datetime | None = None   # start of the fetch in progress
+_HAS_FETCHED_OK = False                       # any successful fetch since boot
 _LOCK = threading.Lock()
 
 from data.status import set_status, get_status
@@ -145,6 +147,28 @@ except Exception as e:
     logging.getLogger(__name__).warning("Disk cache load failed: %s", e)
     startup_data = None
 
+# Layer 1.5: Last good snapshot from the database (written hourly by the
+# aggregator). Survives deploys, so a new instance starts from data that is
+# at most about an hour old instead of the committed file.
+if not startup_data:
+    try:
+        from data.cache import reconstruct_dashboard_state, set_cached_dashboard
+        from data.database import load_dashboard_snapshot
+
+        raw = load_dashboard_snapshot()
+        if raw:
+            raw = _migrate_keys(raw)
+            if set(CATEGORY_WEIGHTS.keys()).issubset(raw.get("current_scores", {}).keys()):
+                startup_data = reconstruct_dashboard_state(raw)
+                # Seed the disk cache too, so /api/v1/latest answers at once.
+                set_cached_dashboard(startup_data)
+                logging.getLogger(__name__).info(
+                    "Cold start: loaded last snapshot from the database (%s).",
+                    raw.get("last_updated_utc"),
+                )
+    except Exception as e:
+        logging.getLogger(__name__).warning("Database snapshot load failed: %s", e)
+
 # Layer 2: Fallback snapshot for cold start.  On Render, disk cache is empty on
 # every deploy.  Without fallback, users see skeleton for 60+ seconds while the
 # background fetch runs — often causing "waiting for gscindex.com" timeouts.
@@ -159,7 +183,18 @@ if not startup_data:
             raw = _migrate_keys(raw)
             required_keys = set(CATEGORY_WEIGHTS.keys())
             cached_keys = set(raw.get("current_scores", {}).keys())
-            if required_keys.issubset(cached_keys):
+            fallback_updated = _extract_last_updated(raw)
+            too_old = _is_stale(
+                fallback_updated, max_age_seconds=FALLBACK_SNAPSHOT_MAX_AGE_DAYS * 86400
+            )
+            if too_old:
+                # Months-old numbers presented as the index are worse than
+                # the loading skeleton for the ~60s first fetch.
+                logging.getLogger(__name__).warning(
+                    "Committed fallback snapshot is older than %d days; not serving it.",
+                    FALLBACK_SNAPSHOT_MAX_AGE_DAYS,
+                )
+            elif required_keys.issubset(cached_keys):
                 startup_data = reconstruct_dashboard_state(raw)
                 # Never show stale narrative/news from committed fallback.
                 startup_data["alerts"] = []
@@ -194,6 +229,7 @@ def update_data_loop():
     """Background loop that refreshes data every 5 minutes."""
     global _DATA_CACHE, _LAST_UPDATE, _DATA_IS_FRESH
     global _LAST_FETCH_STATUS, _LAST_FETCH_ERROR, _LAST_FETCH_DURATION_SECONDS
+    global _FETCH_STARTED_AT, _HAS_FETCHED_OK
     
     logger = logging.getLogger("DataUpdater")
     logger.info("Starting background data updater...")
@@ -205,6 +241,7 @@ def update_data_loop():
             with _LOCK:
                 _LAST_FETCH_STATUS = "running"
                 _LAST_FETCH_ERROR = None
+                _FETCH_STARTED_AT = fetch_started
             set_status("Starting data update...")
             new_data = aggregate_data(status_callback=set_status)
             fetch_duration = (datetime.now(timezone.utc) - fetch_started).total_seconds()
@@ -215,6 +252,8 @@ def update_data_loop():
                 _DATA_IS_FRESH = True
                 _LAST_FETCH_STATUS = "ok"
                 _LAST_FETCH_ERROR = None
+                _FETCH_STARTED_AT = None
+                _HAS_FETCHED_OK = True
                 _LAST_FETCH_DURATION_SECONDS = round(fetch_duration, 2)
             
             logger.info("Data update complete; memory=%s. Sleeping for 5 minutes.", memory_usage())
@@ -224,7 +263,10 @@ def update_data_loop():
             logger.error(f"Data update failed: {e}")
             with _LOCK:
                 _LAST_FETCH_STATUS = "failed"
-                _LAST_FETCH_ERROR = str(e)
+                # Public on /health: say what failed, never the exception text
+                # (request errors can include URLs with API keys).
+                _LAST_FETCH_ERROR = type(e).__name__
+                _FETCH_STARTED_AT = None
             time.sleep(60)
 
 def create_app() -> dash.Dash:
@@ -280,27 +322,23 @@ def create_app() -> dash.Dash:
     '''
 
     # ── API & Rate Limiting ──────────────────────────────────────────────
-    from api.routes import api_bp, get_limiter
+    from api.routes import API_RATE_LIMIT, api_bp, get_limiter
     from api.report import report_bp
     from api.admin import admin_bp
     from api.docs import docs_bp
-    
-    # Initialize Rate Limiter
+
+    # Rate-limit the JSON API and admin routes per visitor IP. Dash page
+    # loads and callbacks are not limited (one page view makes several).
     limiter = get_limiter(app.server)
-    
-    # Register API Blueprint
+    limiter.limit(API_RATE_LIMIT)(api_bp)
+    limiter.limit(API_RATE_LIMIT)(admin_bp)
+
     app.server.register_blueprint(api_bp)
     app.server.register_blueprint(report_bp)
     app.server.register_blueprint(admin_bp)
     app.server.register_blueprint(docs_bp)
-    
+
     import flask
-    
-    # Exempt Dash's hot-reload endpoint from rate limiting
-    # This prevents "429 Too Many Requests" during development
-    @limiter.request_filter
-    def ignore_dash_reload():
-        return flask.request.path.startswith("/_reload-hash")
 
     @app.server.get("/health")
     @app.server.get("/healthz")
@@ -314,6 +352,8 @@ def create_app() -> dash.Dash:
             fetch_status = _LAST_FETCH_STATUS
             fetch_error = _LAST_FETCH_ERROR
             fetch_duration = _LAST_FETCH_DURATION_SECONDS
+            fetch_started_at = _FETCH_STARTED_AT
+            has_fetched_ok = _HAS_FETCHED_OK
             fallback_categories = (
                 list(_DATA_CACHE.get("fallback_categories", [])) if _DATA_CACHE else []
             )
@@ -325,20 +365,21 @@ def create_app() -> dash.Dash:
             status_message = "status_unavailable"
 
         # Health policy:
-        # - healthy: data exists and is not too old
-        # - warming_up: no data yet (return 200 so Render doesn't fail deploy)
-        # - degraded: data exists but stale (>30m) or fetch is failing
+        # - warming_up: no successful fetch since boot yet, first fetch not
+        #   overdue (200 — Render fails a deploy if health returns 503)
+        # - healthy: data exists and is under 30 minutes old
+        # - degraded (503): data older than 30 minutes, or a fetch has been
+        #   running for over 10 minutes (hung upstream call)
+        running_for = (
+            (now_utc - fetch_started_at).total_seconds() if fetch_started_at else 0.0
+        )
         state = "healthy"
         http_status = 200
-        if not has_data:
+        if not has_fetched_ok and running_for <= 600:
             state = "warming_up"
-            # Return 200 during warmup — Render fails deploy if health returns 503
-        elif fetch_status == "failed":
+        elif not has_data or age_seconds is None or age_seconds > 1800 or running_for > 600:
             state = "degraded"
-            if age_seconds is None or age_seconds > 1800:
-                http_status = 503
-        elif age_seconds is not None and age_seconds > 1800:
-            state = "degraded"
+            http_status = 503
 
         payload = {
             "state": state,
@@ -489,9 +530,9 @@ def create_app() -> dash.Dash:
         else:
             # Return error message
             return html.P(
-                result.get("error", "Failed to generate briefing. Please try again later."),
+                result.get("error") or "Failed to generate briefing. Please try again later.",
                 className="briefing-empty-copy",
-                style={"color": COLORS["red"]},
+                style=None if result.get("pending") else {"color": COLORS["red"]},
             )
 
     # ── Modal Interaction Callbacks ─────────────────────────────────────

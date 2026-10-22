@@ -15,10 +15,12 @@ import sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
-from app import create_app
+# Serverless functions are frozen between requests, so the 5-minute
+# background refresh loop can't run here; disable it before importing app.
+os.environ.setdefault("GSC_DISABLE_BACKGROUND", "1")
 
-# Create the Dash app instance
-dash_app = create_app()
+# Reuse the module-level app (importing app already builds it once).
+from app import app as dash_app
 
 # Export the Flask WSGI app as 'app' for Vercel
 # Vercel's Python runtime will automatically detect and use this WSGI application

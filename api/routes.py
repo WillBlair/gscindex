@@ -8,14 +8,26 @@ from scoring import compute_composite_index
 # Create Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
 
+API_RATE_LIMIT = "500 per hour;2000 per day"
+
+
+def client_ip() -> str:
+    """Visitor IP behind Render's Cloudflare edge.
+
+    request.remote_addr is the proxy, which put every visitor in one shared
+    bucket. Cloudflare sets CF-Connecting-IP itself (clients cannot spoof it
+    through the edge); fall back to the socket address when it is absent.
+    """
+    return request.headers.get("CF-Connecting-IP") or get_remote_address()
+
+
 def get_limiter(app):
-    """Factory to create a limiter attached to the app."""
-    return Limiter(
-        get_remote_address,
-        app=app,
-        default_limits=["2000 per day", "500 per hour"],
-        storage_uri="memory://"
-    )
+    """Limiter keyed on the real visitor IP.
+
+    No default limits: Dash's own page and callback requests are not rate
+    limited. Limits are applied to the API blueprints in app.py.
+    """
+    return Limiter(client_ip, app=app, storage_uri="memory://")
 
 @api_bp.route('/latest', methods=['GET'])
 def get_latest_data():

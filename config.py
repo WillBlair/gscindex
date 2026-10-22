@@ -127,6 +127,10 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "geopolitical":        0.20,
 }
 
+# The committed data/fallback_snapshot_safe.json is only served on a cold
+# start (no disk cache, no database snapshot) while it is younger than this.
+FALLBACK_SNAPSHOT_MAX_AGE_DAYS: int = 14
+
 # Categories scoring below this appear in the disruptions table.
 DISRUPTION_SCORE_THRESHOLD: float = 70.0
 

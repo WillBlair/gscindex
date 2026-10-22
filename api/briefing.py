@@ -6,7 +6,7 @@ Generates AI briefing only when user requests it, reducing automatic API usage.
 from __future__ import annotations
 
 import logging
-from flask import jsonify
+import threading
 
 from config import AI_CACHE_TTL_SECONDS, NEWS_BRIEFING_CACHE_KEY, NEWS_CACHE_MAX_AGE_SECONDS
 from data.ai_analyst import generate_briefing
@@ -16,6 +16,23 @@ logger = logging.getLogger(__name__)
 
 ALERTS_CACHE_KEY = NEWS_BRIEFING_CACHE_KEY
 _AI_OD_BRIEFING_KEY = "claude_on_demand_briefing_v2"
+
+# One background generation at a time; web requests never wait on the model.
+_generation_lock = threading.Lock()
+_generation_running = False
+
+
+def _generate_in_background(alerts: list[dict]) -> None:
+    global _generation_running
+    try:
+        briefing_text = generate_briefing(alerts[:10])
+        if briefing_text:
+            set_cached(_AI_OD_BRIEFING_KEY, {"briefing": briefing_text})
+    except Exception as exc:
+        logger.error("On-demand briefing generation failed: %s", exc)
+    finally:
+        with _generation_lock:
+            _generation_running = False
 
 
 def get_on_demand_briefing() -> dict:
@@ -56,18 +73,18 @@ def get_on_demand_briefing() -> dict:
             "error": None,
         }
 
-    logger.info("Generating on-demand briefing from %d cached alerts (Claude)...", len(alerts))
-    briefing_text = generate_briefing(alerts[:10])
-    if not briefing_text:
-        # Never cache or show a made-up "all clear" when the model call fails.
-        return {
-            "success": False,
-            "briefing": "",
-            "error": "The briefing could not be generated right now. Please try again later.",
-        }
-    set_cached(_AI_OD_BRIEFING_KEY, {"briefing": briefing_text})
+    global _generation_running
+    with _generation_lock:
+        start = not _generation_running
+        _generation_running = True
+    if start:
+        logger.info("Generating on-demand briefing from %d cached alerts (Claude)...", len(alerts))
+        threading.Thread(
+            target=_generate_in_background, args=(alerts,), daemon=True, name="briefing"
+        ).start()
     return {
-        "success": True,
-        "briefing": briefing_text,
-        "error": None,
+        "success": False,
+        "briefing": "",
+        "error": "Generating the briefing now. Click again in about a minute.",
+        "pending": True,
     }

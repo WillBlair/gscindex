@@ -63,8 +63,9 @@ def register_workspace_callbacks(app, get_snapshot):
         markers = data.get("map_markers", [])
         return build_world_map(markers), f"{len(markers)} ports"
 
+    # serve_layout already renders these panels; skip the duplicate initial run.
     @app.callback(Output("briefing-panel", "children"), Output("market-panel", "children"),
-                  Input("refresh-request", "data"))
+                  Input("refresh-request", "data"), prevent_initial_call=True)
     def update_context(_):
         data, _ = get_snapshot()
         if not data:
@@ -73,7 +74,7 @@ def register_workspace_callbacks(app, get_snapshot):
 
     @app.callback(Output("news-results", "children"), Output("news-results-count", "children"),
                   Input("news-search", "value"), Input("news-severity", "value"), Input("news-category", "value"),
-                  Input("refresh-request", "data"))
+                  Input("refresh-request", "data"), prevent_initial_call=True)
     def update_news(query, severity, category, _):
         data, _ = get_snapshot()
         if not data:

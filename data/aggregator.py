@@ -993,11 +993,10 @@ def aggregate_data(status_callback=None) -> dict:
     }
 
     # Persist the full dashboard state to disk for instant startup
-    from data.cache import set_cached_dashboard, _write_text_atomic
+    from data.cache import set_cached_dashboard
     from data.status import set_status
     from data.database import record_daily_scores
     import json as _json
-    from pathlib import Path as _Path
     try:
         # Only persist measured values — fallback scores must not pollute
         # the real daily history that trend charts are built from.
@@ -1009,26 +1008,14 @@ def aggregate_data(status_callback=None) -> dict:
         set_cached_dashboard(result)
         logger.info("Dashboard state persisted to disk (JSON/Safe).")
 
-        # Auto-refresh the committed fallback snapshot if it's older than 7 days.
-        # This keeps cold-start users from seeing weeks-old data.
-        _fallback_path = _Path(__file__).parent / "fallback_snapshot_safe.json"
-        _fallback_age = (
-            datetime.now(timezone.utc).timestamp() - _fallback_path.stat().st_mtime
-            if _fallback_path.exists() else float("inf")
-        )
-        if _fallback_age > 7 * 86400:
-            # Re-use the same safe serialisation logic that set_cached_dashboard uses
-            import copy as _copy
-            safe = _copy.deepcopy(result)
-            if "dates" in safe and hasattr(safe["dates"], "strftime"):
-                safe["dates"] = safe["dates"].strftime("%Y-%m-%d").tolist()
-            if "category_history" in safe:
-                safe["category_history"] = {
-                    cat: (s.replace({np.nan: None}).tolist() if hasattr(s, "tolist") else s)
-                    for cat, s in safe["category_history"].items()
-                }
-            _write_text_atomic(_fallback_path, _json.dumps(safe, default=str))
-            logger.info("Refreshed fallback_snapshot_safe.json (was %.1f days old).", _fallback_age / 86400)
+        # Persist the latest good snapshot to the database so a fresh deploy
+        # (empty disk) starts from data at most an hour old. Skipped when a
+        # baseline category is serving a fallback, so outages aren't saved.
+        if not any(cat in CATEGORY_WEIGHTS for cat in fallback_categories):
+            from data.cache import dashboard_to_safe_dict
+            from data.database import save_dashboard_snapshot
+
+            save_dashboard_snapshot(_json.dumps(dashboard_to_safe_dict(result), default=str))
 
         if status_callback: status_callback("Data ready! Launching...")
         set_status("Data ready!")

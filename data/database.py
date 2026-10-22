@@ -119,6 +119,25 @@ def init_db():
                         PRIMARY KEY (date, category)
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS dashboard_snapshot (
+                        id INTEGER PRIMARY KEY,
+                        payload TEXT NOT NULL,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS newsletter_sends (
+                        send_date DATE NOT NULL,
+                        email VARCHAR(255) NOT NULL,
+                        sent_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (send_date, email)
+                    )
+                """)
+                cursor.execute(
+                    "ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS unsubscribed_at "
+                    "TIMESTAMP WITH TIME ZONE"
+                )
             elif db_type == "sqlite":
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS subscribers (
@@ -142,6 +161,24 @@ def init_db():
                         PRIMARY KEY (date, category)
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS dashboard_snapshot (
+                        id INTEGER PRIMARY KEY,
+                        payload TEXT NOT NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS newsletter_sends (
+                        send_date DATE NOT NULL,
+                        email TEXT NOT NULL,
+                        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (send_date, email)
+                    )
+                """)
+                columns = {row[1] for row in cursor.execute("PRAGMA table_info(subscribers)")}
+                if "unsubscribed_at" not in columns:
+                    cursor.execute("ALTER TABLE subscribers ADD COLUMN unsubscribed_at TIMESTAMP")
         logger.info("Database initialized (%s).", db_type)
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
@@ -361,6 +398,73 @@ def get_previous_daily_score() -> float | None:
         return score
     except Exception as e:
         logger.error(f"Failed to fetch previous daily score: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+_snapshot_written_hour: datetime | None = None
+
+
+def save_dashboard_snapshot(payload_json: str) -> bool:
+    """Persist the latest good dashboard snapshot (one row, upserted).
+
+    Render's disk is wiped on every deploy; this lets a new instance start
+    from data that is at most an hour old instead of the committed file.
+    Written at most once per hour to keep Neon compute low.
+    """
+    global _snapshot_written_hour
+
+    now_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+    with _score_cache_lock:
+        if _snapshot_written_hour == now_hour:
+            return True
+
+    conn = get_connection()
+    if not conn:
+        return False
+    db_type = get_db_type()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            if db_type == "postgres":
+                cursor.execute("""
+                    INSERT INTO dashboard_snapshot (id, payload, updated_at)
+                    VALUES (1, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (id) DO UPDATE
+                    SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at
+                """, (payload_json,))
+            else:
+                cursor.execute("""
+                    INSERT INTO dashboard_snapshot (id, payload, updated_at)
+                    VALUES (1, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(id) DO UPDATE
+                    SET payload = excluded.payload, updated_at = excluded.updated_at
+                """, (payload_json,))
+        with _score_cache_lock:
+            _snapshot_written_hour = now_hour
+        return True
+    except Exception as e:
+        logger.error("Failed to save dashboard snapshot: %s", e)
+        return False
+    finally:
+        conn.close()
+
+
+def load_dashboard_snapshot() -> dict | None:
+    """Return the last persisted dashboard snapshot (JSON-safe dict) or None."""
+    import json
+
+    conn = get_connection()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT payload FROM dashboard_snapshot WHERE id = 1")
+        row = cursor.fetchone()
+        return json.loads(row[0]) if row else None
+    except Exception as e:
+        logger.warning("Failed to load dashboard snapshot: %s", e)
         return None
     finally:
         conn.close()

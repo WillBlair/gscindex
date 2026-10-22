@@ -126,12 +126,22 @@ class AiFailureTests(unittest.TestCase):
     def test_on_demand_briefing_failure_is_not_cached(self):
         from api import briefing
 
-        with mock.patch.object(briefing, "get_cached", side_effect=[{"alerts": [{"title": "x"}]}, None]), \
-             mock.patch.object(briefing, "generate_briefing", return_value=""), \
+        with mock.patch.object(briefing, "generate_briefing", return_value=""), \
              mock.patch.object(briefing, "set_cached") as set_cached:
+            briefing._generation_running = True
+            briefing._generate_in_background([{"title": "x"}])
+        set_cached.assert_not_called()
+        self.assertFalse(briefing._generation_running)
+
+    def test_on_demand_briefing_never_blocks_the_request(self):
+        from api import briefing
+
+        with mock.patch.object(briefing, "get_cached", side_effect=[{"alerts": [{"title": "x"}]}, None]), \
+             mock.patch.object(briefing.threading, "Thread") as thread:
+            briefing._generation_running = False
             result = briefing.get_on_demand_briefing()
         self.assertFalse(result["success"])
-        set_cached.assert_not_called()
+        thread.return_value.start.assert_called_once()
 
 
 class NoInventedHistoryTests(unittest.TestCase):

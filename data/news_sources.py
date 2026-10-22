@@ -39,12 +39,6 @@ NEWS_SOURCES: list[NewsSource] = [
         "max_items": 6,
     },
     {
-        "name": "SupplyChainBrain Last Mile",
-        "url": "https://www.supplychainbrain.com/rss/topic/296-last-mile-delivery",
-        "group": "logistics_trade",
-        "max_items": 4,
-    },
-    {
         "name": "Logistics Management Transportation",
         "url": "https://www.logisticsmgmt.com/rss/topic/transportation_news",
         "group": "logistics_trade",
@@ -76,7 +70,7 @@ NEWS_SOURCES: list[NewsSource] = [
     },
     {
         "name": "Maritime Executive",
-        "url": "https://www.maritime-executive.com/rss/news",
+        "url": "https://maritime-executive.com/articles.rss",
         "group": "ports_shipping",
         "max_items": 6,
     },
