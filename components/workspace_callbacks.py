@@ -4,7 +4,7 @@ import dash
 from dash import Input, Output, State, dcc
 
 from components.charts import build_world_map
-from components.layout import DEFAULT_TREND_DAYS, TREND_DAYS
+from components.layout import DEFAULT_TREND_DAYS, TREND_DAYS, map_caption
 from components.terminal import (
     build_briefing, build_category_table, build_headlines,
     build_quotes, build_readout, updated_label,
@@ -41,7 +41,8 @@ def register_workspace_callbacks(app, get_snapshot):
     # serve_layout already renders these panes; skip the duplicate initial run.
     @app.callback(
         Output("world-map", "figure"), Output("quotes", "children"), Output("briefing", "children"),
-        Output("updated-label", "children"), Output("refresh-interval", "interval"),
+        Output("updated-label", "children"), Output("map-caption", "children"),
+        Output("refresh-interval", "interval"),
         Input("refresh-interval", "n_intervals"), prevent_initial_call=True,
     )
     def update_context(_):
@@ -51,6 +52,7 @@ def register_workspace_callbacks(app, get_snapshot):
             build_quotes(data.get("market_data", {})),
             build_briefing(data.get("briefing", "")),
             updated_label(data),
+            map_caption(data.get("map_markers", [])),
             300_000 if fresh else 20_000,
         )
 

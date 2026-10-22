@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -31,7 +31,7 @@ def _insert(path, day, category, score):
 
 
 def test_daily_scores_align_and_mark_missing_days(sqlite_db):
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     _insert(sqlite_db, today - timedelta(days=2), "energy", 61.5)
     _insert(sqlite_db, today, "energy", 64.0)
 

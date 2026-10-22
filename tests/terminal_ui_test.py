@@ -93,6 +93,12 @@ def test_header_has_one_button_and_no_removed_controls():
     assert "higher is healthier" not in text
     assert "Updated 5 min ago" in text
 
+    author = [c for c in walk(header) if isinstance(c, html.A) and c.href == config.APP_AUTHOR_URL]
+    assert len(author) == 1 and "William Blair" in text_of(author[0])
+    assert author[0].target == "_blank" and author[0].rel == "noopener noreferrer"
+    brand = next(c for c in walk(header) if "brand" in (getattr(c, "className", "") or ""))
+    assert isinstance(brand, html.A) and brand.href == "/"
+
     switch = next(c for c in walk(header) if getattr(c, "id", None) == "profile-switch")
     assert isinstance(switch, dcc.RadioItems)
     assert [(o["label"], o["value"]) for o in switch.options] == [
@@ -238,6 +244,12 @@ def test_briefing_bullets_and_report_link():
     assert any(isinstance(c, html.A) and c.href == "/report" for c in walk(term.build_briefing("")))
 
 
+def test_briefing_strips_one_bullet_marker_only():
+    brief = term.build_briefing("-5% drop in volume\n- Fuel up\n-- nested\n  • Indented\n–3 ports closed\n— Dash")
+    paragraphs = [text_of(p) for p in walk(brief) if isinstance(p, html.P)]
+    assert paragraphs == ["-5% drop in volume", "Fuel up", "-- nested", "Indented", "–3 ports closed", "Dash"]
+
+
 # --- map -------------------------------------------------------------------------
 
 def test_map_keeps_port_hover_text():
@@ -370,3 +382,19 @@ def test_skeleton_marks_whole_grid_busy():
     assert getattr(skeleton, "aria-busy", None) == "true"
     header = next(c for c in walk(skeleton) if isinstance(c, html.Header))
     assert getattr(header, "aria-busy", None) is None
+
+
+def test_map_skips_markers_without_a_finite_score():
+    good = {"name": "Good", "lat": 1, "lon": 2, "score": 60.0, "description": ""}
+    bad = [{"name": n, "lat": 3, "lon": 4, "score": s, "description": ""}
+           for n, s in [("None", None), ("NaN", float("nan")), ("Inf", float("inf")), ("Text", "n/a")]]
+    fig = build_world_map(bad + [good])
+    assert list(fig.data[0].lat) == [1]
+    assert len(build_world_map(bad).data[0].lat) == 0
+
+
+def test_map_caption_counts_drawn_ports():
+    from components.layout import map_caption
+    markers = [{"score": 80.0}, {"score": None}, {"score": 40.0}, {}]
+    assert map_caption(markers) == "3 ports, colored by tier"
+    assert map_caption([]) == "0 ports, colored by tier"

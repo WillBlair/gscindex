@@ -9,6 +9,7 @@ The Terminal port map:
 from __future__ import annotations
 
 from html import escape
+import math
 import re
 from textwrap import wrap
 
@@ -54,6 +55,14 @@ MAP_BORDER = "#1E252E"
 MAP_COAST = "#27303B"
 
 
+def _finite_score(score) -> bool:
+    """False for None, NaN, infinities and non-numbers, so one bad marker is skipped."""
+    try:
+        return math.isfinite(float(score))
+    except (TypeError, ValueError):
+        return False
+
+
 def build_world_map(map_markers: list[dict]) -> go.Figure:
     """Show port risk by health tier with source-provided conditions directly on hover."""
     lats: list[float] = []
@@ -65,7 +74,8 @@ def build_world_map(map_markers: list[dict]) -> go.Figure:
     # Sort markers so healthiest (score ~ 100) are drawn first and most critical
     # (score ~ 0, largest) are drawn last. This ensures the large red dots
     # sit on top of the DOM and catch hover events even if they overlap.
-    sorted_markers = sorted(map_markers, key=lambda m: m.get("score", 100), reverse=True)
+    usable = [m for m in map_markers if _finite_score(m.get("score", 100))]
+    sorted_markers = sorted(usable, key=lambda m: m.get("score", 100), reverse=True)
 
     for marker in sorted_markers:
         score = marker.get("score", 100)

@@ -85,7 +85,7 @@ button { font: inherit; color: inherit; }
   height: 44px;
   background: var(--bg);
 }
-.brand { font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.brand { font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; color: inherit; text-decoration: none; }
 .brand b { color: var(--amber); }
 
 /* Segmented switches: profile (header) and trend range (readout).
@@ -206,6 +206,7 @@ button { font: inherit; color: inherit; }
 /* ── Map ──────────────────────────────────────────────────────────── */
 .map-pane { padding: 0; position: relative; min-height: 380px; }
 .map-graph { position: absolute; inset: 0; }
+.map-ttl { position: absolute; top: 14px; left: 16px; right: 16px; z-index: 1; margin: 0; pointer-events: none; }
 .map-graph .js-plotly-plot, .map-graph .plot-container { width: 100%; height: 100%; }
 .map-graph > div:empty { display: none; }
 

@@ -13,7 +13,7 @@ from datetime import datetime
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
-from components.charts import build_world_map
+from components.charts import _finite_score, build_world_map
 from components.terminal import (
     build_briefing, build_category_table, build_header, build_headlines,
     build_quotes, build_readout, updated_label,
@@ -27,6 +27,12 @@ DEFAULT_TREND_DAYS = 30
 
 # Drag to pan and scroll to zoom stay on; the mode bar is hidden as in the draft.
 MAP_CONFIG = {"displayModeBar": False, "scrollZoom": True, "responsive": True, "displaylogo": False}
+
+
+def map_caption(markers) -> str:
+    """Pane caption; counts the markers the map actually draws."""
+    count = sum(1 for m in markers or [] if _finite_score(m.get("score", 100)))
+    return f"{count} ports, colored by tier"
 
 
 def _title(left, right=""):
@@ -92,11 +98,12 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
                 inputClassName="view-input", labelClassName="view-option", **PERSIST,
             ),
         ], className="pane read-cell"),
-        html.Section(
+        html.Section([
+            html.Div([html.Span("Port map"), html.Span(map_caption(markers), id="map-caption")],
+                     className="ttl map-ttl"),
             dcc.Graph(id="world-map", figure=build_world_map(markers), config=MAP_CONFIG,
                       responsive=True, className="map-graph"),
-            className="pane map-pane", **{"aria-label": "Port map"},
-        ),
+        ], className="pane map-pane", **{"aria-label": "Port map"}),
         html.Section([
             _title("Markets", "last"),
             html.Div(build_quotes(data.get("market_data", {})), id="quotes"),

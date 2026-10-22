@@ -312,8 +312,8 @@ CATEGORY_COLORS: dict[str, str] = {
 # Pre-Terminal palette (2026-07-25)
 # ---------------------------------------------------------------------------
 
-# Used by the newsletter email (scripts/send_newsletter.py) and the cold-start
-# skeleton until its Terminal rewrite. The dashboard palette is in
+# Used by the newsletter email (scripts/send_newsletter.py). The dashboard
+# palette is in
 # assets/terminal.css and components.terminal_data.TIER_COLORS.
 COLORS = {
     "bg":           "#0a0a0b",

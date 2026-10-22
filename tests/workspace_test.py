@@ -232,10 +232,11 @@ def test_trend_range_drives_the_readout_line(terminal_app):
 
 def test_refresh_updates_context_panes_and_interval(terminal_app, monkeypatch):
     refresh = _callback(terminal_app.app, "refresh-interval.interval")
-    figure, quotes, briefing, updated, interval = refresh(3)
+    figure, quotes, briefing, updated, caption, interval = refresh(3)
     assert figure.data[0].type == "scattergeo"
     assert "Read full report" in _text(briefing)
     assert updated.startswith("Updated")
+    assert caption.endswith("ports, colored by tier")
     assert interval == 300_000
     monkeypatch.setattr(terminal_app, "_DATA_IS_FRESH", False)
     assert refresh(4)[-1] == 20_000
@@ -293,3 +294,17 @@ def test_updated_label_reads_minutes_since_the_snapshot():
     assert updated_label({"last_updated_utc": "2026-09-16T11:59:40Z"}, now=datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)) == "Updated just now"
     assert updated_label({"last_updated_utc": "2026-09-16T09:00:00Z"}, now=now) == "Updated 3 h ago"
     assert updated_label({}, now=now) == "Update time unavailable"
+
+
+def test_startup_snapshot_without_daily_history_stays_provisional(monkeypatch):
+    monkeypatch.setenv("GSC_DISABLE_BACKGROUND", "1")
+    import app as application
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+    recent = datetime(2026, 10, 22, 11, 30, tzinfo=timezone.utc)
+    old = datetime(2026, 10, 22, 8, 0, tzinfo=timezone.utc)
+    with_history = {"daily_history": {"dates": [], "scores": {}}}
+    assert application._startup_is_fresh(with_history, recent, now) is True
+    assert application._startup_is_fresh({}, recent, now) is False
+    assert application._startup_is_fresh({"current_scores": {}}, recent, now) is False
+    assert application._startup_is_fresh(with_history, old, now) is False
+    assert application._startup_is_fresh(None, None, now) is False

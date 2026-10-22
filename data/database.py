@@ -13,7 +13,7 @@ Tables:
 import os
 import logging
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -540,8 +540,6 @@ def get_daily_category_scores(days: int) -> dict:
     ``None`` instead of being skipped or backfilled. Returns the empty shape
     when no database is configured or the query fails.
     """
-    from datetime import timedelta
-
     empty = {"dates": [], "scores": {}}
     conn = get_connection()
     if not conn:
@@ -549,7 +547,7 @@ def get_daily_category_scores(days: int) -> dict:
 
     db_type = get_db_type()
     try:
-        today = date.today()
+        today = datetime.now(timezone.utc).date()
         start = today - timedelta(days=days)
         cursor = conn.cursor()
         if db_type == "postgres":

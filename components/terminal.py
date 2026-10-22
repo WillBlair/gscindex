@@ -8,12 +8,14 @@ stylesheet can match it: ``pane``, ``ttl``, ``num``, ``dim``, ``neg``, ``pos``,
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+import config
 from components.feed import _format_time_ago
 from components.terminal_data import TIER_COLORS, category_rows, index_history, index_summary, tier_for
 from components.workspace import plain_text, safe_url, select_news
@@ -157,7 +159,7 @@ def build_header(updated_label: str) -> html.Header:
         className="newsletter-popover",
     )
     return html.Header([
-        html.Div([html.B("GSCI"), " Global Supply Chain Index"], className="brand"),
+        html.A([html.B("GSCI"), " Global Supply Chain Index"], href="/", className="brand"),
         dcc.RadioItems(
             id="profile-switch",
             options=[{"label": name, "value": key} for key, name in PROFILE_NAMES.items()],
@@ -174,6 +176,8 @@ def build_header(updated_label: str) -> html.Header:
             html.A("Methodology", href="/docs", className="opt"),
             html.Button("API", id="api-btn", n_clicks=0, className="opt link-button"),
             html.Button("CSV", id="export-btn", n_clicks=0, className="opt link-button"),
+            html.A("William Blair", href=config.APP_AUTHOR_URL, target="_blank",
+                   rel="noopener noreferrer", className="opt author"),
             html.Button("Subscribe", id="newsletter-btn", n_clicks=0, className="sub"),
             newsletter,
         ], className="hr"),
@@ -279,7 +283,7 @@ def build_headlines(alerts: list[dict], limit: int | None = 10) -> html.Table:
 def build_briefing(briefing: str) -> html.Div:
     bullets = []
     for line in str(briefing or "").split("\n"):
-        text = line.strip().lstrip("•*-–— \t").strip()
+        text = re.sub(r"^\s*[•*\-–—]\s+", "", line).strip()
         if text:
             bullets.append(html.P(text))
     if not bullets:

@@ -524,7 +524,7 @@ Call types:
 3. Implement `fetch_current()` → `tuple[float, dict]` with required metadata keys
 4. Implement `fetch_history(days)` → `pd.Series` with `DatetimeIndex`
 5. Register in `data/aggregator.py`'s `_PROVIDERS` list
-6. Add weight in `config.py` `CATEGORY_WEIGHTS` and every `INDUSTRY_PROFILES` weight set (adjust others so each sums to 1.0), (`card_categories` is a config key the Terminal UI does not use)
+6. Add weight in `config.py` `CATEGORY_WEIGHTS` and every `INDUSTRY_PROFILES` weight set (adjust others so each sums to 1.0; `card_categories` is a config key the Terminal UI does not use)
 7. Add to `CATEGORY_LABELS`, `CATEGORY_COLORS` in `config.py`
 8. Check the category table (`components/terminal.py`) and the readout render it
 

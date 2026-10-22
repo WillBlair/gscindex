@@ -211,14 +211,28 @@ if not startup_data:
 # _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
 _LAST_UPDATE = _extract_last_updated(startup_data) if startup_data else None
-# Disk cache = prior successful fetch. Check if it's actually fresh (< 2 hours).
-if startup_data and _LAST_UPDATE:
-    age = (datetime.now(timezone.utc) - _LAST_UPDATE).total_seconds()
-    if age < 7200:
-        _DATA_IS_FRESH = True
-    else:
+
+def _startup_is_fresh(data, last_update, now=None) -> bool:
+    """Whether a snapshot loaded at startup may be treated as a live fetch.
+
+    A disk cache is a prior successful fetch; it counts as fresh under 2 hours old.
+
+    Snapshots saved before the Terminal redesign carry no ``daily_history``;
+    those stay provisional so the 20s poll shows the first refresh.
+    """
+    if not data or not last_update:
+        return False
+    if "daily_history" not in data:
+        logging.getLogger(__name__).warning("Startup snapshot has no daily_history. Marking as provisional.")
+        return False
+    age = ((now or datetime.now(timezone.utc)) - last_update).total_seconds()
+    if age >= 7200:
         logging.getLogger(__name__).warning(f"Startup cache is stale ({age/3600:.1f}h old). Marking as provisional.")
-        _DATA_IS_FRESH = False
+        return False
+    return True
+
+
+_DATA_IS_FRESH = _startup_is_fresh(startup_data, _LAST_UPDATE)
 
 # Preserve versioned news caches across worker recycling. Schema/prompt changes
 # invalidate them through NEWS_BRIEFING_CACHE_KEY, not on every worker startup.
