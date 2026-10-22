@@ -41,6 +41,7 @@ from config import (
     AI_FAILURE_RETRY_SECONDS,
     AI_SEVERITY_MAX,
     NEWS_BRIEFING_CACHE_KEY,
+    NEWS_AI_MAX_ARTICLES,
     NEWS_CACHE_MAX_AGE_SECONDS,
     NEWS_RSS_REFRESH_SECONDS,
     PORT_DISRUPTION_WEIGHT,
@@ -370,9 +371,14 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
 
     # 1. Fetch from RSS Feeds (High Quality, User Specified)
     from data.rss_fetcher import fetch_rss_articles
-    
+    from data.web_news import merge_articles, search_supply_chain_news
+
     rss_articles = fetch_rss_articles(max_items=50)
-    
+    # Web search runs only here (once per AI refresh, ~daily). Its articles
+    # go first so they are inside the Claude analysis window; RSS follows.
+    web_articles = search_supply_chain_news()
+    rss_articles = merge_articles(web_articles, rss_articles)
+
     candidates = []
     
     # 2. Convert RSS to standard format
@@ -396,9 +402,8 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     if not candidates:
         raise RuntimeError("No RSS articles available from any feed")
 
-    # Limit to top 25 for AI analysis (RSS quality is higher, so we can process more)
-    # Ensure internal intelligence is always included by prioritizing items with 'is_rss' = True
-    ai_candidates = candidates[:25]
+    # Claude scores the first NEWS_AI_MAX_ARTICLES items (web results, then RSS).
+    ai_candidates = candidates[:NEWS_AI_MAX_ARTICLES]
     
     # 3. Analyze with Claude
     ai_results, ai_briefing = analyze_news_batch(ai_candidates)

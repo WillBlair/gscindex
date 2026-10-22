@@ -29,6 +29,13 @@ AI_FAILURE_RETRY_SECONDS: int = int(os.environ.get("AI_FAILURE_RETRY_SECONDS", "
 AI_SEVERITY_MAX: float = 10.0      # per-article severity is clamped to +/- this
 PORT_PENALTY_MAX: float = 50.0     # per-port disruption_penalty is clamped to 0..this
 
+# Claude web search (AI_WEB_SEARCH=0 turns it off). Searches are billed per
+# use, so each call has a cap. News search runs once per AI refresh (~daily).
+NEWS_WEB_SEARCH_MAX_USES: int = int(os.environ.get("NEWS_WEB_SEARCH_MAX_USES", "8"))
+NEWS_WEB_SEARCH_MAX_ARTICLES: int = 15
+NEWS_AI_MAX_ARTICLES: int = 35     # articles Claude scores per run (web + RSS)
+PORT_WEB_SEARCH_MAX_USES: int = int(os.environ.get("PORT_WEB_SEARCH_MAX_USES", "10"))
+
 # How long a news payload stays usable as a fallback while the next Claude
 # run is pending. Freshness of the AI analysis is tracked inside the payload.
 NEWS_CACHE_MAX_AGE_SECONDS: int = 7 * 86400

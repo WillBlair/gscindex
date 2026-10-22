@@ -788,7 +788,7 @@ def aggregate_data(status_callback=None) -> dict:
         try:
             if status_callback:
                 status_callback("Analyzing news feeds (AI)...")
-            news_score, alerts, briefing, full_report = future_news.result(timeout=120)
+            news_score, alerts, briefing, full_report = future_news.result(timeout=240)
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
@@ -804,7 +804,7 @@ def aggregate_data(status_callback=None) -> dict:
         try:
             if status_callback:
                 status_callback("Generating port summaries...")
-            port_summaries = future_port_summaries.result(timeout=120) or {}
+            port_summaries = future_port_summaries.result(timeout=240) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
     finally:
