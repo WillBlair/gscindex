@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
 from config import CATEGORY_LABELS, DEFAULT_PROFILE, INDUSTRY_PROFILES
+from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 
 
 class _PlainText(HTMLParser):
@@ -76,11 +77,16 @@ def _csv_status(available, cat, meta, data):
     return "measured"
 
 
+# Attribution a row must carry: chokepoint transits and the port-call shares behind the
+# physical hazard score come from IMF PortWatch.
+_CSV_CREDITS = {"chokepoints": PORTWATCH_CREDIT, "physical": PORTWATCH_CREDIT}
+
+
 def snapshot_csv(data, key):
     """A profile-scoped export with provenance, data date (as_of) and freshness status."""
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["snapshot_utc", "profile", "category", "score", "weight", "weighted_points", "status", "as_of", "source", "source_updated"])
+    writer.writerow(["snapshot_utc", "profile", "category", "score", "weight", "weighted_points", "status", "as_of", "source", "source_updated", "credit"])
     def cell(value):
         value = str(value or "")
         return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
@@ -91,5 +97,5 @@ def snapshot_csv(data, key):
         writer.writerow([cell(data.get("last_updated_utc")), cell(profile_for(key)["label"]), CATEGORY_LABELS.get(cat, cat),
                          score if available else "", weight, round(score * weight, 3) if available else "",
                          _csv_status(available, cat, meta, data), cell(meta.get("as_of")),
-                         cell(meta.get("source")), cell(meta.get("updated"))])
+                         cell(meta.get("source")), cell(meta.get("updated")), _CSV_CREDITS.get(cat, "")])
     return output.getvalue()

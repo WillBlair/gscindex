@@ -163,3 +163,10 @@ def test_startup_keeps_a_snapshot_with_an_excluded_category(monkeypatch):
     assert application._has_current_categories(snap) is True
     # An old-format snapshot (pre-v2 categories) is still rejected.
     assert application._has_current_categories({"current_scores": {"weather": 80.0}}) is False
+
+
+def test_latest_api_meta_credits_portwatch_verbatim(client, monkeypatch):
+    monkeypatch.setattr(cache, "get_cached_dashboard", _snapshot)
+    meta = client.get("/api/v1/latest").get_json()["meta"]
+    assert "Sources: UN Global Platform; IMF PortWatch" in meta["credits"]
+    assert meta["documentation"] == "https://gscindex.com/docs"

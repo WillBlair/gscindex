@@ -6,6 +6,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from config import CATEGORY_WEIGHTS, METHODOLOGY_VERSION
+from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 from scoring import snapshot_composite
 
 # Create Blueprint
@@ -99,7 +100,10 @@ def get_latest_data():
         "meta": {
             "source": "Global Supply Chain Index",
             "license": "CC-BY-4.0",
-            "documentation": "https://gscindex.com/docs"
+            "documentation": "https://gscindex.com/docs",
+            # Required attribution for the PortWatch data (chokepoints, and the port-call
+            # shares behind Physical Disruption). Every other source is listed in /docs.
+            "credits": [PORTWATCH_CREDIT],
         }
     }
     

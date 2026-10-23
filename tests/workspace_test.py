@@ -333,3 +333,12 @@ def test_export_adds_as_of_and_freshness_status(snapshot):
     assert rows["Trade & Tariffs"]["as_of"] == ""
     assert rows["Physical Disruption"]["status"] == "excluded"
     assert rows["Physical Disruption"]["score"] == ""
+
+
+def test_export_credits_portwatch_on_the_rows_built_from_it(snapshot):
+    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "baseline")))}
+    credit = "Sources: UN Global Platform; IMF PortWatch"
+    # Chokepoint transits and the port-call shares behind the hazard score come from PortWatch.
+    assert rows["Chokepoints"]["credit"] == credit
+    assert rows["Physical Disruption"]["credit"] == credit
+    assert rows["Energy & Fuel"]["credit"] == ""

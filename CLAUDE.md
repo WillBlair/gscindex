@@ -113,7 +113,7 @@ components/
   layout.py               # Terminal grid assembly and the API modal
   terminal.py             # Pane builders: header, readout, quotes, chokepoints, headlines, briefing, category table
   terminal_data.py        # Pure math: TIER_COLORS, tier_for, category_rows, index_summary, index_history
-  workspace.py            # Snapshot helpers: safe text and links, news selection, CSV export
+  workspace.py            # Snapshot helpers: safe text and links, news selection, CSV export (credit column: PortWatch on chokepoints and physical)
   workspace_callbacks.py  # Profile switch, in-place refresh, news filters, trend range, CSV
   charts.py               # World map
   feed.py                 # Relative-time formatting for headline ages
@@ -541,7 +541,8 @@ GET  /healthz                    # Alias for /health
     "degraded": False,
     "fallback_categories": [], "excluded_categories": [], "stale_categories": [],
     "disruptions": [...], "map_markers": [...],
-    "meta": {"source": "Global Supply Chain Index", "license": "CC-BY-4.0", "documentation": "https://gscindex.com/docs"},
+    "meta": {"source": "Global Supply Chain Index", "license": "CC-BY-4.0", "documentation": "https://gscindex.com/docs",
+             "credits": ["Sources: UN Global Platform; IMF PortWatch"]},   # chokepoints.CREDIT
 }
 ```
 
