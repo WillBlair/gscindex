@@ -94,8 +94,8 @@ Where an input's in-sample record is the current regime (tariff burden), the zer
 - **Cape of Good Hope:** excluded from the score because more traffic there means rerouting. It is shown as context.
 - **Baseline:** for each corridor, the same calendar month's average daily transits over Jan 2022–Oct 2023. Pre-2022 has a coverage break, and post-Oct-2023 is crisis-era.
 - **Recent value:** the 7-day average of the latest available data. Its as-of date is the latest PortWatch date.
-- **Shortfall per corridor:** max(0, 90% − recent/normal), so traffic down to 90% of normal is treated as noise.
-- **Score:** 100 − 3 × Σ(weight × shortfall in percentage points), clipped 0–100.
+- **Per corridor:** s = min(1, (recent/normal) ÷ 0.90), so traffic down to 90% of normal is treated as noise.
+- **Score:** 100 − 300 × Σ(weight × (1 − s)), clipped 0–100. This is the exact formula from the research backtest, `docs/superpowers/research/2026-10-22-artifacts/scripts/cp_backtest.py` (`agg_k`, k=3).
 - **Backtest targets** from the research: calm 2022–23 ≈ 99, Ever Given ≈ 80, Red Sea 2024 ≈ 82, Hormuz Mar 2026 ≈ 48, 2026-10-18 ≈ 36. Small differences are fine, but a big deviation means a bug.
 - **History** is real, recomputed from PortWatch daily data back to 2022.
 - **Max age:** 14 days.
