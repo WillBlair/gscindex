@@ -38,6 +38,7 @@ import pandas as pd
 import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
+from data.providers.prices import clean_prices, cpi_ratios, cpi_reference
 from data.providers.readings import (
     InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import markets
@@ -45,7 +46,6 @@ from scoring.anchors import get_anchor, score_raw
 
 logger = logging.getLogger(__name__)
 
-_CPI_SERIES = "CPIAUCSL"
 _LEGS = {
     # leg: (label, FRED series, live symbol, unit label)
     "brent": ("Brent", "DCOILBRENTEU", "BZ=F", "/bbl"),
@@ -75,13 +75,6 @@ def spike_penalty(change_3m: float) -> float:
     return spike["max_points"] * min(max(frac, 0.0), 1.0)
 
 
-def _clean(series: pd.Series) -> pd.Series:
-    """Finite, positive prices only, sorted, one value per date."""
-    series = pd.to_numeric(series, errors="coerce").dropna()
-    series = series[(series > 0) & series.map(math.isfinite)].sort_index()
-    return series[~series.index.duplicated(keep="last")]
-
-
 def _asof(series: pd.Series, day: date) -> float | None:
     """Last value dated on or before ``day``."""
     earlier = series[series.index <= pd.Timestamp(day)]
@@ -91,22 +84,12 @@ def _asof(series: pd.Series, day: date) -> float | None:
 def _anchors() -> tuple[dict, float]:
     """The energy anchors and the CPI reference value; a missing one is a RuntimeError."""
     anchors = {key: get_anchor(key) for key in ("brent", "ulsd", "ttf", "ttf_monthly")}
-    try:
-        cpi_ref = float(config.SCORE_ANCHORS["cpi_reference"]["value"])
-    except (KeyError, TypeError, ValueError):
-        raise RuntimeError("no anchor for cpi_reference") from None
-    return anchors, cpi_ref
+    return anchors, cpi_reference()
 
 
 def _cpi_ratios(cpi_ref: float) -> pd.Series:
     """CPI_ref / CPI_t, dated by CPI observation month."""
-    try:
-        cpi = _clean(_fred(_CPI_SERIES))
-    except Exception as exc:
-        raise RuntimeError(f"{_CPI_SERIES} unavailable: {exc}") from exc
-    if cpi.empty:
-        raise RuntimeError(f"{_CPI_SERIES} unavailable: no observations")
-    return cpi_ref / cpi
+    return cpi_ratios(lambda series_id: _fred(series_id), cpi_ref)
 
 
 def _missing(name: str, source: str) -> InputReading:
@@ -140,7 +123,7 @@ class EnergyProvider(BaseProvider):
                    ratio_now: float) -> tuple[InputReading, float | None, float]:
         label, series_id, symbol, _ = _LEGS[leg]
         try:
-            history = _clean(_fred(series_id))
+            history = clean_prices(_fred(series_id))
             if history.empty:
                 raise ValueError("no observations")
             official_date, official = history.index[-1].date(), float(history.iloc[-1])
@@ -196,7 +179,7 @@ class EnergyProvider(BaseProvider):
     def _ttf_leg(self, today: date, anchors: dict, ratios: pd.Series,
                  ratio_now: float) -> tuple[InputReading, float | None, float]:
         try:
-            monthly = _clean(_fred(_TTF_SERIES))
+            monthly = clean_prices(_fred(_TTF_SERIES))
         except Exception as exc:
             logger.warning("Energy TTF monthly unavailable: %s", exc)
             monthly = pd.Series(dtype=float)
@@ -220,10 +203,10 @@ class EnergyProvider(BaseProvider):
         """WTI, Brent-WTI spread and ULSD crack lines; never raises."""
         lines = []
         try:
-            wti = _clean(_fred("DCOILWTICO"))
+            wti = clean_prices(_fred("DCOILWTICO"))
             wti_date, wti_price = wti.index[-1].date(), float(wti.iloc[-1])
             lines.append(f"WTI crude is ${wti_price:.2f}/bbl ({wti_date}, not scored).")
-            brent_then = _asof(_clean(_fred("DCOILBRENTEU")), wti_date)
+            brent_then = _asof(clean_prices(_fred("DCOILBRENTEU")), wti_date)
             if brent_then is not None:
                 lines.append(f"Brent minus WTI is ${brent_then - wti_price:.2f}/bbl.")
         except Exception as exc:
@@ -316,7 +299,7 @@ class EnergyProvider(BaseProvider):
         scores, penalties = {}, {}
         for leg, (series_id, anchor, monthly) in sources.items():
             try:
-                prices = _clean(_fred(series_id))
+                prices = clean_prices(_fred(series_id))
                 prices = prices[prices.index >= cut - pd.Timedelta(days=120 if monthly else 0)]
                 if prices.empty:
                     raise ValueError("no observations")

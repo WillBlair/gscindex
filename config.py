@@ -134,6 +134,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "energy":              "Energy & Fuel",
     "tariffs":             "Trade & Tariffs",
     "geopolitical":        "Geopolitical Risk",
+    "inputs":              "Input Costs",
     # Semiconductor-specific categories (industry profile mode)
     "chip_fab_util":       "Fab Utilization",
     "chip_memory_prices":  "Memory Prices",
@@ -277,6 +278,7 @@ CATEGORY_COLORS: dict[str, str] = {
     "energy":              "#fbbf24",
     "tariffs":             "#fb7185",
     "geopolitical":        "#22d3ee",
+    "inputs":              "#fb923c",
     "chip_fab_util":       "#5f8f9c",
     "chip_memory_prices":  "#7d7394",
     "chip_lead_times":     "#5a8f86",
@@ -455,6 +457,16 @@ RAIL_MEAN_WEEKS = 4              # trailing weeks averaged before the rail year-
 RAIL_YOY_LAG_WEEKS = 52          # weeks back the rail year-over-year compares with
 # Runtime FRED window for TSIFRGHT: the 12-month base, the history tail and the publication lag.
 FREIGHT_FRED_LOOKBACK_DAYS = 3 * 365
+
+# Input Costs: regional Fed manufacturing prices-paid composite (z-scored against each
+# survey's own 2004-2019 mean and sd, SCORE_ANCHORS["prices_paid_stats"]) plus real copper and
+# aluminum prices. Keys are the canonical input keys; weights are renormalized over what is available.
+INPUT_WEIGHTS: dict[str, float] = {"prices_paid": 0.5, "copper": 0.25, "aluminum": 0.25}
+COPPER_USD_PER_LB_TO_USD_PER_MT = 2204.62   # HG=F is $/lb, the IMF series PCOPPUSDM is $/mt
+ALUMINUM_LIVE_UNIT_FACTOR = 1.0             # ALI=F is already $/mt (checked against PALUMUSDM)
+# Runtime FRED window for the surveys, metals and CPI: the current value, the CPI deflator and
+# the history tail, never the full history.
+INPUTS_FRED_LOOKBACK_DAYS = 3 * 365
 
 # Trade & Tariffs: customs duties as a share of goods imports (Treasury DTS / BOPGIMP) and
 # the daily Trade Policy Uncertainty index (Caldara et al.). Keys are the canonical input keys.
