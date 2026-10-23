@@ -12,6 +12,7 @@ Tables:
     gauge_readings        — daily river gauge values stored for later study (Kaub, never scored)
 """
 
+import math
 import os
 import logging
 import threading
@@ -676,6 +677,118 @@ def get_daily_category_scores(days: int) -> dict:
     except Exception as e:
         logger.error(f"Failed to fetch daily category scores: {e}")
         return empty
+    finally:
+        conn.close()
+
+
+def _day(value) -> date:
+    """A DATE column value (a date, a datetime or an ISO string) as a date."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def export_category_rows(start: date, categories: list[str]) -> list[tuple]:
+    """Stored ``(date, category, score)`` rows from ``start`` on, ascending by date then category.
+
+    The pseudo-category ``"composite"`` reads ``daily_scores``; every other name reads
+    ``daily_category_scores``. Dates come back as ``date`` objects. Returns ``[]`` when no
+    database is configured or the query fails (the rebuild's dry run reads a database that
+    may not exist yet).
+    """
+    names = [c for c in dict.fromkeys(categories) if c != "composite"]
+    want_composite = "composite" in categories
+    conn = get_connection()
+    if not conn:
+        return []
+
+    db_type = get_db_type()
+    ph = "%s" if db_type == "postgres" else "?"
+    start_arg = start if db_type == "postgres" else start.isoformat()
+    rows: list[tuple] = []
+    try:
+        cursor = conn.cursor()
+        if names:
+            marks = ", ".join([ph] * len(names))
+            cursor.execute(
+                f"SELECT date, category, score FROM daily_category_scores "
+                f"WHERE date >= {ph} AND category IN ({marks})", (start_arg, *names))
+            rows += [(_day(d), c, float(v)) for d, c, v in cursor.fetchall()]
+        if want_composite:
+            cursor.execute(f"SELECT date, score FROM daily_scores WHERE date >= {ph}", (start_arg,))
+            rows += [(_day(d), "composite", float(v)) for d, v in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Failed to export category rows: {e}")
+        return []
+    finally:
+        conn.close()
+    return sorted(rows, key=lambda r: (r[0], r[1]))
+
+
+def _finite_rows(rows, width: int) -> list[tuple]:
+    """Rows whose score is a finite number, with the score as a float; others are dropped."""
+    out = []
+    for row in rows:
+        score = row[-1]
+        if score is None or isinstance(score, bool) or not math.isfinite(float(score)):
+            logger.warning("Skipping non-finite score row %s", row)
+            continue
+        out.append((*row[:-1], float(score)))
+    return out
+
+
+def upsert_scores_for_dates(rows: list[tuple[date, str, float]]) -> int:
+    """Upsert ``(date, category, score)`` rows into ``daily_category_scores``.
+
+    Never deletes, and never writes a non-finite score (those rows are skipped). Returns
+    the number of rows written, or -1 when the write failed.
+    """
+    return _upsert_dated(
+        _finite_rows(rows, 3),
+        postgres_sql="""
+            INSERT INTO daily_category_scores (date, category, score)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (date, category) DO UPDATE SET score = EXCLUDED.score""",
+        sqlite_sql="""
+            INSERT INTO daily_category_scores (date, category, score)
+            VALUES (?, ?, ?)
+            ON CONFLICT(date, category) DO UPDATE SET score = excluded.score""")
+
+
+def upsert_composite_for_dates(rows: list[tuple[date, float]]) -> int:
+    """Upsert ``(date, composite)`` rows into ``daily_scores``. Same rules as above."""
+    return _upsert_dated(
+        _finite_rows(rows, 2),
+        postgres_sql="""
+            INSERT INTO daily_scores (date, score)
+            VALUES (%s, %s)
+            ON CONFLICT (date) DO UPDATE SET score = EXCLUDED.score""",
+        sqlite_sql="""
+            INSERT INTO daily_scores (date, score)
+            VALUES (?, ?)
+            ON CONFLICT(date) DO UPDATE SET score = excluded.score""")
+
+
+def _upsert_dated(rows: list[tuple], postgres_sql: str, sqlite_sql: str) -> int:
+    if not rows:
+        return 0
+    conn = get_connection()
+    if not conn:
+        return -1
+    db_type = get_db_type()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            if db_type == "postgres":
+                cursor.executemany(postgres_sql, rows)
+            else:
+                cursor.executemany(sqlite_sql, [(d.isoformat(), *rest) for d, *rest in rows])
+        return len(rows)
+    except Exception as e:
+        logger.error(f"Failed to upsert dated scores: {e}")
+        return -1
     finally:
         conn.close()
 
