@@ -89,3 +89,19 @@ def test_docs_render_without_anchors(monkeypatch):
     response = app.test_client().get("/docs")
     assert response.status_code == 200
     assert "Chokepoints" in response.get_data(as_text=True)
+
+
+def test_docs_describe_live_ttf_conversion(body):
+    """TTF is not scaled from an official print: it is TTF=F x EURUSD=X / 3.412, checked against
+    the latest IMF monthly value (energy.py _live_ttf)."""
+    text = _text(body)
+    assert "EURUSD=X" in text
+    assert f"{config.MWH_PER_MMBTU:g}" in text
+    assert f"{config.TTF_LIVE_MAX_AGE_DAYS} days" in text
+    assert "Brent and diesel" in text
+
+
+def test_docs_say_kaub_is_not_scored(body):
+    text = _text(body)
+    assert "Kaub is recorded, not scored" in text
+    assert "until it has a year" not in text

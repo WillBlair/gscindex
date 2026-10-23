@@ -532,6 +532,8 @@ def _docs_values() -> dict[str, str]:
         "spike_points": f"{config.ENERGY_SPIKE['max_points']:.0f}",
         "ratio_low": f"{config.LIVE_SCALE_RATIO_BOUNDS[0]:g}",
         "ratio_high": f"{config.LIVE_SCALE_RATIO_BOUNDS[1]:g}",
+        "mwh_per_mmbtu": f"{config.MWH_PER_MMBTU:g}",
+        "ttf_max_age": str(config.TTF_LIVE_MAX_AGE_DAYS),
         "tw_burden": _pct(config.TARIFF_WEIGHTS["tariff_burden"]),
         "tw_tpu": _pct(config.TARIFF_WEIGHTS["tpu"]),
         "burden_months": str(config.TARIFF_BURDEN_MONTHS),
@@ -611,16 +613,19 @@ def _category_cards(v: dict[str, str]) -> str:
                         "and New York Harbor ultra-low-sulfur diesel (<span class=\"code-inline\">DDFUELNYH</span>). "
                         "European TTF gas from IMF Primary Commodity Prices "
                         "(<span class=\"code-inline\">PNGASEUUSDM</span>). Live futures through Yahoo Finance: "
-                        "Brent (BZ=F), heating oil (HO=F) and TTF (TTF=F)."),
+                        "Brent (BZ=F), heating oil (HO=F), TTF (TTF=F) and the euro-dollar rate (EURUSD=X)."),
             ("Measures", "Fuel cost pressure. Low prices score high even when they come from weak demand."),
             ("Score", f"Each price is adjusted to {v['cpi_dollars']}, put on a log scale and anchored. "
                       f"Weights: Brent {v['ew_brent']}, diesel {v['ew_ulsd']}, gas {v['ew_ttf']}. A leg whose "
                       f"real price rose more than {v['spike_start']} in 3 months loses up to "
                       f"{v['spike_points']} points (the full {v['spike_points']} at a rise of {v['spike_full']} or more), "
-                      "weighted like the leg. Between official prints the latest official price is moved by "
+                      "weighted like the leg. For Brent and diesel, the latest official price is moved by "
                       "the futures change since that date. If the futures quote is older than the official "
                       f"price, or the change is outside {v['ratio_low']}x to {v['ratio_high']}x, the official "
-                      "price is used and the hover text says so."),
+                      "price is used and the hover text says so. Gas is converted directly: TTF=F (EUR/MWh) "
+                      f"&times; EURUSD=X / {v['mwh_per_mmbtu']} gives $/MMBtu. It is used only when both quotes "
+                      f"are at most {v['ttf_max_age']} days old and the result is within {v['ratio_low']}x to "
+                      f"{v['ratio_high']}x of the latest IMF monthly price; otherwise the monthly price is used."),
             ("Anchors", f"{v['a_brent']}. {v['a_ulsd']}. {v['a_ttf']}. Baseline 1990 to 2019 (gas 1992 to 2019)."),
             ("Updates", "EIA spot prices on FRED update weekly; futures move the score during trading hours. "
                         f"Brent, diesel and live gas are {v['fresh_brent']}. The monthly gas price, used when "
@@ -702,8 +707,8 @@ def _category_cards(v: dict[str, str]) -> str:
                       "our judgment, because GDACS gives only the storm's center."),
             ("Anchors", "There is no 80 point: a quiet day scores 100. One Red alert over a median top-10 "
                         f"port costs about 50 hazard points. {v['gatun_text']} {v['river_text']}"),
-            ("Updates", f"Daily. Each input is {v['fresh_hazards']}. The Rhine gauge at Kaub is recorded but "
-                        "not scored until it has a year of history."),
+            ("Updates", f"Daily. Each input is {v['fresh_hazards']}. The Rhine gauge at Kaub is recorded, not "
+                        "scored."),
         ],
     }
     return "\n".join(_card(label(cat), v[f"w_{cat}"], cards[cat]) for cat in config.CATEGORY_WEIGHTS)
