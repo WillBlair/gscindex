@@ -160,91 +160,6 @@ INPUT_LABELS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Industry Profiles
-# ---------------------------------------------------------------------------
-# Each profile defines custom category weights, which cards to show in the
-# dashboard row (`card_categories`), and optional industry-specific providers.
-# Weights MUST sum to 1.0 per profile. Switching profiles replaces the card
-# row (it does not append) while the gauge still uses the full weight set.
-# ---------------------------------------------------------------------------
-
-DEFAULT_PROFILE: str = "baseline"
-
-# Temporary until industry profiles are rebuilt: the baseline categories take 0.60 of each
-# industry profile (the baseline weights x 0.60) and the industry categories keep their 0.40.
-INDUSTRY_BASELINE_SHARE: float = 0.60
-
-
-def _industry_weights(industry: dict[str, float]) -> dict[str, float]:
-    weights = {cat: round(w * INDUSTRY_BASELINE_SHARE, 10) for cat, w in CATEGORY_WEIGHTS.items()}
-    weights.update(industry)
-    return weights
-
-
-INDUSTRY_PROFILES: dict[str, dict] = {
-    "baseline": {
-        "label": "Baseline (Global)",
-        "description": "General supply chain health across all sectors",
-        "weights": dict(CATEGORY_WEIGHTS),
-        # Cards shown in the dashboard row (replaces on profile switch).
-        "card_categories": list(CATEGORY_WEIGHTS),
-        "providers": [],
-    },
-    "semiconductor": {
-        "label": "Semiconductor",
-        "description": (
-            "Chip supply chain — fab utilization, memory prices, lead times, "
-            "and wafer pricing from Silicon Analysts API"
-        ),
-        "weights": _industry_weights({
-            "chip_fab_util":      0.20,
-            "chip_memory_prices": 0.10,
-            "chip_lead_times":    0.05,
-            "chip_wafer_prices":  0.05,
-        }),
-        # Replace the baseline row with chip signals + the two highest-weight
-        # shared categories. Remaining weights still feed the composite gauge.
-        "card_categories": [
-            "chip_fab_util",
-            "chip_memory_prices",
-            "chip_lead_times",
-            "chip_wafer_prices",
-            "supply_chain",
-            "geopolitical",
-        ],
-        "providers": ["silicon_analysts"],
-    },
-    "aerospace": {
-        "label": "Aerospace & Manufacturing",
-        "description": (
-            "Aerospace industrial base — aluminum/nickel cost pressure, "
-            "Census aircraft orders, Fed aerospace production, and aircraft PPI"
-        ),
-        "weights": _industry_weights({
-            "aero_metals":      0.15,
-            "aero_orders":      0.10,
-            "aero_production":  0.10,
-            "aero_ppi":         0.05,
-        }),
-        # Replace the baseline row with aero signals + the two highest-weight
-        # shared categories. Remaining weights still feed the composite gauge.
-        "card_categories": [
-            "aero_metals",
-            "aero_orders",
-            "aero_production",
-            "aero_ppi",
-            "geopolitical",
-            "supply_chain",
-        ],
-        "providers": ["aerospace"],
-    },
-}
-
-for _key, _profile in INDUSTRY_PROFILES.items():
-    if abs(sum(_profile["weights"].values()) - 1.0) > 1e-9:
-        raise ValueError(f"INDUSTRY_PROFILES[{_key!r}] weights must sum to 1.0")
-
-# ---------------------------------------------------------------------------
 # Health-Status Thresholds
 # ---------------------------------------------------------------------------
 # Maps the composite 0–100 score to a human-readable label and color.
@@ -596,6 +511,11 @@ SECTORS: dict[str, dict] = {
 for _key, _sector in SECTORS.items():
     if abs(sum(_sector["weights"].values()) - 1.0) > 1e-9:
         raise ValueError(f"SECTORS[{_key!r}] weights must sum to 1.0")
+
+# Dashboard tabs, in header order. "global" is the composite (CATEGORY_WEIGHTS); each other tab
+# is one sector index from SECTORS. Any other key (e.g. an old session value) shows Global.
+TABS: tuple[str, ...] = ("global", *SECTORS)
+DEFAULT_TAB: str = "global"
 
 # A sector category with no fresh inputs is excluded after this many days (monthly sources).
 SECTOR_DROP_AFTER_DAYS: int = 150

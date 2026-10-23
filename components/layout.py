@@ -18,10 +18,10 @@ from components.terminal import (
     build_briefing, build_category_table, build_header, build_headlines,
     build_quotes, build_readout, updated_label,
 )
-from config import CATEGORY_LABELS, DEFAULT_PROFILE, INDUSTRY_PROFILES
+from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, DEFAULT_TAB
 
 TREND_DAYS = (7, 30, 90)
-# Filters, range and profile survive a reload within the browser session.
+# Filters, range and tab survive a reload within the browser session.
 PERSIST = {"persistence": True, "persistence_type": "session"}
 DEFAULT_TREND_DAYS = 30
 
@@ -40,9 +40,9 @@ def _title(left, right=""):
 
 
 def news_filter_options():
-    """Headlines are global, so the topics are the baseline categories."""
+    """Headlines are global, so the topics are the global categories."""
     return [{"label": "All topics", "value": "all"}] + [
-        {"label": CATEGORY_LABELS.get(c, c), "value": c} for c in INDUSTRY_PROFILES[DEFAULT_PROFILE]["weights"]
+        {"label": CATEGORY_LABELS.get(c, c), "value": c} for c in CATEGORY_WEIGHTS
     ]
 
 
@@ -85,13 +85,13 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
     alerts = data.get("alerts", [])
     return html.Div(className="shell", children=[
         dcc.Interval(id="refresh-interval", interval=20_000 if is_provisional else 300_000, n_intervals=0),
-        dcc.Store(id="profile-store", data=DEFAULT_PROFILE),
+        dcc.Store(id="profile-store", data=DEFAULT_TAB),
         dcc.Download(id="snapshot-download"),
 
         build_header(updated_label(data)),
 
         html.Div([
-            html.Div(build_readout(data, DEFAULT_PROFILE, DEFAULT_TREND_DAYS), id="readout"),
+            html.Div(build_readout(data, DEFAULT_TAB, DEFAULT_TREND_DAYS), id="readout"),
             dcc.RadioItems(
                 id="trend-range", value=DEFAULT_TREND_DAYS, inline=True, className="range",
                 options=[{"label": f"{n}D", "value": n} for n in TREND_DAYS],
@@ -111,7 +111,7 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
 
         html.Section([
             _title("Categories"),
-            html.Div(build_category_table(data, DEFAULT_PROFILE), id="category-table"),
+            html.Div(build_category_table(data, DEFAULT_TAB), id="category-table"),
         ], className="pane wide"),
         html.Section([
             _title("Briefing"),

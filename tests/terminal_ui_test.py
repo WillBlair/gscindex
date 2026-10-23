@@ -52,8 +52,18 @@ def cells(row):
     return [c for c in row.children if isinstance(c, (html.Td, html.Th))]
 
 
+ALL_CATS = set(config.CATEGORY_WEIGHTS) | {c for s in config.SECTORS.values() for c in s["weights"]}
+
+
+def _sector(index, **lists):
+    block = {"index": index, "tier": None, "coverage": 0, "degraded": False,
+             "stale_categories": [], "excluded_categories": [], "fallback_categories": []}
+    block.update(lists)
+    return block
+
+
 def snapshot(with_history=True):
-    cats = {c for p in config.INDUSTRY_PROFILES.values() for c in p["weights"]}
+    cats = ALL_CATS
     snap = {
         "last_updated_utc": "2026-10-22T20:04:45Z",
         "current_scores": {c: 70.0 + i for i, c in enumerate(sorted(cats))},
@@ -66,6 +76,7 @@ def snapshot(with_history=True):
         },
         "fallback_categories": [],
         "alerts": [], "map_markers": [], "market_data": {}, "briefing": "",
+        "sectors": {"semiconductor": _sector(64.2), "aerospace": _sector(71.3)},
     }
     if with_history:
         dates = [(date(2026, 10, 22) - timedelta(days=n)).isoformat() for n in range(91, -1, -1)]
@@ -102,7 +113,8 @@ def test_header_has_one_button_and_no_removed_controls():
     switch = next(c for c in walk(header) if getattr(c, "id", None) == "profile-switch")
     assert isinstance(switch, dcc.RadioItems)
     assert [(o["label"], o["value"]) for o in switch.options] == [
-        ("Global", "baseline"), ("Semis", "semiconductor"), ("Aero", "aerospace")]
+        ("Global", "global"), ("Semis", "semiconductor"), ("Aero", "aerospace")]
+    assert switch.value == "global"
 
     popover = next(c for c in walk(header) if getattr(c, "id", None) == "newsletter-popover")
     assert isinstance(popover, dbc.Popover)
@@ -118,7 +130,7 @@ def test_header_has_one_button_and_no_removed_controls():
 
 def test_category_table_index_row_matches_summary():
     snap = snapshot()
-    for key in config.INDUSTRY_PROFILES:
+    for key in config.TABS:
         table = term.build_category_table(snap, key)
         assert isinstance(table, html.Table)
         body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
@@ -130,7 +142,7 @@ def test_category_table_index_row_matches_summary():
 
 def test_missing_yesterday_shows_dash():
     snap = snapshot(with_history=False)
-    table = term.build_category_table(snap, "baseline")
+    table = term.build_category_table(snap, "global")
     assert "–" in text_of(table)
     body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
     for row in body:
@@ -158,7 +170,7 @@ def test_every_category_row_has_hover_detail():
 def test_fallback_rows_are_marked():
     snap = snapshot()
     snap["fallback_categories"] = ["energy"]
-    table = term.build_category_table(snap, "baseline")
+    table = term.build_category_table(snap, "global")
     row = next(r for r in rows_of(table)
                if any(getattr(c, "id", None) == "cat-detail-energy" for c in walk(r)))
     assert "is-fallback" in (row.className or "")
@@ -166,7 +178,7 @@ def test_fallback_rows_are_marked():
 
 
 def test_category_table_has_no_source_column():
-    table = term.build_category_table(snapshot(), "baseline")
+    table = term.build_category_table(snapshot(), "global")
     header = [text_of(c).strip() for c in walk(table) if isinstance(c, html.Th)]
     assert "Source" not in header
 
@@ -174,10 +186,10 @@ def test_category_table_has_no_source_column():
 def test_missing_live_score_renders_dash_not_zero():
     snap = snapshot()
     del snap["current_scores"]["energy"]
-    table = term.build_category_table(snap, "baseline")
+    table = term.build_category_table(snap, "global")
     body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
     assert text_of(cells(body[-1])[3]).strip() == "–"
-    readout = term.build_readout(snap, "baseline")
+    readout = term.build_readout(snap, "global")
     assert "–" in text_of(readout)
     assert "0.0" not in text_of(readout).split("vs yesterday")[0]
 
@@ -199,13 +211,13 @@ def test_readout_shows_index_and_tier_without_repeating_the_category_table():
 
 
 def test_index_row_has_its_own_30_day_line():
-    table = term.build_category_table(snapshot(), "baseline")
+    table = term.build_category_table(snapshot(), "global")
     index_row = next(c for c in walk(table) if "index-row" in str(getattr(c, "className", "") or ""))
     assert any(isinstance(c, html.Img) and c.src.startswith("data:image/svg+xml") for c in walk(index_row))
 
 
 def test_readout_renders_without_daily_history():
-    readout = term.build_readout(snapshot(with_history=False), "baseline", days=7)
+    readout = term.build_readout(snapshot(with_history=False), "global", days=7)
     assert "–" in text_of(readout)
 
 
@@ -382,7 +394,7 @@ def test_phone_rules_in_stylesheet():
 def test_category_detail_opens_above_or_below_so_it_fits_a_phone():
     # "right" has no room beside the name on a 375px screen and popper cannot
     # flip it, so the tooltip pushed the page sideways.
-    table = term.build_category_table(snapshot(), "baseline")
+    table = term.build_category_table(snapshot(), "global")
     for tip in (c for c in walk(table) if isinstance(c, dbc.Tooltip)):
         assert tip.placement == "top-start" and getattr(tip, "flip", True) is not False
 
@@ -440,7 +452,7 @@ def test_map_caption_counts_drawn_ports():
 
 def test_chokepoint_panel_shows_bars_colors_and_source():
     traffic = {
-        "as_of": "2026-10-18", "recent_days": 7, "baseline": "same month in 2022-2023",
+        "as_of": "2026-10-18", "recent_days": 7, "global": "same month in 2022-2023",
         "source": "IMF PortWatch",
         "chokepoints": [
             {"name": "Hormuz", "recent_per_day": 3.7, "normal_per_day": 98.1, "pct_of_normal": 4},
@@ -468,7 +480,7 @@ def test_readout_includes_chokepoint_panel():
     snap = snapshot()
     snap["chokepoints"] = {"as_of": "2026-10-18", "chokepoints": [
         {"name": "Suez", "recent_per_day": 44.3, "normal_per_day": 73.5, "pct_of_normal": 60}]}
-    assert "Suez" in text_of(term.build_readout(snap, "baseline"))
+    assert "Suez" in text_of(term.build_readout(snap, "global"))
 
 
 # --- methodology v2: stale and excluded rows, input freshness, PortWatch credit ---
@@ -486,7 +498,7 @@ def test_table_shows_stale_suffix():
     snap = snapshot()
     snap["category_metadata"]["freight"]["is_stale"] = True
     snap["stale_categories"] = ["freight"]
-    table = term.build_category_table(snap, "baseline")
+    table = term.build_category_table(snap, "global")
     row = _row_for(table, "freight")
     assert "stale" in text_of(cells(row)[0])
     assert "is-stale" in (row.className or "")
@@ -499,7 +511,7 @@ def test_stored_fallback_shows_one_tag_and_the_stored_date():
         is_stale=True, is_fallback=True, as_of=None, stored_on="2026-10-20")
     snap["fallback_categories"] = ["energy"]
     snap["stale_categories"] = ["energy"]
-    table = term.build_category_table(snap, "baseline")
+    table = term.build_category_table(snap, "global")
     label = text_of(cells(_row_for(table, "energy"))[0])
     assert "fallback" in label and "stale" not in label
     tip = text_of(_tip_for(table, "energy"))
@@ -511,11 +523,11 @@ def test_excluded_row_is_marked_and_index_still_renders():
     snap = snapshot()
     del snap["current_scores"]["physical"]
     snap["excluded_categories"] = ["physical"]
-    table = term.build_category_table(snap, "baseline")
+    table = term.build_category_table(snap, "global")
     assert "excluded" in text_of(cells(_row_for(table, "physical"))[0])
     body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
-    assert text_of(cells(body[-1])[3]).strip() == f"{index_summary(snap, 'baseline')['today']:.1f}"
-    assert "No live score" not in text_of(term.build_readout(snap, "baseline"))
+    assert text_of(cells(body[-1])[3]).strip() == f"{index_summary(snap, 'global')['today']:.1f}"
+    assert "No live score" not in text_of(term.build_readout(snap, "global"))
 
 
 def test_hover_lists_inputs_with_as_of_and_status():
@@ -526,14 +538,14 @@ def test_hover_lists_inputs_with_as_of_and_status():
         {"name": "ttf_monthly", "score": None, "as_of": "2026-08-31", "status": "stale",
          "source": "FRED", "raw_value": ""},
     ])
-    tip = text_of(_tip_for(term.build_category_table(snap, "baseline"), "energy"))
+    tip = text_of(_tip_for(term.build_category_table(snap, "global"), "energy"))
     assert "As of: 2026-10-17" in tip
     assert "Brent crude" in tip and "20.1" in tip and "2026-10-21" in tip and "live" in tip
     assert "2026-08-31" in tip and "stale" in tip
 
 
 def test_eight_baseline_rows():
-    table = term.build_category_table(snapshot(), "baseline")
+    table = term.build_category_table(snapshot(), "global")
     body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
     assert len(body) == len(config.CATEGORY_WEIGHTS) + 1 == 9
 
@@ -544,3 +556,68 @@ def test_chokepoint_panel_has_credit():
     snap["chokepoints"] = {"as_of": "2026-10-18", "source": "IMF PortWatch", "chokepoints": [
         {"name": "Suez", "recent_per_day": 44.3, "normal_per_day": 73.5, "pct_of_normal": 60}]}
     assert "Sources: UN Global Platform; IMF PortWatch" in text_of(build_layout(snap))
+
+
+# --- sector tabs (project 3) ----------------------------------------------------------
+
+def _body(table):
+    return [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
+
+
+def test_sparkline_breaks_at_gaps():
+    svg = term.sparkline_svg([50.0, 60.0, None, 70.0, 80.0])
+    path = svg.split(' d="', 1)[1].split('"', 1)[0]
+    assert path.count("M") == 2
+    assert path.split("M")[1].count("L") == 1 and path.split("M")[2].count("L") == 1
+    # Without a gap the line is one segment.
+    solid = term.sparkline_svg([50.0, 60.0, 70.0])
+    assert solid.split(' d="', 1)[1].split('"', 1)[0].count("M") == 1
+    # A missing leading stretch is never drawn, and too few points draw nothing.
+    assert term.sparkline_svg([None, None, 60.0, 61.0]).split(' d="', 1)[1].startswith("M")
+    assert "<path" not in term.sparkline_svg([None, 60.0, None])
+
+
+def test_semis_table_shows_only_semis_rows_and_equal_weights():
+    table = term.build_category_table(snapshot(), "semiconductor")
+    body = _body(table)
+    assert len(body) == len(config.SECTORS["semiconductor"]["weights"]) + 1
+    found = {getattr(c, "id", "") for c in walk(table)} & {f"cat-detail-{c}" for c in ALL_CATS}
+    assert found == {f"cat-detail-{c}" for c in config.SECTORS["semiconductor"]["weights"]}
+    assert [text_of(cells(r)[1]) for r in body[:-1]] == ["33%"] * 3
+    assert text_of(cells(body[-1])[3]) == "64.2"
+
+
+def test_aero_readout_uses_sector_index_and_title():
+    text = text_of(term.build_readout(snapshot(), "aerospace"))
+    assert "Aero index" in text and "71.3" in text and "Stable" in text
+
+
+def test_readout_below_coverage_says_not_enough_data():
+    snap = snapshot()
+    snap["sectors"]["aerospace"] = _sector(None, excluded_categories=["aero_flow", "aero_throughput"])
+    del snap["current_scores"]["aero_flow"], snap["current_scores"]["aero_throughput"]
+    readout = term.build_readout(snap, "aerospace")
+    value = next(c for c in walk(readout) if "v" in str(getattr(c, "className", "")).split())
+    assert text_of(value) == "Not enough data"
+    tier = next(c for c in walk(readout) if getattr(c, "className", None) == "tier")
+    assert text_of(tier) == ""
+    text = text_of(readout)
+    for label in ("Healthy", "Stable", "Stressed", "Critical", "No live score"):
+        assert label not in text
+    # The table marks the two missing categories and shows no index number.
+    table = term.build_category_table(snap, "aerospace")
+    assert "excluded" in text_of(cells(_row_for(table, "aero_flow"))[0])
+    assert text_of(cells(_body(table)[-1])[3]).strip() == "–"
+
+
+def test_sector_stored_fallback_row_shows_its_suffix():
+    snap = snapshot()
+    snap["category_metadata"]["semis_memory_prices"].update(
+        is_fallback=True, is_stale=True, as_of=None, stored_on="2026-10-20")
+    snap["sectors"]["semiconductor"] = _sector(
+        64.2, fallback_categories=["semis_memory_prices"], stale_categories=["semis_memory_prices"])
+    table = term.build_category_table(snap, "semiconductor")
+    row = _row_for(table, "semis_memory_prices")
+    assert "is-fallback" in (row.className or "")
+    assert "fallback" in text_of(cells(row)[0])
+    assert "Last stored reading from 2026-10-20" in text_of(_tip_for(table, "semis_memory_prices"))

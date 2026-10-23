@@ -1,5 +1,5 @@
 """Terminal callbacks. They read the cached snapshot only and refresh panes in place,
-so the reader's filters, profile and scroll position survive a refresh."""
+so the reader's filters, tab and scroll position survive a refresh."""
 import dash
 from dash import Input, Output, State, dcc
 
@@ -9,12 +9,8 @@ from components.terminal import (
     build_briefing, build_category_table, build_headlines,
     build_quotes, build_readout, updated_label,
 )
+from components.terminal_data import tab_key
 from components.workspace import select_news, snapshot_csv
-from config import DEFAULT_PROFILE, INDUSTRY_PROFILES
-
-
-def _profile(key):
-    return key if key in INDUSTRY_PROFILES else DEFAULT_PROFILE
 
 
 def register_workspace_callbacks(app, get_snapshot):
@@ -26,7 +22,7 @@ def register_workspace_callbacks(app, get_snapshot):
 
     @app.callback(Output("profile-store", "data"), Input("profile-switch", "value"))
     def profile_changed(key):
-        return _profile(key)
+        return tab_key(key)
 
     @app.callback(
         Output("readout", "children"), Output("category-table", "children"),
@@ -34,7 +30,7 @@ def register_workspace_callbacks(app, get_snapshot):
     )
     def update_profile_panes(key, _, days):
         data, _ = snapshot()
-        key = _profile(key)
+        key = tab_key(key)
         days = days if days in TREND_DAYS else DEFAULT_TREND_DAYS
         return build_readout(data, key, days), build_category_table(data, key)
 
@@ -76,5 +72,5 @@ def register_workspace_callbacks(app, get_snapshot):
         data, _ = snapshot()
         if not clicks:
             raise dash.exceptions.PreventUpdate
-        key = _profile(key)
+        key = tab_key(key)
         return dcc.send_string(snapshot_csv(data, key), f"gscindex-{key}.csv", type="text/csv")

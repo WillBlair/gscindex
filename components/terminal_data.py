@@ -5,13 +5,18 @@ No Dash imports. All dates are UTC: "today" is the UTC date of the snapshot's
 one day, otherwise ``None``. Today's value always comes from ``current_scores``
 (the stored daily history is read before today's hourly write, so its last
 slot can be empty).
+
+Tabs (``config.TABS``): "global" is the composite over ``CATEGORY_WEIGHTS``. A sector
+tab (``config.SECTORS``) shows only its own categories: today's index is the
+aggregator's ``data["sectors"][key]["index"]``, and a past day is the equal-weight
+mean of the sector categories stored that day, or None below ``min_categories``.
 """
 from __future__ import annotations
 
 import math
 from datetime import date, datetime, timedelta, timezone
 
-from config import CATEGORY_LABELS, DEFAULT_PROFILE, HEALTH_TIERS, INDUSTRY_PROFILES
+from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, DEFAULT_TAB, HEALTH_TIERS, SECTORS, TABS
 
 # UI-only palette. config.HEALTH_TIERS keeps the newsletter/stored-metadata colors.
 TIER_COLORS: dict[str, str] = {
@@ -40,8 +45,31 @@ def _finite(value) -> float | None:
     return float(value) if math.isfinite(value) else None
 
 
-def _weights(profile_key: str) -> dict[str, float]:
-    return INDUSTRY_PROFILES.get(profile_key, INDUSTRY_PROFILES[DEFAULT_PROFILE])["weights"]
+def tab_key(key) -> str:
+    """A known tab key; anything else (an old session value such as "baseline") is Global."""
+    return key if key in TABS else DEFAULT_TAB
+
+
+def tab_weights(key) -> dict[str, float]:
+    key = tab_key(key)
+    return CATEGORY_WEIGHTS if key == DEFAULT_TAB else SECTORS[key]["weights"]
+
+
+def sector_block(data: dict, key: str) -> dict:
+    """The snapshot's block for one sector ({} for Global or a snapshot saved before sectors)."""
+    block = (data.get("sectors") or {}).get(key)
+    return block if isinstance(block, dict) else {}
+
+
+def _sector_day(data: dict, key: str, day: date) -> float | None:
+    """Equal-weight mean of the sector categories stored on ``day``; None below coverage."""
+    spec = SECTORS[key]
+    stored = {c: _stored(data, c, day) for c in spec["weights"]}
+    present = {c: v for c, v in stored.items() if v is not None}
+    if not present or len(present) < spec["min_categories"]:
+        return None
+    total = sum(spec["weights"][c] for c in present)
+    return sum(spec["weights"][c] / total * v for c, v in present.items())
 
 
 def _today_utc(data: dict) -> date:
@@ -82,15 +110,25 @@ def _weighted(values: list[float | None], weights: list[float]) -> float | None:
 
 
 def category_rows(data: dict, profile_key: str) -> list[dict]:
-    """One row per profile category, heaviest weight first."""
-    weights = _weights(profile_key)
+    """One row per tab category, heaviest weight first.
+
+    Status flags come from the tab's own lists: the global lists for Global, the sector
+    block plus each category's metadata for a sector (a sector category with no score is
+    excluded, as the aggregator counts it).
+    """
+    key = tab_key(profile_key)
+    weights = tab_weights(key)
     today_date = _today_utc(data)
     yesterday = today_date - timedelta(days=1)
     scores = data.get("current_scores") or {}
     metadata = data.get("category_metadata") or {}
-    fallbacks = set(data.get("fallback_categories") or [])
-    stale = set(data.get("stale_categories") or [])
-    excluded = set(data.get("excluded_categories") or [])
+    flags = data if key == DEFAULT_TAB else sector_block(data, key)
+    fallbacks = set(flags.get("fallback_categories") or [])
+    stale = set(flags.get("stale_categories") or [])
+    excluded = set(flags.get("excluded_categories") or [])
+    if key != DEFAULT_TAB:
+        fallbacks |= {c for c in weights if (metadata.get(c) or {}).get("is_fallback")}
+        excluded |= {c for c in weights if _finite(scores.get(c)) is None}
     window = _window(today_date, ROW_HISTORY_DAYS)
 
     rows = []
@@ -129,12 +167,22 @@ def category_rows(data: dict, profile_key: str) -> list[dict]:
 def index_summary(data: dict, profile_key: str) -> dict:
     """Weighted index today and yesterday. Any missing category blanks that side.
 
-    A category the snapshot lists in ``excluded_categories`` (no live or recent stored
-    score) is left out and the remaining weights are renormalized, as the composite is.
-    Yesterday uses the same categories and weights, so the change compares like with like.
-    ``today`` and ``tier`` are None only if a profile category has no live score and is
-    not excluded.
+    Global: a category the snapshot lists in ``excluded_categories`` (no live or recent
+    stored score) is left out and the remaining weights are renormalized, as the composite
+    is. Yesterday uses the same categories and weights, so the change compares like with
+    like. ``today`` and ``tier`` are None only if a category has no live score and is not
+    excluded.
+
+    Sector: today is the snapshot's sector index (None below coverage, or in a snapshot
+    without sectors); yesterday is that day's stored sector mean under the coverage rule.
     """
+    key = tab_key(profile_key)
+    if key != DEFAULT_TAB:
+        today = _finite(sector_block(data, key).get("index"))
+        yday = _sector_day(data, key, _today_utc(data) - timedelta(days=1))
+        change = today - yday if today is not None and yday is not None else None
+        return {"today": today, "yday": yday, "change": change,
+                "tier": tier_for(today) if today is not None else None}
     rows = [r for r in category_rows(data, profile_key) if not r["is_excluded"]]
     total = sum(r["weight"] for r in rows)
     weights = [r["weight"] / total for r in rows] if rows and total > 0 else []
@@ -152,10 +200,16 @@ def index_summary(data: dict, profile_key: str) -> dict:
 def index_history(data: dict, profile_key: str, days: int) -> list[float | None]:
     """Weighted index per day over the last ``days`` days; last point is the live index.
 
-    A past day is None unless every profile category has a stored score for it.
+    Global: a past day is None unless every category has a stored score for it.
+    Sector: a past day follows the sector coverage rule (``_sector_day``).
     """
-    weights = _weights(profile_key)
+    key = tab_key(profile_key)
     today_date = _today_utc(data)
+    if key != DEFAULT_TAB:
+        out = [_sector_day(data, key, d) for d in _window(today_date, days)[:-1]]
+        out.append(index_summary(data, key)["today"])
+        return out
+    weights = tab_weights(key)
     cats = list(weights)
     wts = [weights[c] for c in cats]
     out = [

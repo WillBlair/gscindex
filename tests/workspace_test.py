@@ -12,12 +12,15 @@ from components.workspace import plain_text, safe_url, select_news, snapshot_csv
 from components.charts import build_world_map
 from components.terminal import fmt
 from components.terminal_data import TIER_COLORS, index_summary
-from config import INDUSTRY_PROFILES
+import config
+from config import BOJ_CREDIT, CATEGORY_WEIGHTS, SECTORS, TABS
+
+SEMIS_TERMS = BOJ_CREDIT + " Commercial reuse of the memory and logic scores requires the Bank of Japan's permission."
 
 
 @pytest.fixture
 def snapshot():
-    categories = {c for p in INDUSTRY_PROFILES.values() for c in p["weights"]}
+    categories = set(CATEGORY_WEIGHTS) | {c for s in SECTORS.values() for c in s["weights"]}
     dates = pd.date_range("2026-09-15", periods=2)
     return {
         "last_updated_utc": "2026-09-16T12:00:00Z",
@@ -26,6 +29,10 @@ def snapshot():
         "category_history": {c: pd.Series([60.0, 80.0], index=dates) for c in categories},
         "category_metadata": {c: {"source": "A source", "updated": "2026-09-16"} for c in categories},
         "alerts": [], "disruptions": [], "map_markers": [], "market_data": {}, "briefing": "",
+        "sectors": {
+            "semiconductor": {"index": 64.2, "stale_categories": [], "excluded_categories": [], "fallback_categories": []},
+            "aerospace": {"index": 71.3, "stale_categories": [], "excluded_categories": [], "fallback_categories": []},
+        },
     }
 
 
@@ -50,8 +57,8 @@ def test_news_filters_search_clean_content_and_order_newest():
 
 def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
     snapshot["category_metadata"]["physical"] = {"source": "=SUM(1,1)", "is_fallback": True}
-    rows = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "semiconductor"))))
-    assert len(rows) == len(INDUSTRY_PROFILES["semiconductor"]["weights"])
+    rows = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "global"))))
+    assert len(rows) == len(CATEGORY_WEIGHTS)
     row = next(r for r in rows if r["category"] == "Physical Disruption")
     assert row["source"] == "'=SUM(1,1)"
     assert row["status"] == "fallback"
@@ -202,11 +209,16 @@ def test_workspace_callbacks_render_all_profiles_and_export(terminal_app):
     snapshot = terminal_app._DATA_CACHE
     yesterday = {c: v[0] for c, v in snapshot["daily_history"]["scores"].items()}
     assert _callback(app, "profile-store.data")("semiconductor") == "semiconductor"
+    # A value persisted in the browser before the tabs were renamed falls back to Global.
+    assert _callback(app, "profile-store.data")("global") == "global"
     overview = _callback(app, "category-table.children")
     seen = set()
-    for key, profile in INDUSTRY_PROFILES.items():
-        weights = profile["weights"]
-        expected_today = sum(w * snapshot["current_scores"][c] for c, w in weights.items())
+    for key in TABS:
+        weights = CATEGORY_WEIGHTS if key == "global" else SECTORS[key]["weights"]
+        if key == "global":
+            expected_today = sum(w * snapshot["current_scores"][c] for c, w in weights.items())
+        else:
+            expected_today = snapshot["sectors"][key]["index"]
         expected_yday = sum(w * yesterday[c] for c, w in weights.items())
         readout, table = overview(key, 0, 30)
         index_row = next(c for c in _walk(table) if getattr(c, "className", None) == "index-row")
@@ -217,17 +229,21 @@ def test_workspace_callbacks_render_all_profiles_and_export(terminal_app):
         body_rows = [c for c in _walk(table) if isinstance(c, html.Tr)]
         assert len(body_rows) == len(weights) + 2  # header + rows + index
         seen.add(cells[3])
-    assert len(seen) == len(INDUSTRY_PROFILES)  # the weights actually matter
-    download = _callback(app, "snapshot-download.data")(1, "baseline")
-    assert download["filename"] == "gscindex-baseline.csv"
+    assert len(seen) == len(TABS)  # each tab is its own index
+    download = _callback(app, "snapshot-download.data")(1, "global")
+    assert download["filename"] == "gscindex-global.csv"
     assert "weighted_points" in download["content"]
+    download = _callback(app, "snapshot-download.data")(1, "aerospace")
+    assert download["filename"] == "gscindex-aerospace.csv"
+    assert "Delivery Flow" in download["content"] and "Energy & Fuel" not in download["content"]
+    assert _callback(app, "snapshot-download.data")(1, "global")["filename"] == "gscindex-global.csv"
 
 
 def test_trend_range_drives_the_readout_line(terminal_app):
     overview = _callback(terminal_app.app, "category-table.children")
-    assert "7 days" in _text(overview("baseline", 0, 7)[0])
-    assert "90 days" in _text(overview("baseline", 0, 90)[0])
-    assert "30 days" in _text(overview("baseline", 0, "bogus")[0])
+    assert "7 days" in _text(overview("global", 0, 7)[0])
+    assert "90 days" in _text(overview("global", 0, 90)[0])
+    assert "30 days" in _text(overview("global", 0, "bogus")[0])
 
 
 def test_refresh_updates_context_panes_and_interval(terminal_app, monkeypatch):
@@ -325,7 +341,7 @@ def test_export_adds_as_of_and_freshness_status(snapshot):
                        "is_stale": True, "is_fallback": True}
     del snapshot["current_scores"]["physical"]
     snapshot["excluded_categories"] = ["physical"]
-    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "baseline")))}
+    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "global")))}
     assert rows["Energy & Fuel"]["as_of"] == "2026-09-15"
     assert rows["Energy & Fuel"]["status"] == "measured"
     assert rows["Freight Volume"]["status"] == "stale"
@@ -336,9 +352,40 @@ def test_export_adds_as_of_and_freshness_status(snapshot):
 
 
 def test_export_credits_portwatch_on_the_rows_built_from_it(snapshot):
-    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "baseline")))}
+    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "global")))}
     credit = "Sources: UN Global Platform; IMF PortWatch"
     # Chokepoint transits and the port-call shares behind the hazard score come from PortWatch.
     assert rows["Chokepoints"]["credit"] == credit
     assert rows["Physical Disruption"]["credit"] == credit
     assert rows["Energy & Fuel"]["credit"] == ""
+
+
+def test_csv_semis_has_boj_terms(snapshot):
+    meta = snapshot["category_metadata"]
+    meta["semis_memory_prices"].update(as_of="2026-08-31", is_stale=False, inputs=[
+        {"name": "boj_memory", "score": 72.3, "as_of": "2026-08-31", "status": "live", "source": "BOJ"}])
+    meta["semis_fab_utilization"].update(as_of="2026-06-30", is_stale=True)
+    rows = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "semiconductor"))))
+    assert [r["category"] for r in rows] == [config.CATEGORY_LABELS[c] for c in SECTORS["semiconductor"]["weights"]]
+    assert all(r["credit"] == SEMIS_TERMS for r in rows)
+    assert all(r["profile"] == "Semiconductor" for r in rows)
+    by_cat = {r["category"]: r for r in rows}
+    memory = by_cat["Memory Prices"]
+    assert memory["as_of"] == "2026-08-31" and memory["status"] == "measured"
+    assert memory["inputs"] == "boj_memory 72.3 as of 2026-08-31 (live)"
+    assert float(memory["weight"]) == pytest.approx(1 / 3)
+    assert by_cat["Fab Utilization"]["status"] == "stale"
+    # Aero rows carry no BOJ note; the Global export keeps its columns.
+    aero = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "aerospace"))))
+    assert len(aero) == 4 and all(r["credit"] == "" for r in aero) and "inputs" in aero[0]
+    assert "inputs" not in next(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "global"))))
+
+
+def test_csv_sector_status_reads_sector_flags(snapshot):
+    del snapshot["current_scores"]["aero_flow"]
+    snapshot["category_metadata"]["aero_mill_prices"].update(is_fallback=True, stored_on="2026-10-20")
+    snapshot["sectors"]["aerospace"].update(excluded_categories=["aero_flow"],
+                                            fallback_categories=["aero_mill_prices"])
+    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "aerospace")))}
+    assert rows["Delivery Flow"]["status"] == "excluded" and rows["Delivery Flow"]["score"] == ""
+    assert rows["Mill Prices"]["status"] == "fallback"

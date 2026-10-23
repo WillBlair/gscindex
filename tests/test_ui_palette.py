@@ -2,8 +2,9 @@
 from config import (
     CATEGORY_COLORS,
     COLORS,
+    CATEGORY_WEIGHTS,
     HEALTH_TIERS,
-    INDUSTRY_PROFILES,
+    SECTORS,
 )
 
 
@@ -25,10 +26,10 @@ def test_health_tier_colors_desaturated():
     assert by_label["Critical"] == "#c44d5f"
 
 
-def test_category_colors_cover_all_profile_keys():
-    keys = set()
-    for prof in INDUSTRY_PROFILES.values():
-        keys.update(prof["weights"])
+def test_category_colors_cover_all_tab_keys():
+    keys = set(CATEGORY_WEIGHTS)
+    for sector in SECTORS.values():
+        keys.update(sector["weights"])
     assert keys <= set(CATEGORY_COLORS)
     # No leftover neon purple brand accent as a category default
     assert "#8b5cf6" not in CATEGORY_COLORS.values()

@@ -17,9 +17,11 @@ from dash import dcc, html
 
 import config
 from components.feed import _format_time_ago
-from components.terminal_data import TIER_COLORS, category_rows, index_history, index_summary, tier_for
+from components.terminal_data import (
+    TIER_COLORS, category_rows, index_history, index_summary, tab_key, tier_for,
+)
 from components.workspace import plain_text, safe_url, select_news
-from config import CATEGORY_LABELS, DEFAULT_PROFILE, INDUSTRY_PROFILES, INPUT_LABELS
+from config import CATEGORY_LABELS, DEFAULT_TAB, INPUT_LABELS, SECTORS, TABS
 from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 
 DASH = "–"
@@ -27,7 +29,7 @@ MINUS = "−"
 AMBER = "#FFB020"
 DIM = "#8A94A3"
 
-PROFILE_NAMES = {"baseline": "Global", "semiconductor": "Semis", "aerospace": "Aero"}
+TAB_NAMES = {key: "Global" if key == DEFAULT_TAB else SECTORS[key]["label"] for key in TABS}
 SEVERITY = {
     "high": ("HIGH", TIER_COLORS["Critical"]),
     "medium": ("MED", TIER_COLORS["Stressed"]),
@@ -73,9 +75,8 @@ def _tier_color(score) -> str:
     return tier_for(score)["color"] if score is not None else DIM
 
 
-def _profile_name(key: str) -> str:
-    profile = INDUSTRY_PROFILES.get(key, INDUSTRY_PROFILES[DEFAULT_PROFILE])
-    return PROFILE_NAMES.get(key, profile.get("label", key))
+def _tab_name(key: str) -> str:
+    return TAB_NAMES[tab_key(key)]
 
 
 def _stamp(data: dict) -> str:
@@ -111,7 +112,8 @@ def updated_label(data: dict, now: datetime | None = None) -> str:
 # --- sparkline ---------------------------------------------------------------------
 
 def sparkline_svg(values, width: int = 120, height: int = 28, stroke: str = "currentColor") -> str:
-    """Python port of the draft's sparkline: a path over the non-missing points."""
+    """Python port of the draft's sparkline. A missing value ends the line and the next
+    point starts a new segment, so a gap is drawn as a gap and never joined."""
     points = [(i, v) for i, v in enumerate(values) if _num(v) is not None]
     if len(points) < 2:
         return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"></svg>'
@@ -128,7 +130,15 @@ def sparkline_svg(values, width: int = 120, height: int = 28, stroke: str = "cur
     def y(v):
         return height - 2 - (v - lo) / (hi - lo) * (height - 4)
 
-    path = " ".join(f"{'L' if k else 'M'}{x(i):.1f},{y(v):.1f}" for k, (i, v) in enumerate(points))
+    segments, prev = [], None
+    for i, v in points:
+        if prev is not None and i == prev + 1:
+            segments[-1].append(f"L{x(i):.1f},{y(v):.1f}")
+        else:
+            segments.append([f"M{x(i):.1f},{y(v):.1f}"])
+        prev = i
+    # A lone point between gaps is a zero-length stroke, drawn as a dot by the round cap.
+    path = " ".join(" ".join(seg if len(seg) > 1 else seg + ["h0"]) for seg in segments)
     last_i, last_v = points[-1]
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" preserveAspectRatio="none">'
@@ -164,8 +174,8 @@ def build_header(updated_label: str) -> html.Header:
         html.A([html.B("GSCI"), " Global Supply Chain Index"], href="/", className="brand"),
         dcc.RadioItems(
             id="profile-switch",
-            options=[{"label": name, "value": key} for key, name in PROFILE_NAMES.items()],
-            value=DEFAULT_PROFILE,
+            options=[{"label": name, "value": key} for key, name in TAB_NAMES.items()],
+            value=DEFAULT_TAB,
             inline=True,
             className="views",
             inputClassName="view-input",
@@ -192,10 +202,17 @@ def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:
     summary = index_summary(data, profile_key)
     tier = summary["tier"]
     color = tier["color"] if tier else DIM
+    if tab_key(profile_key) != DEFAULT_TAB and summary["today"] is None:
+        # Fewer sector categories than the coverage minimum: no number and no tier.
+        value = html.Div("Not enough data", className="v v-empty", style={"color": color})
+        tier_text = ""
+    else:
+        value = html.Div(fmt(summary["today"]), className="v num", style={"color": color})
+        tier_text = tier["label"] if tier else "No live score"
     return html.Section([
-        html.Div([html.Span(f"{_profile_name(profile_key)} index"), html.Span(_stamp(data))], className="ttl"),
-        html.Div(fmt(summary["today"]), className="v num", style={"color": color}),
-        html.Div(tier["label"] if tier else "No live score", className="tier", style={"color": color}),
+        html.Div([html.Span(f"{_tab_name(profile_key)} index"), html.Span(_stamp(data))], className="ttl"),
+        value,
+        html.Div(tier_text, className="tier", style={"color": color}),
         html.Div([
             html.Span(signed(summary["change"]), className=change_class(summary["change"])),
             " vs yesterday ",

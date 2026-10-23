@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 import config
-from config import CATEGORY_WEIGHTS, INDUSTRY_PROFILES
+from config import CATEGORY_WEIGHTS
 from data import aggregator, cache, database, status
 from data.runtime import RefreshTasks
 from scoring.engine import renormalized_weights
@@ -124,18 +124,17 @@ def test_weights_sum_and_profiles():
         "supply_chain": .20, "chokepoints": .15, "energy": .15, "tariffs": .15,
         "geopolitical": .10, "freight": .10, "inputs": .10, "physical": .05,
     }
-    for key, profile in INDUSTRY_PROFILES.items():
-        assert sum(profile["weights"].values()) == pytest.approx(1.0, abs=1e-9), key
-    assert INDUSTRY_PROFILES["baseline"]["weights"] == CATEGORY_WEIGHTS
-    assert INDUSTRY_PROFILES["baseline"]["card_categories"] == list(CATEGORY_WEIGHTS)
-    assert INDUSTRY_PROFILES["semiconductor"]["weights"]["supply_chain"] == pytest.approx(0.12)
-    assert INDUSTRY_PROFILES["aerospace"]["weights"]["physical"] == pytest.approx(0.03)
-    assert INDUSTRY_PROFILES["semiconductor"]["weights"]["chip_fab_util"] == 0.20
-    assert INDUSTRY_PROFILES["aerospace"]["weights"]["aero_metals"] == 0.15
-    assert "weather" not in INDUSTRY_PROFILES["semiconductor"]["weights"]
+    # Tabs: Global is the composite; Semis and Aero are the separate sector indexes.
+    assert config.TABS == ("global", "semiconductor", "aerospace")
+    assert config.DEFAULT_TAB == "global"
+    assert set(config.TABS[1:]) == set(config.SECTORS)
+    for key, sector in config.SECTORS.items():
+        assert sum(sector["weights"].values()) == pytest.approx(1.0, abs=1e-9), key
+        assert not set(sector["weights"]) & set(CATEGORY_WEIGHTS)
     assert config.CATEGORY_LABELS["chokepoints"] == "Chokepoints"
     assert "chokepoints" in config.CATEGORY_COLORS
-    for removed in ("DEFAULT_FALLBACK_SCORES", "PORT_DISRUPTION_WEIGHT"):
+    for removed in ("DEFAULT_FALLBACK_SCORES", "PORT_DISRUPTION_WEIGHT", "INDUSTRY_PROFILES",
+                    "DEFAULT_PROFILE", "INDUSTRY_BASELINE_SHARE"):
         assert not hasattr(config, removed)
 
 
