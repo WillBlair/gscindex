@@ -52,7 +52,7 @@ from data.providers.supply_chain import SupplyChainProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.providers.aero import FlowProvider, ForgeCastProvider, MillPricesProvider, ThroughputProvider
-from data.providers.semis import FabUtilizationProvider, LogicPricesProvider, MemoryPricesProvider
+from data.providers.semis import BOJ_CATEGORIES, FabUtilizationProvider, LogicPricesProvider, MemoryPricesProvider
 from data.news_alerts import fetch_supply_chain_news, scoring_label
 from data.port_analyst import generate_port_summaries
 from data.portwatch import fetch_chokepoint_traffic
@@ -334,11 +334,14 @@ def _stored_fallback_metadata(category: str, reason: str, day: date, score: floa
     """Metadata for a category served from its last stored score (fallback and stale)."""
     limit = _drop_after_days(category)
     index = "its sector index" if category in _SECTOR_OF else "the composite"
+    description = f"The live source failed this cycle: {reason}"
+    if category in BOJ_CATEGORIES:   # the stored score is still BOJ-derived, so the credit stays
+        description = f"{description.rstrip('.')}. {config.BOJ_CREDIT}"
     return {
         "source": "Last stored reading (live source unavailable)",
         "raw_value": f"{score:.1f}",
         "raw_label": "Last stored daily score",
-        "description": f"The live source failed this cycle: {reason}",
+        "description": description,
         "calculation": (
             f"Not measured this cycle. The last stored daily score is used until it is "
             f"{limit} days old; after that the category is left out of {index} and "

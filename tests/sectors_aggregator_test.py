@@ -295,3 +295,22 @@ def test_hung_sector_jobs_never_delay_global_providers(harness, monkeypatch):
         release.set()
         tasks.shutdown()
         sector_tasks.shutdown()
+
+
+def test_boj_category_on_stored_fallback_keeps_the_boj_credit(harness):
+    """A BOJ category serving its stored score still shows a BOJ-derived score, so its
+    description carries config.BOJ_CREDIT. Non-BOJ categories do not get it."""
+    from data.providers.semis import BOJ_CATEGORIES
+
+    run, _ = harness
+    stored = (_today() - timedelta(days=3), 41.0)
+    data = run(_providers(errors={"semis_memory_prices", "semis_fab_utilization", "aero_flow"}),
+               last=lambda cat: stored)
+    assert BOJ_CATEGORIES == {"semis_memory_prices", "semis_logic_prices"}
+    memory = data["category_metadata"]["semis_memory_prices"]
+    assert memory["is_fallback"] is True and data["current_scores"]["semis_memory_prices"] == 41.0
+    assert memory["description"].startswith("The live source failed this cycle: HTTP 503")
+    assert memory["description"].endswith(config.BOJ_CREDIT)
+    for cat in ("semis_fab_utilization", "aero_flow"):
+        meta = data["category_metadata"][cat]
+        assert meta["is_fallback"] is True and config.BOJ_CREDIT not in meta["description"]
