@@ -100,26 +100,6 @@ class PortPenaltyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             aggregate_disruption_score({})
 
-    def test_provider_blend_never_calls_the_model(self):
-        from data.providers import geopolitical as geo
-
-        with mock.patch("data.port_analyst.get_cached_port_summaries", return_value={}), \
-             mock.patch("data.port_analyst.generate_port_summaries") as gen:
-            score, suffix, note = geo.blend_port_disruption(80.0)
-        gen.assert_not_called()
-        self.assertEqual((score, suffix, note), (80.0, "", ""))
-
-    def test_blend_applies_weight(self):
-        from config import PORT_DISRUPTION_WEIGHT
-        from data.providers import geopolitical as geo
-
-        score, suffix, _ = geo.blend_port_disruption(
-            80.0, {"A": {"disruption_penalty": 25.0}}
-        )
-        expected = round((1 - PORT_DISRUPTION_WEIGHT) * 80.0 + PORT_DISRUPTION_WEIGHT * 50.0, 1)
-        self.assertEqual(score, expected)
-        self.assertIn("port-disruption", suffix)
-
     def test_port_prompt_forbids_invented_numbers(self):
         from data.port_analyst import SYSTEM_PROMPT
 

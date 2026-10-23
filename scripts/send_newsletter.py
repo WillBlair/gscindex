@@ -107,14 +107,15 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
     # Fallback: local disk cache (works in development)
     try:
         from data.cache import get_cached_dashboard
-        from scoring.engine import compute_composite_index
+        from scoring.engine import snapshot_composite
         local_data = get_cached_dashboard()
         if local_data:
             scores = local_data.get("current_scores", {})
+            composite = snapshot_composite(local_data)
             return {
                 "current_scores": scores,
                 "briefing": local_data.get("briefing", ""),
-                "composite_index": round(compute_composite_index(scores), 1) if scores else None,
+                "composite_index": round(composite, 1) if composite is not None else None,
             }
     except Exception as e:
         logger.warning("Local cache fallback failed: %s", e)
@@ -369,8 +370,11 @@ def main():
     from scoring import get_health_tier
     score = data.get("composite_index")
     if score is None:
-        from scoring.engine import compute_composite_index
-        score = compute_composite_index(current_scores)
+        from scoring.engine import snapshot_composite
+        score = snapshot_composite({"current_scores": current_scores})
+    if score is None:
+        logger.error("No composite available (a weighted category is missing). Not sending.")
+        return
     tier = get_health_tier(score)
 
     logger.info(f"Dashboard score: {score:.1f} ({tier.get('label')})")

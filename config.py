@@ -51,17 +51,6 @@ NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v18"
 FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "730"))
 
 # ---------------------------------------------------------------------------
-# Port disruption blend weight (aggregate port_analyst signal -> geopolitical)
-# ---------------------------------------------------------------------------
-# generate_port_summaries() (data/port_analyst.py) already produces a
-# per-port AI disruption_penalty (0-50) grounded in live news, but until now
-# it only affected individual map markers -- the aggregate signal never fed
-# back into the geopolitical category score. Blending a minority weight in
-# gives geopolitical a second, port-grounded read on top of the raw
-# news-severity score.
-PORT_DISRUPTION_WEIGHT: float = float(os.environ.get("PORT_DISRUPTION_WEIGHT", "0.15"))
-
-# ---------------------------------------------------------------------------
 # Industry-specific provider cache
 # ---------------------------------------------------------------------------
 # Semiconductor and other industry-specific data is slow-moving (quarterly
@@ -76,19 +65,27 @@ INDUSTRY_PROVIDER_CACHE_TTL: int = int(os.environ.get("INDUSTRY_PROVIDER_CACHE_T
 # Weights MUST sum to 1.0 — the scoring engine will yell at you if they don't.
 # ---------------------------------------------------------------------------
 
-# Weights favor genuine disruption/flow signals over pure cost gauges.
-# Disruption-oriented (weather, supply_chain, freight, geopolitical) = 0.65;
-# cost-oriented (energy+fuel, tariffs) = 0.35. Crude oil and diesel are the
-# same petroleum complex (diesel is refined crude, correlation > 0.9), so they
-# are blended into a single "energy" category rather than weighted twice.
+# Methodology v2 (docs/superpowers/specs/2026-10-22-score-rebuild-design.md, section 2).
+# A category whose provider fails uses its last stored score while it is younger than
+# CATEGORY_DROP_AFTER_DAYS; beyond that it is excluded and the aggregator renormalizes the
+# remaining weights explicitly (scoring.engine.renormalized_weights). Weather is map-only.
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "weather":             0.10,
-    "supply_chain":        0.25,  # NY Fed GSCPI — core disruption index
-    "freight":             0.10,  # BTS Freight Transportation Services Index (throughput)
-    "energy":              0.20,  # blended WTI crude + retail diesel cost pressure
-    "tariffs":             0.15,  # trade policy uncertainty
-    "geopolitical":        0.20,
+    "supply_chain":  0.20,  # NY Fed GSCPI, anchored
+    "chokepoints":   0.15,  # IMF PortWatch transits through eight maritime corridors
+    "energy":        0.15,  # Brent, NY Harbor ULSD and TTF, real prices plus spike penalty
+    "tariffs":       0.15,  # tariff burden (customs duties / goods imports) + trade policy uncertainty
+    "geopolitical":  0.10,  # Caldara-Iacoviello daily GPR (Claude register in shadow)
+    "freight":       0.10,  # BTS Freight TSI YoY + weekly STB rail carloads and intermodal YoY
+    "inputs":        0.10,  # regional Fed prices paid + real copper and aluminum
+    "physical":      0.05,  # GDACS hazards near ports + Gatun Lake + Mississippi at St. Louis
 }
+
+# Seconds the aggregator waits for each provider, counted from the start of the refresh
+# cycle. A provider that times out takes the same path as one that failed (last stored
+# score, else excluded). Physical (GDACS up to ~83 s plus three gauges in series) and
+# freight (a cold Socrata rail query up to 120 s) get longer.
+PROVIDER_TIMEOUT_SECONDS: float = 45
+PROVIDER_TIMEOUT_OVERRIDES: dict[str, float] = {"physical": 150, "freight": 150}
 
 # The committed data/fallback_snapshot_safe.json is only served on a cold
 # start (no disk cache, no database snapshot) while it is younger than this.
@@ -97,16 +94,10 @@ FALLBACK_SNAPSHOT_MAX_AGE_DAYS: int = 14
 # Categories scoring below this appear in the disruptions table.
 DISRUPTION_SCORE_THRESHOLD: float = 70.0
 
-# Fallback scores when a provider fails — visible and tunable in one place.
-DEFAULT_FALLBACK_SCORES: dict[str, float] = {
-    "weather":      75.0,   # Conservative — assumes minor disruptions
-    "geopolitical": 85.0,   # Optimistic baseline (100 means "no risk at all")
-    "default":      50.0,   # Neutral for everything else
-}
-
 CATEGORY_LABELS: dict[str, str] = {
     "weather":             "Weather",  # Shortened to fit on one line
     "supply_chain":        "Supply Chain", # Shortened to fit on one line
+    "chokepoints":         "Chokepoints",
     "freight":             "Freight Volume",
     "energy":              "Energy & Fuel",
     "tariffs":             "Trade & Tariffs",
@@ -117,7 +108,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "chip_fab_util":       "Fab Utilization",
     "chip_memory_prices":  "Memory Prices",
     "chip_lead_times":     "Lead Times",
-"chip_wafer_prices":   "Wafer Prices",
+    "chip_wafer_prices":   "Wafer Prices",
     # Aerospace-specific categories (industry profile mode)
     "aero_metals":         "Aero Metals",
     "aero_orders":         "Aircraft Orders",
@@ -136,27 +127,24 @@ CATEGORY_LABELS: dict[str, str] = {
 
 DEFAULT_PROFILE: str = "baseline"
 
+# Temporary until industry profiles are rebuilt: the baseline categories take 0.60 of each
+# industry profile (the baseline weights x 0.60) and the industry categories keep their 0.40.
+INDUSTRY_BASELINE_SHARE: float = 0.60
+
+
+def _industry_weights(industry: dict[str, float]) -> dict[str, float]:
+    weights = {cat: round(w * INDUSTRY_BASELINE_SHARE, 10) for cat, w in CATEGORY_WEIGHTS.items()}
+    weights.update(industry)
+    return weights
+
+
 INDUSTRY_PROFILES: dict[str, dict] = {
     "baseline": {
         "label": "Baseline (Global)",
         "description": "General supply chain health across all sectors",
-        "weights": {
-            "weather":        0.10,
-            "supply_chain":   0.25,
-            "freight":        0.10,
-            "energy":         0.20,
-            "tariffs":        0.15,
-            "geopolitical":   0.20,
-        },
+        "weights": dict(CATEGORY_WEIGHTS),
         # Cards shown in the dashboard row (replaces on profile switch).
-        "card_categories": [
-            "weather",
-            "supply_chain",
-            "freight",
-            "energy",
-            "tariffs",
-            "geopolitical",
-        ],
+        "card_categories": list(CATEGORY_WEIGHTS),
         "providers": [],
     },
     "semiconductor": {
@@ -165,18 +153,12 @@ INDUSTRY_PROFILES: dict[str, dict] = {
             "Chip supply chain — fab utilization, memory prices, lead times, "
             "and wafer pricing from Silicon Analysts API"
         ),
-        "weights": {
-            "weather":            0.05,
-            "supply_chain":       0.15,
-            "freight":            0.05,
-            "energy":             0.10,
-            "tariffs":            0.10,
-            "geopolitical":       0.15,
+        "weights": _industry_weights({
             "chip_fab_util":      0.20,
             "chip_memory_prices": 0.10,
             "chip_lead_times":    0.05,
             "chip_wafer_prices":  0.05,
-        },
+        }),
         # Replace the baseline row with chip signals + the two highest-weight
         # shared categories. Remaining weights still feed the composite gauge.
         "card_categories": [
@@ -195,18 +177,12 @@ INDUSTRY_PROFILES: dict[str, dict] = {
             "Aerospace industrial base — aluminum/nickel cost pressure, "
             "Census aircraft orders, Fed aerospace production, and aircraft PPI"
         ),
-        "weights": {
-            "weather":          0.05,
-            "supply_chain":     0.10,
-            "freight":          0.10,
-            "energy":           0.10,
-            "tariffs":          0.10,
-            "geopolitical":     0.15,
+        "weights": _industry_weights({
             "aero_metals":      0.15,
             "aero_orders":      0.10,
             "aero_production":  0.10,
             "aero_ppi":         0.05,
-        },
+        }),
         # Replace the baseline row with aero signals + the two highest-weight
         # shared categories. Remaining weights still feed the composite gauge.
         "card_categories": [
@@ -220,6 +196,10 @@ INDUSTRY_PROFILES: dict[str, dict] = {
         "providers": ["aerospace"],
     },
 }
+
+for _key, _profile in INDUSTRY_PROFILES.items():
+    if abs(sum(_profile["weights"].values()) - 1.0) > 1e-9:
+        raise ValueError(f"INDUSTRY_PROFILES[{_key!r}] weights must sum to 1.0")
 
 # ---------------------------------------------------------------------------
 # Health-Status Thresholds
@@ -252,6 +232,7 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 CATEGORY_COLORS: dict[str, str] = {
     "weather":             "#60a5fa",
     "supply_chain":        "#c084fc",
+    "chokepoints":         "#818cf8",
     "freight":             "#34d399",
     "energy":              "#fbbf24",
     "tariffs":             "#fb7185",

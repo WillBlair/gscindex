@@ -49,13 +49,13 @@ def test_news_filters_search_clean_content_and_order_newest():
 
 
 def test_export_is_profile_scoped_and_protects_spreadsheet_cells(snapshot):
-    snapshot["category_metadata"]["weather"] = {"source": "=SUM(1,1)", "is_fallback": True}
+    snapshot["category_metadata"]["physical"] = {"source": "=SUM(1,1)", "is_fallback": True}
     rows = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "semiconductor"))))
     assert len(rows) == len(INDUSTRY_PROFILES["semiconductor"]["weights"])
-    weather = next(r for r in rows if r["category"] == "Weather")
-    assert weather["source"] == "'=SUM(1,1)"
-    assert weather["status"] == "fallback"
-    assert weather["snapshot_utc"] == snapshot["last_updated_utc"]
+    row = next(r for r in rows if r["category"] == "Physical Disruption")
+    assert row["source"] == "'=SUM(1,1)"
+    assert row["status"] == "fallback"
+    assert row["snapshot_utc"] == snapshot["last_updated_utc"]
 
 
 def test_map_colors_relative_risk_without_changing_the_readings():

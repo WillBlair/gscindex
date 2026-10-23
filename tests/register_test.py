@@ -303,14 +303,35 @@ class _FakeProvider:
         return pd.Series(dtype=float)
 
 
+class _InlineTasks:
+    """Runs each job at submit time, so the register has finished before it is collected."""
+
+    def submit_once(self, key, fn, *args):
+        from concurrent.futures import Future
+        future = Future()
+        try:
+            future.set_result(fn(*args))
+        except Exception as exc:
+            future.set_exception(exc)
+        return future
+
+    def cancel_pending(self, keep=()):
+        pass
+
+
+class _NoWeather:
+    def fetch_batch_port_weather(self, coords):
+        return {}
+
+
 def _run_aggregate(monkeypatch, register_result):
     from config import CATEGORY_WEIGHTS
-    from data import ai_analyst, aggregator, cache, status
-    from data.runtime import RefreshTasks
+    from data import aggregator, cache, status
 
     recorded = {}
-    monkeypatch.setattr(aggregator, "_FETCH_TASKS", RefreshTasks(max_workers=3))
+    monkeypatch.setattr(aggregator, "_FETCH_TASKS", _InlineTasks())
     monkeypatch.setattr(aggregator, "_PROVIDERS", [_FakeProvider(c) for c in CATEGORY_WEIGHTS])
+    monkeypatch.setattr(aggregator, "_WEATHER", _NoWeather())
     monkeypatch.setattr(aggregator, "fetch_supply_chain_news", mock.Mock(side_effect=RuntimeError("off")))
     monkeypatch.setattr(aggregator, "_fetch_market_data", lambda: {})
     monkeypatch.setattr(aggregator, "generate_port_summaries", lambda: {})
@@ -325,7 +346,6 @@ def _run_aggregate(monkeypatch, register_result):
     # Keep the run off the real disk cache and status file.
     monkeypatch.setattr(cache, "get_cached", lambda key, ttl=3600: None)
     monkeypatch.setattr(cache, "set_cached", lambda key, data: None)
-    monkeypatch.setattr(ai_analyst, "generate_score_explanation", lambda **kw: "")
     monkeypatch.setattr(status, "set_status", lambda message: None)
     result = aggregator.aggregate_data()
     return result, recorded

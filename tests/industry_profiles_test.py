@@ -34,7 +34,7 @@ class IndustryProfileConfigTests(unittest.TestCase):
         for key, profile in INDUSTRY_PROFILES.items():
             total = sum(profile["weights"].values())
             self.assertTrue(
-                np.isclose(total, 1.0, atol=0.01),
+                np.isclose(total, 1.0, rtol=0.0, atol=1e-9),
                 f"{key} weights sum to {total:.4f}, not 1.0",
             )
 
@@ -47,6 +47,16 @@ class IndustryProfileConfigTests(unittest.TestCase):
         missing_colors = keys - set(CATEGORY_COLORS)
         self.assertEqual(missing_labels, set())
         self.assertEqual(missing_colors, set())
+
+    def test_industry_profiles_scale_the_baseline_by_060(self):
+        from config import CATEGORY_WEIGHTS
+
+        for key in ("semiconductor", "aerospace"):
+            weights = INDUSTRY_PROFILES[key]["weights"]
+            for cat, base in CATEGORY_WEIGHTS.items():
+                self.assertAlmostEqual(weights[cat], base * 0.60, places=12, msg=f"{key}.{cat}")
+            industry = sum(w for c, w in weights.items() if c not in CATEGORY_WEIGHTS)
+            self.assertAlmostEqual(industry, 0.40, places=12)
 
     def test_aerospace_cards_are_a_subset_of_weights(self):
         profile = INDUSTRY_PROFILES["aerospace"]

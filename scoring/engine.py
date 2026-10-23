@@ -65,6 +65,38 @@ def compute_composite_index(
     return float(np.clip(composite, 0.0, 100.0))
 
 
+def renormalized_weights(weights: dict[str, float], present: set[str]) -> dict[str, float]:
+    """``weights`` restricted to ``present`` and rescaled to sum to 1.0.
+
+    Used when a category is excluded from the composite: the remaining weights keep
+    their proportions. Raises ValueError when no weighted category is present.
+    """
+    kept = {cat: w for cat, w in weights.items() if cat in present}
+    total = sum(kept.values())
+    if not kept or total <= 0:
+        raise ValueError("No weighted category is present; the composite is undefined.")
+    if len(kept) == len(weights):
+        return dict(weights)
+    return {cat: w / total for cat, w in kept.items()}
+
+
+def snapshot_composite(data: dict) -> float | None:
+    """The composite stored in a dashboard snapshot (``data["composite"]``).
+
+    Older snapshots have no ``composite`` key; for those it is computed from
+    ``current_scores``, and None is returned when a weighted category is missing
+    (a snapshot from before the current categories, or one with an exclusion).
+    """
+    if "composite" in data:
+        value = data.get("composite")
+        return float(value) if isinstance(value, (int, float)) else None
+    scores = data.get("current_scores") or {}
+    try:
+        return compute_composite_index(scores) if scores else None
+    except ValueError:
+        return None
+
+
 def get_health_tier(score: float) -> dict:
     """Return the health tier dict for a given score.
 

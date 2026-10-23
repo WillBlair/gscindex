@@ -148,7 +148,7 @@ def test_fallback_flag():
     snap["fallback_categories"] = ["energy"]
     rows = {r["cat"]: r for r in td.category_rows(snap, "baseline")}
     assert rows["energy"]["is_fallback"] is True
-    assert rows["weather"]["is_fallback"] is False
+    assert rows["physical"]["is_fallback"] is False
 
 
 def test_tier_colors_are_ui_only():
@@ -219,11 +219,11 @@ def test_utc_date_without_stored_predecessor_gives_none():
 def test_row_history_uses_stored_days_and_live_today():
     snap = _snapshot()
     rows = {r["cat"]: r for r in td.category_rows(snap, "baseline")}
-    hist = rows["weather"]["history"]
+    hist = rows["physical"]["history"]
     assert len(hist) == 30
-    assert hist[-1] == snap["current_scores"]["weather"]
-    assert hist[-2] == snap["daily_history"]["scores"]["weather"][-2]
-    assert hist[-3] == snap["daily_history"]["scores"]["weather"][-3]
+    assert hist[-1] == snap["current_scores"]["physical"]
+    assert hist[-2] == snap["daily_history"]["scores"]["physical"][-2]
+    assert hist[-3] == snap["daily_history"]["scores"]["physical"][-3]
     assert hist[0] is None
 
 

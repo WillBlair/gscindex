@@ -22,10 +22,12 @@ class RefreshTasks:
             self._jobs[key] = future
             return future
 
-    def cancel_pending(self):
+    def cancel_pending(self, keep=()):
+        """Cancel queued jobs, except those under a key in ``keep``."""
         with self._lock:
-            for future in self._jobs.values():
-                future.cancel()  # Running jobs stay tracked until they finish.
+            for key, future in self._jobs.items():
+                if key not in keep:
+                    future.cancel()  # Running jobs stay tracked until they finish.
 
     def shutdown(self):
         self._executor.shutdown(wait=True, cancel_futures=True)

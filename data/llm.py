@@ -2,7 +2,7 @@
 LLM Client
 ==========
 Thin wrapper around the Anthropic API shared by every AI-powered component
-(news analysis, briefings, report, score explanation, port summaries).
+(news analysis, briefings, report, port summaries, disruption register).
 
 Callers check ``is_configured()`` and keep their own deterministic fallbacks;
 ``complete_text`` / ``complete_json`` raise ``LLMError`` on any failure so

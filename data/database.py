@@ -340,9 +340,11 @@ def unsubscribe_user(email: str) -> bool:
     finally:
         conn.close()
 
-def record_daily_scores(composite: float, category_scores: dict[str, float]) -> bool:
+def record_daily_scores(composite: float | None, category_scores: dict[str, float]) -> bool:
     """Upsert today's composite and per-category scores.
 
+    ``composite`` is None when a weighted category was excluded: the category rows are
+    still written, but ``daily_scores`` keeps a gap for the day instead of a partial index.
     Writes at most once per hour (the 5-minute background cycle would
     otherwise burn Neon compute). Upserts mean the stored row converges
     to the day's last reading rather than freezing the first one.
@@ -363,12 +365,13 @@ def record_daily_scores(composite: float, category_scores: dict[str, float]) -> 
         with conn:
             cursor = conn.cursor()
             if db_type == "postgres":
-                cursor.execute("""
-                    INSERT INTO daily_scores (date, score)
-                    VALUES (CURRENT_DATE, %s)
-                    ON CONFLICT (date) DO UPDATE
-                    SET score = EXCLUDED.score
-                """, (composite,))
+                if composite is not None:
+                    cursor.execute("""
+                        INSERT INTO daily_scores (date, score)
+                        VALUES (CURRENT_DATE, %s)
+                        ON CONFLICT (date) DO UPDATE
+                        SET score = EXCLUDED.score
+                    """, (composite,))
                 for category, score in category_scores.items():
                     cursor.execute("""
                         INSERT INTO daily_category_scores (date, category, score)
@@ -377,12 +380,13 @@ def record_daily_scores(composite: float, category_scores: dict[str, float]) -> 
                         SET score = EXCLUDED.score
                     """, (category, float(score)))
             elif db_type == "sqlite":
-                cursor.execute("""
-                    INSERT INTO daily_scores (date, score)
-                    VALUES (DATE('now'), ?)
-                    ON CONFLICT(date) DO UPDATE
-                    SET score = excluded.score
-                """, (composite,))
+                if composite is not None:
+                    cursor.execute("""
+                        INSERT INTO daily_scores (date, score)
+                        VALUES (DATE('now'), ?)
+                        ON CONFLICT(date) DO UPDATE
+                        SET score = excluded.score
+                    """, (composite,))
                 for category, score in category_scores.items():
                     cursor.execute("""
                         INSERT INTO daily_category_scores (date, category, score)

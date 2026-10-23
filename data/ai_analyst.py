@@ -261,56 +261,6 @@ Constraints:
 - Do NOT use "The news says" or "Article 1 says". Synthesize the information.
 """
 
-def generate_score_explanation(
-    *,
-    composite: float,
-    tier_label: str,
-    category_scores: dict[str, float],
-    category_metadata: dict[str, dict],
-    top_alerts: list[dict],
-) -> str:
-    """Write 2–3 plain-text sentences explaining why the composite is at this level."""
-    if not llm.is_configured():
-        return ""
-
-    from config import CATEGORY_LABELS, CATEGORY_WEIGHTS
-
-    weighted_lines = []
-    for cat, weight in CATEGORY_WEIGHTS.items():
-        score = category_scores.get(cat)
-        if score is None:
-            continue
-        meta = category_metadata.get(cat, {})
-        weighted_lines.append(
-            f"- {CATEGORY_LABELS.get(cat, cat)}: {score:.0f}/100 "
-            f"({int(round(weight * 100))}% weight)"
-            + (f" — {meta.get('raw_label', '')}" if meta.get("raw_label") else "")
-        )
-
-    alert_lines = []
-    for alert in top_alerts[:4]:
-        alert_lines.append(f"- {alert.get('title', 'Supply chain alert')}")
-
-    prompt_lines = [
-        "You explain the Global Supply Chain Health Index to an executive in 2-3 short sentences.",
-        f"Current composite: {composite:.1f}/100 ({tier_label}).",
-        "Use ONLY the category scores and headlines below. Do not invent numbers or events.",
-        "Say which factors are dragging the score down or holding it up, in plain English.",
-        "No bullets, markdown, or titles.",
-        "",
-        "Category scores:",
-        *weighted_lines,
-    ]
-    if alert_lines:
-        prompt_lines.extend(["", "Recent high-signal headlines:", *alert_lines])
-
-    try:
-        return llm.complete_text("\n".join(prompt_lines))
-    except Exception as exc:
-        logger.error("Score explanation generation failed: %s", exc)
-        return ""
-
-
 def generate_full_report(articles: list[dict]) -> str:
     """
     Generate a long-form Markdown report from a large batch of articles.

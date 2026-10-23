@@ -7,8 +7,8 @@ A stored Claude disruption register can be blended in through ``config.GEO_REGIS
 (0 for now).
 
 The rest of this module is the older headline pipeline, kept until the aggregator stops
-importing it (``fetch_supply_chain_news``, ``blend_port_disruption``, the VADER helpers and
-``news_scoring_label`` still feed the alerts, briefing and map). It fetches supply chain
+importing it (``fetch_supply_chain_news`` and the VADER helpers still feed the alerts,
+briefing and map; the news score no longer reaches any category). It fetches supply chain
 articles from curated RSS feeds, scores each article's severity (Claude, with VADER
 sentiment as the fallback), and classifies it into the correct supply chain category.
 
@@ -39,7 +39,6 @@ from config import (
     NEWS_AI_MAX_ARTICLES,
     NEWS_CACHE_MAX_AGE_SECONDS,
     NEWS_RSS_REFRESH_SECONDS,
-    PORT_DISRUPTION_WEIGHT,
 )
 from data.cache import get_cached, set_cached
 from data.database import get_last_category_score
@@ -531,32 +530,6 @@ def fetch_supply_chain_news() -> tuple[float, list[dict], str, str]:
     
     set_cached(cache_key, result)
     return result["score"], result["alerts"], result["briefing"], result["full_report"]
-
-
-def blend_port_disruption(
-    base_score: float, port_summaries: dict | None = None
-) -> tuple[float, str, str]:
-    """Blend the aggregate port-disruption score into a geopolitical score.
-
-    Returns (blended_score, source_suffix, note). Uses the given summaries,
-    or the cached ones when None; never calls the model. Falls back to the
-    unmodified base score when no port data is available.
-    """
-    from data.port_analyst import aggregate_disruption_score, get_cached_port_summaries
-
-    summaries = port_summaries if port_summaries is not None else get_cached_port_summaries()
-    try:
-        port_score, port_count, port_summary = aggregate_disruption_score(summaries)
-    except ValueError as exc:
-        logger.debug("Port-disruption blend skipped (base score used as-is): %s", exc)
-        return base_score, "", ""
-    weight = PORT_DISRUPTION_WEIGHT
-    blended = (1 - weight) * base_score + weight * port_score
-    note = (
-        f" Blended with an aggregate AI port-disruption signal ({port_summary}) "
-        f"at {weight:.0%} weight."
-    )
-    return round(blended, 1), f" + port-disruption ({port_count} ports)", note
 
 
 _GPR, _REGISTER = "gpr", "geo_register"

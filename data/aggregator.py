@@ -6,10 +6,12 @@ dashboard layout consumes.
 
 This is the main entry point for data. It:
     1. Instantiates every provider
-    2. Calls ``fetch_current()`` and ``fetch_history()`` on each
-    3. Handles provider failures gracefully (logs error, continues)
-    4. Assembles alerts from the RSS news pipeline
-    5. Computes regional risk scores (derived from category scores)
+    2. Calls ``fetch_current()`` and ``fetch_history()`` on each, with a per-category timeout
+    3. Handles provider failures explicitly: the last stored score while it is younger than
+       ``CATEGORY_DROP_AFTER_DAYS`` (flagged fallback and stale), otherwise the category is
+       excluded and the remaining weights are renormalized
+    4. Computes and stores the composite (``result["composite"]``)
+    5. Assembles alerts from the RSS news pipeline and the port map
     6. Returns everything in the shape the layout expects
 """
 
@@ -17,29 +19,32 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
+import time
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
 
+import config
 from config import (
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     DISRUPTION_SCORE_THRESHOLD,
     HISTORY_DAYS,
-    PORT_DISRUPTION_WEIGHT,
 )
+from data import database
 from data.ports_data import MAJOR_PORTS
 
+from data.providers.chokepoints import ChokepointsProvider
 from data.providers.energy import EnergyProvider
 from data.providers.freight import FreightProvider
 from data.providers.geopolitical import (
     GeopoliticalProvider,
     _is_irrelevant_article,
-    blend_port_disruption,
     fetch_supply_chain_news,
-    news_scoring_label,
 )
+from data.providers.inputs import InputsProvider
+from data.providers.physical import PhysicalProvider
 from data.providers.supply_chain import SupplyChainProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
@@ -49,22 +54,30 @@ from data.port_analyst import generate_port_summaries
 from data.portwatch import fetch_chokepoint_traffic
 from data.register import run_register_cycle
 from scoring import get_health_tier
+from scoring.engine import compute_composite_index, renormalized_weights
 from data.runtime import RefreshTasks
 
 logger = logging.getLogger(__name__)
 _FETCH_TASKS = RefreshTasks(max_workers=3)
 
-# All providers, instantiated once
+# The eight weighted categories plus the two industry adapters, instantiated once. The
+# slow ones (freight, physical) go last so the fast providers finish inside their 45 s
+# before those two take workers; their own timeouts are longer (PROVIDER_TIMEOUT_OVERRIDES).
 _PROVIDERS = [
-    WeatherProvider(),
     SupplyChainProvider(),
-    FreightProvider(),
+    ChokepointsProvider(),
     EnergyProvider(),
     TariffsProvider(),
     GeopoliticalProvider(),
+    InputsProvider(),
     ChipFabUtilProvider(),
     AeroMetalsProvider(),
+    FreightProvider(),
+    PhysicalProvider(),
 ]
+
+# Port weather for the map only; weather is not a composite category.
+_WEATHER = WeatherProvider()
 
 def _fetch_market_data() -> dict:
     """Fetch key market indicators (Oil, Gas, Shipping Stocks)."""
@@ -120,23 +133,6 @@ def _fetch_market_data() -> dict:
 
 
 
-def _make_fallback_series(days: int, name: str, value: float = 50.0) -> pd.Series:
-    """Series with only TODAY's point set; the rest is NaN.
-
-    A flat line at the fallback value would fabricate 90 days of history
-    that was never measured. Charts render the single point and leave the
-    rest of the window honestly empty.
-    """
-    dates = pd.date_range(
-        end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-        periods=days,
-        freq="D",
-    )
-    series = pd.Series(float("nan"), index=dates, name=name)
-    series.iloc[-1] = value
-    return series
-
-
 def _as_naive_daily_index(index: pd.Index) -> pd.DatetimeIndex:
     """Normalize a history index to naive UTC calendar dates.
 
@@ -151,53 +147,32 @@ def _as_naive_daily_index(index: pd.Index) -> pd.DatetimeIndex:
 
 
 def _align_history_to_dates(
-    hist_series: pd.Series,
+    hist_series: pd.Series | None,
     dates: pd.DatetimeIndex,
     score: float,
 ) -> pd.Series:
     """Forward-fill a provider series onto the dashboard date index.
 
-    Dates before the first real observation stay NaN. Today's point is
-    forced to the live score so sparklines do not show yesterday's close.
+    Dates before the first real observation stay NaN. Points dated after the last
+    dashboard date (history dated by publication lag can run past today) never fill
+    anything. Today's point is forced to the live score so sparklines do not show
+    yesterday's close; with no history at all, today's point is the only value.
     """
-    hist = hist_series.copy()
-    hist.index = _as_naive_daily_index(hist.index)
-    aligned = hist.reindex(dates, method="ffill")
+    if hist_series is None or hist_series.empty:
+        aligned = pd.Series(float("nan"), index=dates)
+    else:
+        hist = hist_series.copy()
+        hist.index = _as_naive_daily_index(hist.index)
+        hist = hist[~hist.index.duplicated(keep="last")].sort_index()
+        hist = hist[hist.index <= dates[-1]]
+        aligned = hist.reindex(dates, method="ffill")
     aligned.iloc[-1] = score
     return aligned
 
 
-def get_safe_fallback_data() -> dict:
-    """Return a completely safe, neutral dataset to ensure dashboard starts."""
-    current_scores = {cat: 50.0 for cat in CATEGORY_WEIGHTS}
-    
-    dates = pd.date_range(
-        end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-        periods=HISTORY_DAYS,
-        freq="D",
-    )
-    
-    category_history = {
-        cat: _make_fallback_series(HISTORY_DAYS, cat, 50.0)
-        for cat in CATEGORY_WEIGHTS
-    }
-    
-    return {
-        "dates": dates,
-        "category_history": category_history,
-        "current_scores": current_scores,
-        "map_markers": [],
-        "alerts": [],
-        "briefing": "System recovering... Data will update shortly.",
-        "full_report": "",
-        "disruptions": [],
-        "provider_errors": {"System": "Using fallback data while background fetch initializes."},
-        "category_metadata": {},
-        "market_data": {},
-        "degraded": True,
-        "fallback_categories": sorted(CATEGORY_WEIGHTS),
-    }
-
+def _empty_history(dates: pd.DatetimeIndex, name: str) -> pd.Series:
+    """History for a category that was not measured this cycle: every point NaN."""
+    return pd.Series(float("nan"), index=dates, name=name)
 
 
 # ---------------------------------------------------------------------------
@@ -606,92 +581,174 @@ def _derive_map_markers(
     return markers
 
 
-def _fallback_metadata(reason: str) -> dict:
-    """Full required-key metadata for a failed provider, flagged as fallback.
+def _provider_timeout(category: str) -> float:
+    """Seconds to wait for one provider, counted from the start of the cycle."""
+    return float(config.PROVIDER_TIMEOUT_OVERRIDES.get(category, config.PROVIDER_TIMEOUT_SECONDS))
 
-    Keeps the detail modal renderable and lets the UI/API distinguish a
-    measured score from an injected neutral default.
+
+def _recent_stored_score(category: str, today: date) -> tuple[date, float] | None:
+    """The category's last stored daily score while it is younger than its drop limit.
+
+    Categories without a ``CATEGORY_DROP_AFTER_DAYS`` entry (the industry ones) never
+    fall back to a stored score.
     """
+    limit = config.CATEGORY_DROP_AFTER_DAYS.get(category)
+    if limit is None:
+        return None
+    try:
+        row = database.get_last_category_score(category)
+    except Exception as exc:
+        logger.warning("Stored score lookup failed for %s: %s", category, exc)
+        return None
+    if not row:
+        return None
+    day, score = row
+    if not math.isfinite(score) or (today - day).days >= limit:
+        return None
+    return day, float(score)
+
+
+def _stored_fallback_metadata(category: str, reason: str, day: date, score: float) -> dict:
+    """Metadata for a category served from its last stored score (fallback and stale)."""
+    limit = config.CATEGORY_DROP_AFTER_DAYS[category]
+    return {
+        "source": "Last stored reading (live source unavailable)",
+        "raw_value": f"{score:.1f}",
+        "raw_label": "Last stored daily score",
+        "description": (
+            f"Last stored reading from {day.isoformat()}. The live source failed this "
+            f"cycle: {reason}"
+        ),
+        "calculation": (
+            f"Not measured this cycle. The last stored daily score is used until it is "
+            f"{limit} days old; after that the category is left out of the composite and "
+            "the other weights are renormalized."
+        ),
+        "updated": day.isoformat(),
+        "as_of": day.isoformat(),
+        "is_stale": True,
+        "is_fallback": True,
+        "inputs": [],
+        "error": reason,
+    }
+
+
+def _unavailable_metadata(category: str, reason: str) -> dict:
+    """Metadata for a category with no live score and no usable stored score."""
+    limit = config.CATEGORY_DROP_AFTER_DAYS.get(category)
+    stored = f"no stored score younger than {limit} days" if limit else "no stored fallback"
     return {
         "source": "Unavailable (provider failed)",
         "raw_value": "—",
         "raw_label": "No data",
-        "description": f"Data fetch failed; showing a neutral fallback score. Error: {reason}",
-        "calculation": "Neutral fallback of 50.0 — not a measured value.",
+        "description": (
+            f"The live source failed and there is {stored}, so this category is left out "
+            f"of the composite. Error: {reason}"
+        ),
+        "calculation": "Not scored this cycle; the other weights are renormalized.",
         "updated": "Unavailable",
+        "as_of": None,
+        "is_stale": False,
+        "is_fallback": False,
+        "inputs": [],
         "error": reason,
-        "is_fallback": True,
     }
 
 
-def _fetch_provider_data(provider) -> tuple[str, float, pd.Series | None, dict, str | None]:
-    """Helper to fetch data for a single provider safely."""
+def _fetch_provider_data(provider) -> tuple[str, float | None, pd.Series | None, dict, str | None]:
+    """Fetch one provider safely. A failed provider returns score None and its error."""
     cat = provider.category
-    current_score = 50.0
-    history_series = None
-    metadata = {}
-    error_msg = None
-
     try:
-        # 1. Fetch current score + metadata
-        # Support both tuple (new) and float (legacy/fallback) returns
+        # Support both tuple (new) and float (legacy) returns
         result = provider.fetch_current()
         if isinstance(result, tuple):
             current_score, metadata = result
         else:
             current_score = float(result)
             metadata = {
-                "source": "Unknown", 
+                "source": "Unknown",
                 "description": "Provider returned simplistic data format."
             }
-            
-        # Guard against NaN/Inf from providers (e.g. division by zero in normalization).
-        # NaN would propagate through the composite calculation and break the gauge.
+        # NaN/Inf would propagate through the composite; it counts as a failure.
         if not math.isfinite(current_score):
-            logger.warning("Provider %s returned non-finite score; using neutral fallback", cat)
-            current_score = 50.0
-            metadata["is_fallback"] = True
-
+            raise RuntimeError("provider returned a non-finite score")
         metadata.setdefault("is_fallback", False)
+        metadata["is_stale"] = bool(metadata.get("is_stale", False))
         logger.info("Loaded %s: %.1f", cat, current_score)
     except Exception as exc:
         logger.error("Provider %s failed (current): %s", cat, exc)
-        error_msg = str(exc)
-        current_score = 50.0
-        metadata = _fallback_metadata(str(exc))
+        return cat, None, None, {}, str(exc)
 
+    error_msg = None
     try:
-        # 2. Fetch history
         history_series = provider.fetch_history(HISTORY_DAYS)
     except Exception as exc:
         logger.error("Provider %s failed (history): %s", cat, exc)
-        if not error_msg: 
-            error_msg = str(exc)
+        error_msg = str(exc)
         history_series = None
 
-    return cat, current_score, history_series, metadata, error_msg
+    return cat, float(current_score), history_series, metadata, error_msg
+
+
+def _collect_provider_results(future_to_provider: dict, started: float) -> tuple[list, dict]:
+    """Wait for each provider until its own deadline (cycle start + its timeout).
+
+    Returns (results, timed_out) where ``timed_out`` maps category -> reason. A timed-out
+    job keeps running in the pool and is reused by the next cycle.
+    """
+    import concurrent.futures
+
+    pending = dict(future_to_provider)
+    results: list = []
+    timed_out: dict[str, str] = {}
+    while pending:
+        now = time.monotonic()
+        deadlines = {f: started + _provider_timeout(p.category) for f, p in pending.items()}
+        for future in [f for f, d in deadlines.items() if d <= now and not f.done()]:
+            provider = pending.pop(future)
+            logger.warning("Provider %s timed out", provider.category)
+            timed_out[provider.category] = "Provider timed out"
+        if not pending:
+            break
+        wait_for = max(0.0, min(deadlines[f] for f in pending) - now)
+        done, _ = concurrent.futures.wait(
+            list(pending), timeout=wait_for, return_when=concurrent.futures.FIRST_COMPLETED
+        )
+        for future in done:
+            provider = pending.pop(future)
+            try:
+                results.append(future.result())
+            except Exception as exc:  # the wrapper itself crashed
+                logger.error("Provider task %s failed unexpectedly: %s", provider.category, exc)
+                results.append((provider.category, None, None, {}, str(exc)))
+    return results, timed_out
+
 
 def aggregate_data(status_callback=None) -> dict:
     """Fetch data from all providers and assemble the dashboard data dict.
 
-    Fetches are performed in PARALLEL to ensure fast startup.
-    A timeout ensures no single provider hangs the entire app.
+    Fetches run in parallel. Each provider has its own timeout
+    (``config.PROVIDER_TIMEOUT_SECONDS`` / ``PROVIDER_TIMEOUT_OVERRIDES``); a provider
+    that fails or times out uses its last stored score while that is younger than
+    ``CATEGORY_DROP_AFTER_DAYS``, otherwise it is excluded from the composite.
 
     Returns
     -------
     dict with keys:
-        ``"dates"``            – pd.DatetimeIndex
-        ``"category_history"`` – dict[str, pd.Series]
-        ``"current_scores"``   – dict[str, float]
-        ``"map_markers"``      – list[dict]
-        ``"alerts"``           – list[dict]
-        ``"disruptions"``      – list[dict]
-        ``"briefing"``         – str
-        ``"provider_errors"``  – dict[str, str]
-        ``"market_data"``      – dict
+        ``"dates"``               – pd.DatetimeIndex
+        ``"category_history"``    – dict[str, pd.Series]
+        ``"current_scores"``      – dict[str, float] (excluded categories are absent)
+        ``"composite"``           – float | None, renormalized over present weighted categories
+        ``"excluded_categories"`` – weighted categories left out of the composite
+        ``"stale_categories"``    – categories whose metadata says ``is_stale``
+        ``"fallback_categories"`` – categories serving a stored or fallback value
+        ``"map_markers"``         – list[dict]
+        ``"alerts"``              – list[dict]
+        ``"disruptions"``         – list[dict]
+        ``"briefing"``            – str
+        ``"provider_errors"``     – dict[str, str]
+        ``"market_data"``         – dict
     """
-    import concurrent.futures
-    
     start_time = datetime.now()
     logger.info("Starting parallel data fetch...")
     if status_callback: status_callback("Starting parallel data fetch...")
@@ -700,7 +757,8 @@ def aggregate_data(status_callback=None) -> dict:
     category_history: dict[str, pd.Series] = {}
     category_metadata: dict[str, dict] = {}
     provider_errors: dict[str, str] = {}
-    
+    failed: dict[str, str] = {}  # category -> reason, for providers with no live score
+
     # Prepare the target date range for history alignment
     dates = pd.date_range(
         end=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
@@ -711,6 +769,7 @@ def aggregate_data(status_callback=None) -> dict:
     executor = _FETCH_TASKS
     try:
         # -- Submit Provider Tasks --
+        providers_started = time.monotonic()
         future_to_provider = {
             executor.submit_once(p.category, _fetch_provider_data, p): p
             for p in _PROVIDERS
@@ -720,96 +779,63 @@ def aggregate_data(status_callback=None) -> dict:
         future_news = executor.submit_once("news", fetch_supply_chain_news)
         future_market = executor.submit_once("market", _fetch_market_data)
         future_port_summaries = executor.submit_once("port_summaries", generate_port_summaries)
-        future_chokepoints = executor.submit_once("chokepoints", fetch_chokepoint_traffic)
+        future_chokepoints = executor.submit_once("chokepoint_traffic", fetch_chokepoint_traffic)
         future_register = executor.submit_once("register", run_register_cycle)
 
         # -------------------------------------------------------------------
-        # 2. Collect Results (with Timeout)
+        # 2. Collect Results (each provider until its own deadline)
         # -------------------------------------------------------------------
         # A. Process Providers
-        try:
-            if status_callback:
-                status_callback("Waiting for data providers...")
-            for future in concurrent.futures.as_completed(future_to_provider, timeout=45):
-                try:
-                    # Unpack 5 values now
-                    cat, score, hist_series, meta, err = future.result()
-                    current_scores[cat] = score
+        if status_callback:
+            status_callback("Waiting for data providers...")
+        results, timed_out = _collect_provider_results(future_to_provider, providers_started)
+        failed.update(timed_out)
+        provider_errors.update(timed_out)
 
-                    # Enrich metadata with calculated score and tier
-                    if meta:
-                        meta["score"] = round(score, 1)
-                        meta["tier"] = get_health_tier(score)
-                    else:
-                        meta = {"score": round(score, 1), "tier": get_health_tier(score)}
+        for cat, score, hist_series, meta, err in results:
+            if err:
+                provider_errors[cat] = err
+            if score is None:
+                failed[cat] = err or "Provider failed"
+                continue
 
-                    category_metadata[cat] = meta
+            current_scores[cat] = score
+            meta["score"] = round(score, 1)
+            meta["tier"] = get_health_tier(score)
+            category_metadata[cat] = meta
 
-                    # Handle industry providers that pack additional category
-                    # scores in metadata (SiliconAnalysts / Aerospace adapters
-                    # return 4 categories under one primary key). Pop so the
-                    # packed Series/tuples never leak into card modals or cache.
-                    additional_scores = meta.pop("additional_scores", None) if meta else None
-                    additional_history = meta.pop("additional_history", None) if meta else None
-                    if additional_scores:
-                        for add_cat, (add_score, add_meta) in additional_scores.items():
-                            if not math.isfinite(add_score):
-                                continue
-                            current_scores[add_cat] = float(add_score)
-                            if add_meta:
-                                add_meta["score"] = round(add_score, 1)
-                                add_meta["tier"] = get_health_tier(add_score)
-                            else:
-                                add_meta = {
-                                    "score": round(add_score, 1),
-                                    "tier": get_health_tier(add_score),
-                                }
-                            category_metadata[add_cat] = add_meta
-                            add_hist = (
-                                additional_history.get(add_cat)
-                                if additional_history
-                                else None
-                            )
-                            if add_hist is not None and not getattr(add_hist, "empty", True):
-                                category_history[add_cat] = _align_history_to_dates(
-                                    add_hist, dates, add_score
-                                )
-                            else:
-                                category_history[add_cat] = _make_fallback_series(
-                                    HISTORY_DAYS, add_cat, add_score
-                                )
-                            logger.info("Loaded %s (via %s): %.1f", add_cat, cat, add_score)
+            # Industry adapters (SiliconAnalysts / Aerospace) return 4 categories under
+            # one primary key. Pop so the packed Series/tuples never leak into card
+            # modals or cache.
+            additional_scores = meta.pop("additional_scores", None)
+            additional_history = meta.pop("additional_history", None)
+            if additional_scores:
+                for add_cat, (add_score, add_meta) in additional_scores.items():
+                    if not math.isfinite(add_score):
+                        continue
+                    current_scores[add_cat] = float(add_score)
+                    add_meta = dict(add_meta or {})
+                    add_meta["score"] = round(add_score, 1)
+                    add_meta["tier"] = get_health_tier(add_score)
+                    add_meta["is_stale"] = bool(add_meta.get("is_stale", False))
+                    category_metadata[add_cat] = add_meta
+                    add_hist = additional_history.get(add_cat) if additional_history else None
+                    category_history[add_cat] = _align_history_to_dates(add_hist, dates, add_score)
+                    logger.info("Loaded %s (via %s): %.1f", add_cat, cat, add_score)
 
-                    if err:
-                        provider_errors[cat] = err
+            # Reindex fills gaps by ffill. Dates BEFORE the first real observation stay
+            # NaN; with no history only today's live point is set.
+            category_history[cat] = _align_history_to_dates(hist_series, dates, score)
 
-                    # Align history series
-                    if hist_series is not None and not hist_series.empty:
-                        # Reindex fills gaps by ffill. Dates BEFORE the first real
-                        # observation stay NaN — backfilling them with today's
-                        # score would paint history that was never measured.
-                        category_history[cat] = _align_history_to_dates(
-                            hist_series, dates, score
-                        )
-                    else:
-                        # Fallback if history fetch failed: today's point only
-                        category_history[cat] = _make_fallback_series(HISTORY_DAYS, cat, score)
-
-                except Exception as e:
-                    # This catches timeouts or crashes in the wrapper
-                    logger.error("A provider task failed unexpectedly: %s", e)
-        except concurrent.futures.TimeoutError:
-            logger.warning("Data fetch timed out. Some providers may be missing.")
-
-        # B. Process News (AI analysis takes 20-40s — old 5s timeout killed it every time)
+        # B. Process News (AI analysis takes 20-40s — old 5s timeout killed it every time).
+        # The news score is display-only now; it never reaches a category.
         alerts = []
         briefing = ""
         full_report = ""
-        news_score: float | None = None
         try:
             if status_callback:
                 status_callback("Analyzing news feeds (AI)...")
-            news_score, alerts, briefing, full_report = future_news.result(timeout=240)
+            _news_score, alerts, briefing, full_report = future_news.result(timeout=240)
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
@@ -835,163 +861,90 @@ def aggregate_data(status_callback=None) -> dict:
             port_summaries = future_port_summaries.result(timeout=240) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
-
-        # E. Claude disruption register (shadow: stored as geo_register, not weighted)
-        register_score = None
-        try:
-            register_score = future_register.result(timeout=240)
-        except Exception as e:
-            logger.warning("Disruption register timed out or failed: %s", e)
     finally:
         # Do not block forever on a hung upstream call.
         # Running jobs remain tracked and are reused on the next refresh.
         # Never create replacement pools for calls that are still running.
-        executor.cancel_pending()
+        # The shadow register stays queued: it is collected after the composite.
+        executor.cancel_pending(keep=("register",))
 
 
     # -----------------------------------------------------------------------
-    # 3. Post-Processing (Scoring & Markers)
+    # 3. Failed providers: last stored score while recent, otherwise excluded
     # -----------------------------------------------------------------------
-    # Ensure complete datasets (fill missing providers with neutral, flagged)
-    for p in _PROVIDERS:
-        if p.category not in current_scores:
-            current_scores[p.category] = 50.0
-            category_history[p.category] = _make_fallback_series(HISTORY_DAYS, p.category, 50.0)
-            provider_errors[p.category] = "Provider timed out"
-            meta = _fallback_metadata("Provider timed out")
-            meta["score"] = 50.0
-            meta["tier"] = get_health_tier(50.0)
-            category_metadata[p.category] = meta
-
-    # Compute composite
-    from scoring.engine import compute_composite_index
-
-    # Use fresh news result as the source of truth for geopolitical current score.
-    # This avoids stale provider snapshots and keeps alerts/score aligned.
-    # The port-disruption blend is applied here too, using this cycle's port
-    # summaries, so PORT_DISRUPTION_WEIGHT actually reaches the composite.
-    if news_score is not None:
-        scoring_label = news_scoring_label()
-        geo_score, blend_suffix, blend_note = blend_port_disruption(
-            float(news_score), port_summaries or None
-        )
-        current_scores["geopolitical"] = geo_score
-        geo_meta = category_metadata.get("geopolitical", {})
-        high_sev = sum(1 for a in alerts if a.get("severity") == "high")
-        med_sev = sum(1 for a in alerts if a.get("severity") == "medium")
-        geo_meta.update(
-            {
-                "source": f"{scoring_label}{blend_suffix}",
-                "raw_value": f"{len(alerts)} articles",
-                "raw_label": "Analyzed News Volume",
-                "description": (
-                    f"Analyzed recent supply chain news. Found {high_sev} high-severity "
-                    f"and {med_sev} medium-severity risk events affecting the score.{blend_note}"
-                ),
-                "calculation": (
-                    "News score = 100 + sum of the 10 most severe negative article severities "
-                    f"({scoring_label}; deduplicated by title, total deduction floored at -60)."
-                    + (
-                        f" Blended {1 - PORT_DISRUPTION_WEIGHT:.0%}/{PORT_DISRUPTION_WEIGHT:.0%} "
-                        "with the aggregate AI port-disruption signal."
-                        if blend_suffix
-                        else ""
-                    )
-                ),
-                "updated": "Live",
-                "score": round(geo_score, 1),
-                "tier": get_health_tier(geo_score),
-                "is_fallback": False,
-            }
-        )
-        category_metadata["geopolitical"] = geo_meta
-        geo_hist = category_history.get("geopolitical")
-        if geo_hist is not None and not geo_hist.empty:
-            geo_hist.iloc[-1] = geo_score
-
-    composite = compute_composite_index(current_scores)
-
-    # AI score context for gauge hover — at most once per day (AI_CACHE_TTL_SECONDS).
-    score_explanation = ""
-    try:
-        from data.cache import get_cached, set_cached
-        from config import AI_CACHE_TTL_SECONDS, AI_FAILURE_RETRY_SECONDS
-        from data.ai_analyst import generate_score_explanation
-
-        _score_cache_key = "claude_score_explanation_v2"
-        _score_fail_key = "claude_score_explanation_failed_v1"
-        tier_label = get_health_tier(composite)["label"]
-        cached_explanation = get_cached(_score_cache_key, ttl=AI_CACHE_TTL_SECONDS)
-
-        # Reuse the cached text only while the composite is in the same tier;
-        # otherwise the hover could explain a score the gauge no longer shows.
-        if (
-            cached_explanation
-            and cached_explanation.get("text")
-            and cached_explanation.get("tier") == tier_label
-        ):
-            score_explanation = str(cached_explanation["text"])
-        elif get_cached(_score_fail_key, ttl=AI_FAILURE_RETRY_SECONDS):
-            score_explanation = ""
+    today = datetime.now(timezone.utc).date()
+    excluded_categories: list[str] = []
+    for cat in sorted(failed):
+        reason = failed[cat]
+        category_history[cat] = _empty_history(dates, cat)  # never filled for a failure
+        stored = _recent_stored_score(cat, today)
+        if stored is not None:
+            day, score = stored
+            current_scores[cat] = score
+            meta = _stored_fallback_metadata(cat, reason, day, score)
+            meta["score"] = round(score, 1)
+            meta["tier"] = get_health_tier(score)
+            category_metadata[cat] = meta
+            logger.warning("%s: using last stored score %.1f from %s", cat, score, day)
         else:
-            top_alerts = [a for a in alerts if a.get("severity") in ("high", "medium")][:5]
-            score_explanation = generate_score_explanation(
-                composite=composite,
-                tier_label=tier_label,
-                category_scores=current_scores,
-                category_metadata=category_metadata,
-                top_alerts=top_alerts,
-            )
-            if score_explanation:
-                set_cached(
-                    _score_cache_key,
-                    {"composite": composite, "tier": tier_label, "text": score_explanation},
-                )
-            else:
-                set_cached(_score_fail_key, {"composite": composite})
-    except Exception as exc:
-        logger.warning("Score explanation generation skipped: %s", exc)
+            category_metadata[cat] = _unavailable_metadata(cat, reason)
+            if cat in CATEGORY_WEIGHTS:
+                excluded_categories.append(cat)
+            logger.warning("%s: no live or recent stored score; left out", cat)
 
-    # Degradation flags: which categories are serving a fallback value
-    # instead of a measurement. Exposed via the snapshot, API, and /health.
+    # A weighted category with no result at all (should not happen) is excluded too.
+    for cat in CATEGORY_WEIGHTS:
+        if cat not in current_scores and cat not in excluded_categories:
+            excluded_categories.append(cat)
+            category_history.setdefault(cat, _empty_history(dates, cat))
+            category_metadata.setdefault(cat, _unavailable_metadata(cat, "No provider result"))
+    excluded_categories.sort()
+
+    # Composite over the weighted categories present, weights renormalized explicitly.
+    present = {cat for cat in CATEGORY_WEIGHTS if cat in current_scores}
+    composite: float | None = None
+    try:
+        weights = renormalized_weights(CATEGORY_WEIGHTS, present)
+        composite = compute_composite_index({c: current_scores[c] for c in present}, weights)
+    except ValueError as exc:
+        logger.error("Composite unavailable: %s", exc)
+
+    # Degradation flags, exposed via the snapshot, API, and /health.
     fallback_categories = sorted(
         cat for cat, meta in category_metadata.items() if meta.get("is_fallback")
     )
+    stale_categories = sorted(
+        cat for cat, meta in category_metadata.items()
+        if meta.get("is_stale") and cat in current_scores
+    )
 
-    # Map markers — requires WeatherProvider specifically
-    # We need to find the WeatherProvider instance from our list
-    weather_provider = next((p for p in _PROVIDERS if isinstance(p, WeatherProvider)), None)
-    
-    if weather_provider:
-        try:
-            map_markers = _derive_map_markers(current_scores, alerts, weather_provider, port_summaries)
-        except Exception as e:
-            logger.error("Map marker generation failed: %s", e)
-            map_markers = []
-    else:
+    # Map markers (port weather is fetched here, for the map only)
+    try:
+        map_markers = _derive_map_markers(current_scores, alerts, _WEATHER, port_summaries)
+    except Exception as e:
+        logger.error("Map marker generation failed: %s", e)
         map_markers = []
 
-    # Disruptions aggregation
+    # Disruptions aggregation, on one 0-100 impact scale.
     disruptions: list[dict] = []
 
-    # Source 1: Low-scoring categories (measured values only — a provider
-    # serving its neutral fallback is an outage, not a supply chain event)
+    # Source 1: Low-scoring categories, impact = 100 - score (measured values only — a
+    # category serving a stored fallback is an outage, not a supply chain event)
     for cat, score in current_scores.items():
         if cat in fallback_categories:
             continue
         if score < DISRUPTION_SCORE_THRESHOLD:
             severity = "Critical" if score < 40 else "Stressed"
-            impact = round((100 - score) / 10, 1)
             disruptions.append({
                 "event": f"{CATEGORY_LABELS.get(cat, cat.title())} — {severity}",
                 "region": "Global",
-                "impact_score": impact,
+                "impact_score": round(100 - score, 1),
                 "categories": [cat],
                 "started": "Ongoing",
                 "status": "Active" if score < 50 else "Monitoring",
             })
 
-    # Source 2: High-severity news alerts
+    # Source 2: High-severity news alerts, impact = |severity| x 10
     for alert in alerts:
         if alert.get("severity") == "high":
             cat = alert.get("category", "geopolitical")
@@ -1010,8 +963,7 @@ def aggregate_data(status_callback=None) -> dict:
     logger.info("Data aggregation complete in %.2fs", elapsed)
 
     try:
-        from data.database import get_daily_category_scores
-        daily_history = get_daily_category_scores(91)
+        daily_history = database.get_daily_category_scores(91)
     except Exception as e:
         logger.warning("Failed to load daily history: %s", e)
         daily_history = {"dates": [], "scores": {}}
@@ -1021,6 +973,7 @@ def aggregate_data(status_callback=None) -> dict:
         "dates": dates,
         "category_history": category_history,
         "current_scores": current_scores,
+        "composite": composite,
         "map_markers": map_markers,
         "alerts": alerts,
         "briefing": briefing,
@@ -1030,38 +983,52 @@ def aggregate_data(status_callback=None) -> dict:
         "category_metadata": category_metadata,
         "market_data": market_data,
         "chokepoints": chokepoints,
-        "score_explanation": score_explanation,
-        "degraded": bool(fallback_categories),
+        "degraded": bool(fallback_categories or excluded_categories),
         "fallback_categories": fallback_categories,
+        "excluded_categories": excluded_categories,
+        "stale_categories": stale_categories,
         "daily_history": daily_history,
     }
+
+    # E. Claude disruption register (shadow: stored as geo_register, not weighted).
+    # Collected only if it has already finished, so a slow register never delays the
+    # composite; an unfinished run stays queued and is picked up by a later cycle.
+    register_score = None
+    if future_register.done() and not future_register.cancelled():
+        try:
+            register_score = future_register.result(timeout=0)
+        except Exception as e:
+            logger.warning("Disruption register failed: %s", e)
+    else:
+        logger.info("Disruption register still running; not recorded this cycle.")
 
     # Persist the full dashboard state to disk for instant startup
     from data.cache import set_cached_dashboard
     from data.status import set_status
-    from data.database import record_daily_scores
     import json as _json
     try:
-        # Only persist measured values — fallback scores must not pollute
-        # the real daily history that trend charts are built from.
+        # Only persist measured values — stored fallback scores must not be written
+        # back as if measured today. The composite is stored only when no weighted
+        # category is excluded (history keeps a gap on degraded days).
         measured_scores = {
             cat: score for cat, score in current_scores.items()
             if cat not in fallback_categories
         }
-        if isinstance(register_score, float):
+        if isinstance(register_score, float) and math.isfinite(register_score):
             measured_scores["geo_register"] = register_score
-        record_daily_scores(composite, measured_scores)
+        database.record_daily_scores(
+            composite if not excluded_categories else None, measured_scores
+        )
         set_cached_dashboard(result)
         logger.info("Dashboard state persisted to disk (JSON/Safe).")
 
         # Persist the latest good snapshot to the database so a fresh deploy
         # (empty disk) starts from data at most an hour old. Skipped when a
-        # baseline category is serving a fallback, so outages aren't saved.
-        if not any(cat in CATEGORY_WEIGHTS for cat in fallback_categories):
+        # weighted category is excluded or serving a fallback, so outages aren't saved.
+        if not excluded_categories and not any(cat in CATEGORY_WEIGHTS for cat in fallback_categories):
             from data.cache import dashboard_to_safe_dict
-            from data.database import save_dashboard_snapshot
 
-            save_dashboard_snapshot(_json.dumps(dashboard_to_safe_dict(result), default=str))
+            database.save_dashboard_snapshot(_json.dumps(dashboard_to_safe_dict(result), default=str))
 
         if status_callback: status_callback("Data ready! Launching...")
         set_status("Data ready!")
@@ -1069,4 +1036,3 @@ def aggregate_data(status_callback=None) -> dict:
         logger.warning("Failed to persist dashboard state: %s", e)
 
     return result
-

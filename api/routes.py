@@ -2,7 +2,7 @@
 from flask import Blueprint, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from scoring import compute_composite_index
+from scoring import snapshot_composite
 
 # Create Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
@@ -47,10 +47,11 @@ def get_latest_data():
     # Actually, user asked "add this data to your project", so full snapshot is better.
     
     current_scores = data.get("current_scores", {})
+    composite = snapshot_composite(data)
     response = {
         # Actual snapshot time, not midnight of the final history date.
         "timestamp": data.get("last_updated_utc"),
-        "composite_index": round(compute_composite_index(current_scores), 1) if current_scores else None,
+        "composite_index": round(composite, 1) if composite is not None else None,
         "categories": current_scores,
         # Degradation flags: categories listed here are serving a neutral
         # fallback value (provider failure), not a measurement.
@@ -87,8 +88,9 @@ def get_newsletter_data():
         return jsonify({"error": "No cached data available"}), 503
 
     current_scores = data.get("current_scores", {})
+    composite = snapshot_composite(data)
     return jsonify({
         "current_scores": current_scores,
         "briefing": data.get("briefing", ""),
-        "composite_index": round(compute_composite_index(current_scores), 1) if current_scores else None,
+        "composite_index": round(composite, 1) if composite is not None else None,
     }), 200
