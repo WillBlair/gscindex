@@ -4,12 +4,15 @@ Rebuild the stored daily category scores with the new methodology (v2).
     DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/rebuild_category_history.py
     ... scripts/rebuild_category_history.py --days 92 --write
 
-For each weighted category the provider's own ``fetch_history`` supplies the real
+For each weighted category, and for each sector category (the three Semis and four Aero
+categories in ``config.SECTORS``), the provider's own ``fetch_history`` supplies the real
 source-series scores, dated by publication lag (NaN where nothing was measured). The rebuild
 covers the ``--days`` dates ending yesterday (UTC); today's row belongs to the live
-aggregator. The composite for a date is the weighted composite of all eight categories and is
-written only when every category has a value that day, otherwise that date keeps a gap.
-The register (``geo_register``) and the industry categories are not touched.
+aggregator. The composite for a date is the weighted composite of the eight global categories
+and is written only when every one has a value that day, otherwise that date keeps a gap.
+Sector categories feed no composite: ``daily_scores`` is the global index only, and a sector
+index is computed from its category rows when it is shown. The register (``geo_register``)
+and the retired industry categories (``chip_*``, ``aero_metals`` and the like) are not touched.
 
 Default is a dry run: it reads the current rows, writes
 ``data/backups/rebuild_dryrun_<date>.csv`` (date, category, old, new) and prints a summary.
@@ -19,7 +22,7 @@ Nothing is written to the database.
 ``data/backups/category_scores_pre_v2_<date>_<HHMMSS>.csv`` (a new file each run, never
 overwritten), checks the export against a COUNT of the rows in the database, then upserts.
 It aborts if the export fails or does not match. It never deletes and never writes NaN.
-It refuses when any category failed to fetch unless ``--allow-partial`` is passed, and when
+It refuses when any category (global or sector) failed to fetch, or has no value in the window, unless ``--allow-partial`` is passed, and when
 the resolved database is Postgres unless the environment variable ``CONFIRM_PROD_REBUILD=yes``
 is set.
 """
@@ -63,23 +66,33 @@ class BackupError(RuntimeError):
     """The pre-rebuild export could not be made or verified, so nothing was written."""
 
 
+def rebuild_categories() -> tuple[str, ...]:
+    """Every category the rebuild covers: the global weighted ones, then each sector's."""
+    sector = [cat for spec in config.SECTORS.values() for cat in spec["weights"]]
+    return (*config.CATEGORY_WEIGHTS, *sector)
+
+
 def default_providers() -> dict:
-    """One instance of each weighted category's provider, keyed by category."""
+    """One instance of each rebuilt category's provider (global and sector), keyed by category."""
     from data.providers.chokepoints import ChokepointsProvider
     from data.providers.energy import EnergyProvider
     from data.providers.freight import FreightProvider
     from data.providers.geopolitical import GeopoliticalProvider
     from data.providers.inputs import InputsProvider
     from data.providers.physical import PhysicalProvider
+    from data.providers.aero import FlowProvider, ForgeCastProvider, MillPricesProvider, ThroughputProvider
+    from data.providers.semis import FabUtilizationProvider, LogicPricesProvider, MemoryPricesProvider
     from data.providers.supply_chain import SupplyChainProvider
     from data.providers.tariffs import TariffsProvider
 
     providers = {p.category: p for p in (
         SupplyChainProvider(), ChokepointsProvider(), EnergyProvider(), TariffsProvider(),
-        GeopoliticalProvider(), FreightProvider(), InputsProvider(), PhysicalProvider())}
-    missing = set(config.CATEGORY_WEIGHTS) - set(providers)
+        GeopoliticalProvider(), FreightProvider(), InputsProvider(), PhysicalProvider(),
+        MemoryPricesProvider(), LogicPricesProvider(), FabUtilizationProvider(),
+        ThroughputProvider(), FlowProvider(), MillPricesProvider(), ForgeCastProvider())}
+    missing = set(rebuild_categories()) - set(providers)
     if missing:
-        raise RuntimeError(f"no provider for weighted categories: {sorted(missing)}")
+        raise RuntimeError(f"no provider for rebuilt categories: {sorted(missing)}")
     return providers
 
 
@@ -129,7 +142,7 @@ def _history_on(series: pd.Series, dates: list[date]) -> pd.Series:
 
 
 def build_new_scores(providers: dict, days: int, today: date) -> tuple[dict[str, pd.Series], dict[str, str]]:
-    """Each weighted category's rebuilt scores on the window, and why any category failed.
+    """Each rebuilt category's (global and sector) scores on the window, and why any category failed.
 
     A history with no finite value inside the window counts as failed, the same as a raise:
     writing the other categories alone would leave mixed-method rows.
@@ -137,7 +150,7 @@ def build_new_scores(providers: dict, days: int, today: date) -> tuple[dict[str,
     dates = _window(days, today)
     new: dict[str, pd.Series] = {}
     failed: dict[str, str] = {}
-    for cat in config.CATEGORY_WEIGHTS:
+    for cat in rebuild_categories():
         try:
             history = providers[cat].fetch_history(days + EXTRA_FETCH_DAYS)
             new[cat] = _history_on(history, dates)
@@ -171,7 +184,7 @@ def write_dryrun_csv(result: RebuildResult, path: Path) -> None:
         writer = csv.writer(fh)
         writer.writerow(["date", "category", "old", "new"])
         for d in result.dates:
-            for cat in (*config.CATEGORY_WEIGHTS, COMPOSITE):
+            for cat in (*rebuild_categories(), COMPOSITE):
                 old = result.old.get((d, cat))
                 new = result.composite.get(d) if cat == COMPOSITE else result.new[cat].get(d)
                 if old is None and (new is None or not math.isfinite(new)):
@@ -209,7 +222,7 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
 
     if write and database.get_db_type() == "sqlite":
         database.init_db()              # a fresh dev database has no tables yet
-    keys = (*config.CATEGORY_WEIGHTS, COMPOSITE)
+    keys = (*rebuild_categories(), COMPOSITE)
     # On the write path the read is strict: a query error must abort, never yield an empty backup.
     try:
         stored = database.export_category_rows(dates[0], list(keys), strict=write)
@@ -251,9 +264,9 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
 
 def summarize(result: RebuildResult) -> str:
     lines = [f"Window: {result.dates[0]} to {result.dates[-1]} ({len(result.dates)} dates, today excluded)"]
-    lines.append(f"{'category':<14}{'new rows':>9}{'no old':>8}{'changed':>9}{'mean |delta|':>14}")
+    lines.append(f"{'category':<24}{'new rows':>9}{'no old':>8}{'changed':>9}{'mean |delta|':>14}")
     total_new = total_changed = 0
-    for cat in (*config.CATEGORY_WEIGHTS, COMPOSITE):
+    for cat in (*rebuild_categories(), COMPOSITE):
         series = (pd.Series(result.composite).reindex(result.dates) if cat == COMPOSITE
                   else result.new[cat])
         new_rows = no_old = changed = 0
@@ -273,7 +286,8 @@ def summarize(result: RebuildResult) -> str:
         total_new += new_rows
         total_changed += changed + no_old
         mean = f"{sum(deltas) / len(deltas):.2f}" if deltas else "n/a"
-        lines.append(f"{cat:<14}{new_rows:>9}{no_old:>8}{changed:>9}{mean:>14}")
+        lines.append(f"{cat:<24}{new_rows:>9}{no_old:>8}{changed:>9}{mean:>14}")
+    lines.append("(composite is the global index only; the sector indexes have no stored rows of their own)")
     lines.append(f"Rows that would be written: {total_new}; of those, new or changed by 0.05+ points: {total_changed}")
     for cat, why in result.failed_categories.items():
         lines.append(f"FAILED {cat}: {why}")

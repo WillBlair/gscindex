@@ -31,9 +31,9 @@ class FakeProvider:
 
 
 def _providers(overrides: dict[date, float] | None = None, missing: dict[str, set] | None = None):
-    """Every weighted category at a constant 50 + offset, with optional per-category gaps."""
+    """Every global and sector category at a constant 50 + offset, with optional per-category gaps."""
     out = {}
-    for i, cat in enumerate(config.CATEGORY_WEIGHTS):
+    for i, cat in enumerate(rebuild.rebuild_categories()):
         gaps = (missing or {}).get(cat, set())
         values = {TODAY - timedelta(days=n): 50.0 + i for n in range(0, 200)
                   if (TODAY - timedelta(days=n)) not in gaps}
@@ -190,6 +190,83 @@ def test_upsert_helpers_skip_non_finite(sqlite_db):
     assert database.export_category_rows(d, ["freight", "composite"]) == [(d, "freight", 40.0)]
 
 
+# ---------------------------------------------------------------- sector categories
+
+SECTOR_CATEGORIES = [c for spec in config.SECTORS.values() for c in spec["weights"]]
+
+
+def test_rebuild_includes_sector_categories(sqlite_db, tmp_path):
+    assert len(SECTOR_CATEGORIES) == 7
+    assert rebuild.rebuild_categories() == (*config.CATEGORY_WEIGHTS, *SECTOR_CATEGORIES)
+    assert set(rebuild.default_providers()) == set(rebuild.rebuild_categories())   # constructors only
+
+    yesterday = TODAY - timedelta(days=1)
+    _seed(sqlite_db, [(yesterday.isoformat(), "aero_flow", 12.0), (yesterday.isoformat(), "chip_fab_util", 9.0)],
+          [(yesterday.isoformat(), 11.0)])
+    backups = tmp_path / "backups"
+    result = rebuild.run(days=3, write=True, providers=_providers(), today=TODAY, backup_dir=backups, now=NOW1)
+
+    assert set(result.new) == set(rebuild.rebuild_categories())
+    n_global = len(config.CATEGORY_WEIGHTS)
+    expected = sum(w * (50.0 + i) for i, w in enumerate(config.CATEGORY_WEIGHTS.values()))
+    assert all(v == pytest.approx(expected) for v in result.composite.values())   # sectors never feed it
+
+    cats, comp = _all_rows(sqlite_db)
+    by_key = {(d, c): s for d, c, s in cats}
+    for i, cat in enumerate(SECTOR_CATEGORIES):
+        assert by_key[(yesterday.isoformat(), cat)] == pytest.approx(50.0 + n_global + i)
+    assert by_key[(yesterday.isoformat(), "chip_fab_util")] == 9.0                # retired rows untouched
+    assert len(comp) == 3 and {d for d, _ in comp} == {(TODAY - timedelta(days=n)).isoformat() for n in (1, 2, 3)}
+    assert {c for _, c, _ in cats} <= {*rebuild.rebuild_categories(), "chip_fab_util"}   # no sector composite rows
+
+    with open(result.csv_path, newline="") as fh:
+        in_csv = {r["category"] for r in csv.DictReader(fh)}
+    assert set(SECTOR_CATEGORIES) <= in_csv and "semiconductor" not in in_csv and "aerospace" not in in_csv
+    saved = {(r[0], r[1]): float(r[2]) for r in list(csv.reader(open(result.backup_path)))[1:]}
+    assert saved[(yesterday.isoformat(), "aero_flow")] == 12.0                    # backup holds the old sector row
+    text = rebuild.summarize(result)
+    assert all(cat in text for cat in SECTOR_CATEGORIES)
+
+
+@pytest.mark.parametrize("cat", ["semis_memory_prices", "aero_forge_cast"])
+def test_rebuild_sector_partial_refused(cat, sqlite_db, tmp_path, monkeypatch):
+    providers = _providers()
+
+    def boom(days):
+        raise RuntimeError("BOJ unavailable")
+    providers[cat].fetch_history = boom
+    calls = _spy_upserts(monkeypatch)
+    backups = tmp_path / "backups"
+
+    with pytest.raises(rebuild.WriteRefused, match=cat):
+        rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups, now=NOW1)
+    assert calls == [] and not list(backups.glob("category_scores_pre_v2_*"))
+
+    result = rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups,
+                         now=NOW1, allow_partial=True)
+    assert list(result.failed_categories) == [cat]
+    assert all(c != cat for kind, rows in calls if kind == "cat" for _, c, _ in rows)
+    assert any(c in SECTOR_CATEGORIES for kind, rows in calls if kind == "cat" for _, c, _ in rows)
+
+
+def test_rebuild_sector_empty_in_window_counts_as_failed(sqlite_db, tmp_path, monkeypatch):
+    providers = _providers()
+    providers["aero_throughput"].fetch_history = lambda days: pd.Series(
+        [60.0], index=pd.DatetimeIndex([pd.Timestamp(TODAY - timedelta(days=60))]))
+    calls = _spy_upserts(monkeypatch)
+    with pytest.raises(rebuild.WriteRefused, match="aero_throughput"):
+        rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=tmp_path, now=NOW1)
+    assert calls == []
+
+
+def test_sector_failure_does_not_remove_global_composite(sqlite_db, tmp_path):
+    providers = _providers()
+    providers["semis_memory_prices"].fetch_history = lambda days: (_ for _ in ()).throw(RuntimeError("down"))
+    result = rebuild.run(days=3, providers=providers, today=TODAY, backup_dir=tmp_path)
+    assert len(result.composite) == 3 and result.dates_without_composite == []
+    assert list(result.failed_categories) == ["semis_memory_prices"]
+
+
 # ---------------------------------------------------------------- backtest helpers
 
 def test_backtest_widens_fred_windows_and_restores_them_after_an_error():
@@ -226,6 +303,65 @@ def test_backtest_lookup_is_none_without_a_measurement():
     assert bt.lookup(s, date(2020, 4, 16)) is None
     assert bt.lookup(s, date(2008, 7, 15)) is None
     assert bt.lookup(None, date(2008, 7, 15)) is None
+
+
+# ---------------------------------------------------------------- backtest sector section
+
+def test_sector_index_needs_the_coverage_minimum():
+    from scripts import backtest_composite as bt
+    semis = {"semis_memory_prices": 90.0, "semis_logic_prices": 60.0, "semis_fab_utilization": None}
+    assert bt.sector_index(semis, "semiconductor") == (pytest.approx(75.0), 2)
+    assert bt.sector_index({**semis, "semis_logic_prices": None}, "semiconductor") == (None, 1)
+    aero = {"aero_throughput": 80.0, "aero_flow": 70.0, "aero_mill_prices": None, "aero_forge_cast": None}
+    assert bt.sector_index(aero, "aerospace") == (None, 2)          # 3 of 4 needed
+    aero["aero_forge_cast"] = 30.0
+    assert bt.sector_index(aero, "aerospace") == (pytest.approx(60.0), 3)
+    assert bt.sector_index({}, "aerospace") == (None, 0)
+
+
+def test_sector_episodes_and_render_use_n_a_below_coverage():
+    from scripts import backtest_composite as bt
+    assert [label for _, label in bt.SECTOR_EPISODES["semiconductor"]] == [
+        "2021-06", "2021-12", "2022-06", "2023-03", "2024-06"]
+    assert [label for _, label in bt.SECTOR_EPISODES["aerospace"]] == [
+        "2019-06", "2020-06", "2022-06", "2023-09", "2024-10"]
+    labels = ["2021-06", "today 2026-10-22"]
+    table = {"2021-06": {"aero_throughput": 80.0, "aero_flow": None, "aero_mill_prices": None, "aero_forge_cast": None},
+             "today 2026-10-22": {"aero_throughput": 80.0, "aero_flow": 76.0, "aero_mill_prices": 74.0,
+                                  "aero_forge_cast": 37.0}}
+    text = bt.render_sector("aerospace", labels, table)
+    index_line = next(line for line in text.splitlines() if line.startswith("Aero index"))
+    assert "n/a" in index_line and "66.8" in index_line
+
+
+def test_sector_collect_looks_up_each_episode_and_survives_failures():
+    from scripts import backtest_composite as bt
+
+    class P:
+        def __init__(self, value=None):
+            self.value = value
+
+        def fetch_history(self, days):
+            if self.value is None:
+                raise RuntimeError("down")
+            return pd.Series(self.value, index=pd.date_range("2018-01-01", "2026-10-22", freq="D"))
+
+        def fetch_current(self):
+            if self.value is None:
+                raise RuntimeError("down")
+            return self.value + 1, {}
+
+    providers = {c: P(70.0) for c in config.SECTORS["aerospace"]["weights"]}
+    providers["aero_flow"] = P(None)
+    labels, table = bt.collect_sector("aerospace", providers, TODAY)
+    assert labels[-1] == f"today {TODAY.isoformat()}"
+    assert table["2019-06"]["aero_throughput"] == 70.0 and table["2019-06"]["aero_flow"] is None
+    assert table[labels[-1]]["aero_throughput"] == 71.0
+
+
+def test_backtest_widens_sector_fred_windows_too():
+    from scripts import backtest_composite as bt
+    assert {"SEMIS_FRED_LOOKBACK_DAYS", "AERO_FRED_LOOKBACK_DAYS"} <= set(bt.FRED_WINDOWS)
 
 
 # ---------------------------------------------------------------- backup safety (fix round 2)
