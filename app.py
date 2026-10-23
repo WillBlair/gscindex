@@ -67,8 +67,9 @@ _KEY_MIGRATIONS: dict[str, str] = {
 def _migrate_keys(data: dict) -> dict:
     """Remap legacy category keys to current names in-place.
 
-    The retired industry categories (``config.RETIRED_CATEGORIES``) are dropped, so an old
-    snapshot never shows them.
+    The retired industry categories (``config.RETIRED_CATEGORIES``) are dropped, with their
+    disruptions, so an old snapshot never shows them; ``degraded`` is recomputed from the
+    remaining global fallback and excluded lists.
     """
     for section in ("current_scores", "category_history", "category_metadata"):
         sub = data.get(section)
@@ -86,6 +87,13 @@ def _migrate_keys(data: dict) -> dict:
     for section in ("fallback_categories", "stale_categories", "excluded_categories"):
         if isinstance(data.get(section), list):
             data[section] = [c for c in data[section] if c not in RETIRED_CATEGORIES]
+    if isinstance(data.get("disruptions"), list):
+        data["disruptions"] = [
+            d for d in data["disruptions"]
+            if not (isinstance(d, dict) and RETIRED_CATEGORIES & set(d.get("categories") or []))
+        ]
+    if "degraded" in data:
+        data["degraded"] = bool(data.get("fallback_categories") or data.get("excluded_categories"))
     return data
 
 

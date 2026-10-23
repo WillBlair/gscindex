@@ -219,6 +219,13 @@ def _old_snapshot(data: dict) -> dict:
         raw["category_history"][key] = raw["category_history"]["energy"]
         raw["daily_history"]["scores"][key] = [50.0] * len(raw["daily_history"]["dates"])
     raw["fallback_categories"] = list(_OLD_KEYS)
+    raw["degraded"] = True
+    raw["disruptions"] = raw["disruptions"] + [
+        {"event": "Fab Utilization — Critical", "region": "Global", "impact_score": 60.0,
+         "categories": ["chip_fab_util"], "started": "Ongoing", "status": "Active"},
+        {"event": "Aero Metals — Stressed", "region": "Global", "impact_score": 45.0,
+         "categories": ["aero_metals", "energy"], "started": "Ongoing", "status": "Monitoring"},
+    ]
     return raw
 
 
@@ -237,15 +244,54 @@ def test_old_snapshot_startup_ok(harness, monkeypatch):
     assert application._has_current_categories(v2) is True
 
     # An old snapshot loads, with the retired industry keys stripped everywhere.
+    global_disruptions = _disruptions(data)
+    assert global_disruptions and data["degraded"] is False
     raw = application._migrate_keys(_old_snapshot(data))
     assert application._has_current_categories(raw) is True
     for section in ("current_scores", "category_metadata", "category_history"):
         assert not set(raw[section]) & set(_OLD_KEYS), section
     assert not set(raw["daily_history"]["scores"]) & set(_OLD_KEYS)
     assert not set(raw["fallback_categories"]) & set(_OLD_KEYS)
+    # Their disruptions go too, and degraded follows the remaining global lists.
+    assert _disruptions(raw) == global_disruptions
+    assert raw["degraded"] is False
     state = reconstruct_dashboard_state(raw)
 
     # The page renders from it.
     monkeypatch.setattr(application, "_DATA_CACHE", state)
     monkeypatch.setattr("data.cache.get_cached_dashboard", lambda: None)
     assert application.app.layout() is not None
+
+
+def test_hung_sector_jobs_never_delay_global_providers(harness, monkeypatch):
+    """Sector providers run on their own pool: hung sector jobs that outlive their deadline
+    never hold a worker a global provider needs, in the same cycle or the next."""
+    import threading
+    import time
+
+    from data.runtime import RefreshTasks
+
+    run, _ = harness
+    monkeypatch.setattr(config, "SECTOR_PROVIDER_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(config, "PROVIDER_TIMEOUT_SECONDS", 3.0)
+    monkeypatch.setattr(config, "PROVIDER_TIMEOUT_OVERRIDES", {})
+    release = threading.Event()
+    providers = [_Provider(c) for c in CATEGORY_WEIGHTS] + [
+        _Provider(c, score=s, block=release) for c, s in _SECTOR_SCORES.items()]
+    tasks, sector_tasks = RefreshTasks(max_workers=3), RefreshTasks(max_workers=2)
+    try:
+        for cycle in (1, 2):
+            started = time.monotonic()
+            data = run(providers, tasks=tasks, sector_tasks=sector_tasks)
+            elapsed = time.monotonic() - started
+            assert elapsed < 2.0, cycle
+            assert set(CATEGORY_WEIGHTS) <= set(data["current_scores"]), cycle
+            assert data["excluded_categories"] == [] and data["degraded"] is False, cycle
+            assert not set(data["provider_errors"]) & set(CATEGORY_WEIGHTS), cycle
+            for block in data["sectors"].values():
+                assert block["index"] is None and block["coverage"] == 0
+            assert data["provider_errors"]["aero_flow"] == "Provider timed out"
+    finally:
+        release.set()
+        tasks.shutdown()
+        sector_tasks.shutdown()

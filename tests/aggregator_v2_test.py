@@ -75,8 +75,10 @@ def harness(monkeypatch):
     """Patch everything aggregate_data touches; returns (run, recorded)."""
     recorded = {"record": [], "snapshot": 0}
 
-    def run(providers=None, *, last=None, register=None, news=None, tasks=None, daily=None):
+    def run(providers=None, *, last=None, register=None, news=None, tasks=None, daily=None,
+            sector_tasks=None):
         monkeypatch.setattr(aggregator, "_FETCH_TASKS", tasks or _SyncTasks())
+        monkeypatch.setattr(aggregator, "_SECTOR_TASKS", sector_tasks or _SyncTasks())
         monkeypatch.setattr(
             aggregator, "_PROVIDERS",
             providers if providers is not None else [_Provider(c) for c in CATEGORY_WEIGHTS])

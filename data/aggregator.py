@@ -63,11 +63,14 @@ from data.runtime import RefreshTasks
 
 logger = logging.getLogger(__name__)
 _FETCH_TASKS = RefreshTasks(max_workers=3)
+# The sector providers run on their own small pool, so a hung sector job can never hold a
+# worker that a global provider or the news / market jobs need, in this cycle or the next.
+_SECTOR_TASKS = RefreshTasks(max_workers=2)
 
 # The eight weighted categories plus the seven sector categories, instantiated once. The
 # slow global ones (freight, physical) follow the fast ones so those finish inside their 45 s
 # before freight and physical take workers; their own timeouts are longer
-# (PROVIDER_TIMEOUT_OVERRIDES). The sector providers go last so they never delay a global one.
+# (PROVIDER_TIMEOUT_OVERRIDES). The sector providers run on _SECTOR_TASKS.
 _PROVIDERS = [
     SupplyChainProvider(),
     ChokepointsProvider(),
@@ -545,7 +548,8 @@ def aggregate_data(status_callback=None) -> dict:
         # -- Submit Provider Tasks --
         providers_started = time.monotonic()
         future_to_provider = {
-            executor.submit_once(p.category, _fetch_provider_data, p): p
+            (_SECTOR_TASKS if p.category in _SECTOR_OF else executor).submit_once(
+                p.category, _fetch_provider_data, p): p
             for p in _PROVIDERS
         }
 
@@ -626,6 +630,7 @@ def aggregate_data(status_callback=None) -> dict:
         # Never create replacement pools for calls that are still running.
         # The shadow register stays queued: it is collected after the composite.
         executor.cancel_pending(keep=("register",))
+        _SECTOR_TASKS.cancel_pending()
 
 
     # -----------------------------------------------------------------------
