@@ -1,0 +1,101 @@
+{
+ "kr_dram_xpi_yoy": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": -73.309477,
+  "normal": -15.454568,
+  "worst": 151.293429,
+  "baseline": "1991-01 to 2019-12 (348 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2010-01",
+  "generated": "2026-10-23",
+  "source": "BOK export price index, DRAM, USD basis, YoY %"
+ },
+ "kr_nand_xpi_yoy": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": -65.776142,
+  "normal": -22.849027,
+  "worst": 159.904182,
+  "baseline": "2001-01 to 2019-12 (228 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2009-11",
+  "generated": "2026-10-23",
+  "source": "BOK export price index, flash memory, USD basis, YoY %"
+ },
+ "us_semi_import_px_yoy": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": -12.584355,
+  "normal": -3.034134,
+  "worst": 16.158114,
+  "baseline": "1985-12 to 2019-12 (337 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 1988-12",
+  "generated": "2026-10-23",
+  "source": "BLS import price index (end use) semiconductors IR21320, YoY %"
+ },
+ "us_semi_ppi_yoy": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": -9.77333,
+  "normal": -2.962626,
+  "worst": 11.343687,
+  "baseline": "1968-01 to 2019-12 (622 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 1974-11",
+  "generated": "2026-10-23",
+  "source": "BLS PPI semiconductor & related devices PCU334413334413, YoY %"
+ },
+ "kr_syssemi_xpi_yoy": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": -15.598108,
+  "normal": -3.128725,
+  "worst": 10.342076,
+  "baseline": "1991-01 to 2019-12 (348 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2021-12",
+  "generated": "2026-10-23",
+  "source": "BOK export price index, system (non-memory) semiconductors, USD, YoY %"
+ },
+ "us_semi_util": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": 64.752125,
+  "normal": 80.0655,
+  "worst": 93.1827,
+  "baseline": "1972-01 to 2019-12 (576 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2000-07",
+  "generated": "2026-10-23",
+  "source": "Fed G.17 capacity utilization NAICS 3344 (%), level"
+ },
+ "kr_semi_util_0519": {
+  "transform": "identity",
+  "direction": "lower_better",
+  "best": 74.1537,
+  "normal": 88.504,
+  "worst": 124.6,
+  "baseline": "2005-01 to 2019-12 (180 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2022-01",
+  "generated": "2026-10-23",
+  "source": "Statistics Korea semiconductor capacity-utilization index (SA, 2020=100), level; baseline 2005-19 because of 1980-2004 drift"
+ },
+ "kr_ic_export_vol_yoy": {
+  "transform": "identity",
+  "direction": "higher_better",
+  "best": 73.003513,
+  "normal": 26.87617,
+  "worst": -44.444444,
+  "baseline": "2001-01 to 2019-12 (228 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2008-12",
+  "generated": "2026-10-23",
+  "source": "BOK export volume index, integrated circuits, YoY % (shown to illustrate sign ambiguity)"
+ },
+ "us_semi_capacity_yoy": {
+  "transform": "identity",
+  "direction": "higher_better",
+  "best": 53.286998,
+  "normal": 15.909241,
+  "worst": -5.834239,
+  "baseline": "1973-01 to 2019-12 (564 months)",
+  "worst_basis": "worst monthly mean through 2025-12: 2018-02",
+  "generated": "2026-10-23",
+  "source": "Fed G.17 capacity NAICS 3344, YoY % (shown to illustrate)"
+ }
+}
