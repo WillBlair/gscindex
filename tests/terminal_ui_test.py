@@ -278,13 +278,17 @@ def test_briefing_strips_one_bullet_marker_only():
 
 def test_map_keeps_port_hover_text():
     marker = {"name": "Test port", "lat": 1, "lon": 2, "score": 43.0,
-              "description": '<b>Region:</b> East Asia<br><b>AI Status:</b> Delays after storm.<br><b>[HIGH]</b> Terminal closure reported'}
+              "description": "<b>Composite:</b> 47<br><b>Weather:</b> 28°C, Overcast (88)"
+                             "<br><b>Penalty:</b> -25.0 pts (AI port summary)<br><b>AI Status:</b> Delays after storm."}
     hover = build_world_map([marker]).data[0].text[0]
-    assert "Region: East Asia" in plain_text(hover)
-    assert "Delays after storm." in hover
-    assert "Terminal closure reported" in hover
     assert "43.0 / 100" in hover
+    assert "Delays after storm." in hover
     assert "<b>Port update:</b>" in hover
+    # Each field is its own paragraph: Penalty must not run into the Weather line.
+    paragraphs = hover.split("<br><br>")
+    assert any(p.startswith("<b>Penalty:</b>") for p in paragraphs)
+    assert not any("Overcast" in p and "Penalty" in p for p in paragraphs)
+    assert any(p.startswith("<b>Composite:</b>") for p in paragraphs)
 
 
 def test_map_uses_terminal_palette_and_relative_red_to_green_scale():

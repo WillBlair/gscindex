@@ -1,8 +1,8 @@
 """
 News Alerts (display only)
 ==========================
-Supply chain headlines for the Headlines pane, the briefing, the /report page and the map's
-news penalty. News feeds no category score (Geopolitical is the GPR index).
+Supply chain headlines for the Headlines pane, the briefing and the /report page. News feeds
+no category score (Geopolitical is the GPR index) and does not touch the port map.
 
 Claude scores headlines incrementally: every ``NEWS_AI_REFRESH_SECONDS`` the RSS feeds are
 read and only headlines Claude has not judged yet are sent to ``analyze_news_batch``; earlier

@@ -432,7 +432,7 @@ category gets an all-NaN history.
 
 ### Map Markers
 
-Per port: 0.6 × the index composite + 0.4 × the local weather score (composite alone if weather is missing; weather alone if there is no composite; no marker if both are missing), minus `max(news penalty, AI penalty)`. The news penalty is the largest matched-article penalty (high 30, medium 15, low 5) plus 20% of the rest, capped at 50; the AI penalty is Claude's per-port `disruption_penalty`, clamped 0–50. Port keywords match on word boundaries. 37 ports total. Generated in `_derive_map_markers()`. There is no regional profile and no structural vulnerability penalty.
+Per port: 0.6 × the index composite + 0.4 × the local weather score (composite alone if weather is missing; weather alone if there is no composite; no marker if both are missing), minus Claude's per-port `disruption_penalty` (clamped 0–50) from the port summaries. Headlines are not matched to ports and never appear in the port hover (removed 2026-10-23 at Will's request: a headline can say anything, including a question). The port keyword lists and `keyword_in_text` in `ports_data.py` remain but nothing scores with them. 37 ports total. Generated in `_derive_map_markers()`. There is no regional profile and no structural vulnerability penalty.
 
 ### Post-Processing
 

@@ -34,7 +34,7 @@ from config import (
     HISTORY_DAYS,
 )
 from data import database
-from data.ports_data import MAJOR_PORTS, keyword_in_text
+from data.ports_data import MAJOR_PORTS
 
 from data.providers.chokepoints import ChokepointsProvider
 from data.providers.energy import EnergyProvider
@@ -48,7 +48,7 @@ from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
-from data.news_alerts import _is_irrelevant_article, fetch_supply_chain_news, scoring_label
+from data.news_alerts import fetch_supply_chain_news, scoring_label
 from data.port_analyst import generate_port_summaries
 from data.portwatch import fetch_chokepoint_traffic
 from data.register import run_register_cycle
@@ -175,23 +175,8 @@ def _empty_history(dates: pd.DatetimeIndex, name: str) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-# News penalty tables + helpers
+# Map marker helpers
 # ---------------------------------------------------------------------------
-
-_DIRECT_PENALTY: dict[str, float] = {"high": 30, "medium": 15, "low": 5}
-
-def _severity_label(severity: float) -> str:
-    """Human-readable label for an alert severity score.
-
-    Alert ``sentiment`` values are Claude severity scores (-10..+10).
-    Thresholds match ``_score_to_severity`` in ``data.news_alerts``.
-    """
-    if severity <= -4.0:
-        return "Severe"
-    if severity <= -1.5:
-        return "Significant"
-    return "Minor"
-
 
 def _wrap_text(text: str, max_chars: int = 40) -> str:
     """Wrap text with <br> tags to prevent Plotly tooltips from overflowing mobile screens."""
@@ -210,46 +195,8 @@ def _wrap_text(text: str, max_chars: int = 40) -> str:
     return "<br>".join(lines)
 
 
-def _match_news_to_ports(
-    alerts: list[dict],
-) -> dict[str, list[dict]]:
-    """Match negative news alerts to ports via keyword scanning.
-
-    Articles that are clearly irrelevant (sports, lifestyle, exam prep,
-    crypto, entertainment) are filtered out before matching, preventing
-    garbage from polluting port scores.
-
-    Returns
-    -------
-    dict[str, list[dict]]
-        port name → [alert, ...]
-    """
-    port_news: dict[str, list[dict]] = {}
-
-    for alert in alerts:
-        # For Port Risk Scoring, ONLY consider negative news.
-        # Neutral/Positive news is fine for the feed, but shouldn't penalize port scores.
-        # Unscored headlines (no Claude severity) never penalize a port.
-        sentiment = alert.get("sentiment")
-        if not isinstance(sentiment, (int, float)) or sentiment >= -0.05:
-            continue
-
-        text = f"{alert.get('title', '')} {alert.get('body', '')}".lower()
-
-        if _is_irrelevant_article(text):
-            logger.debug("Skipping irrelevant article: %s", alert.get("title", ""))
-            continue
-
-        for name, _lat, _lon, direct_kw in MAJOR_PORTS:
-            if any(keyword_in_text(kw, text) for kw in direct_kw):
-                port_news.setdefault(name, []).append(alert)
-
-    return port_news
-
-
 def _derive_map_markers(
     composite: float | None,
-    alerts: list[dict],
     weather_provider: WeatherProvider,
     port_summaries: dict[str, str] | None = None,
 ) -> list[dict]:
@@ -261,9 +208,8 @@ def _derive_map_markers(
         2. **Local weather** (40%) — real-time conditions at the port's exact
            lat/lon, fetched in one batched Open-Meteo call. Without a weather
            reading the port scores on the composite alone.
-        3. **Penalty** — the larger of the news penalty (Claude-scored
-           headlines matched to the port by keyword, capped at 50) and the AI
-           port summary's ``disruption_penalty`` (0–50).
+        3. **Penalty** — the AI port summary's ``disruption_penalty`` (0–50).
+           Headlines are not matched to ports and never appear in the hover.
 
     With no composite a port scores on local weather alone; a port with neither
     is left off the map. No input is ever replaced by a made-up constant.
@@ -277,9 +223,6 @@ def _derive_map_markers(
     except Exception as exc:
         logger.warning("Port weather unavailable, map uses the composite alone: %s", exc)
         batch_weather = {}
-
-    # ── Match news to ports ──────────────────────────────────────
-    port_news = _match_news_to_ports(alerts)
 
     for name, lat, lon, _direct_kw in MAJOR_PORTS:
         wx = batch_weather.get(name, {})
@@ -295,54 +238,6 @@ def _derive_map_markers(
         else:
             base = composite * 0.60 + local_weather * 0.40
 
-        # ── News penalty ─────────────────────────────────────────
-        matched = port_news.get(name, [])
-
-        raw_penalties = []
-        news_lines: list[str] = []
-
-        for article in matched:
-            severity = article.get("severity") or "low"
-            sentiment = article.get("sentiment", 0)
-            title = article.get("title", "Unknown event")
-            description = article.get("body", "")
-
-            wrapped_title = _wrap_text(title, max_chars=40)
-
-            # Show a brief snippet of the description so users see WHY it's red
-            short_desc = description[:100] + "..." if len(description) > 100 else description
-            wrapped_desc = _wrap_text(short_desc, max_chars=45) if short_desc else ""
-
-            label = _severity_label(sentiment)
-
-            penalty = _DIRECT_PENALTY.get(severity, 2)
-            raw_penalties.append(penalty)
-
-            sev_tag = severity.upper()
-
-            if wrapped_desc:
-                news_lines.append(
-                    f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
-                    f"<i>{wrapped_desc}</i><br>"
-                    f"   {label} severity ({sentiment:+.1f}) · Direct impact"
-                )
-            else:
-                news_lines.append(
-                    f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
-                    f"   {label} severity ({sentiment:+.1f}) · Direct impact"
-                )
-
-        # Diminishing returns penalty calculation to prevent excessive stacking
-        if raw_penalties:
-            raw_penalties.sort(reverse=True)
-            max_penalty = raw_penalties[0]
-            additional_penalty = sum(raw_penalties[1:]) * 0.20
-            news_penalty = max_penalty + additional_penalty
-        else:
-            news_penalty = 0.0
-
-        news_penalty = min(news_penalty, 50.0)
-
         # ── AI-generated port summary & dynamic penalty ────────────────
         ai_data = port_summaries.get(name, {}) if port_summaries else {}
         if isinstance(ai_data, str):
@@ -350,10 +245,7 @@ def _derive_map_markers(
         elif not isinstance(ai_data, dict):
             ai_data = {}
         ai_summary = ai_data.get("summary", "")
-        ai_penalty = float(ai_data.get("disruption_penalty", 0.0))
-
-        # One penalty, from whichever source is larger (never summed)
-        final_penalty = max(news_penalty, ai_penalty)
+        final_penalty = float(ai_data.get("disruption_penalty", 0.0))
 
         # ── Final score ──────────────────────────────────────────
         score = round(max(0.0, min(100.0, base - final_penalty)), 1)
@@ -369,15 +261,9 @@ def _derive_map_markers(
         if local_weather is not None:
             lines.append(f"<b>Weather:</b> {weather_summary or 'Local conditions'} ({local_weather:.0f})")
         if final_penalty > 0:
-            source = "AI port summary" if ai_penalty > news_penalty else "news"
-            lines.append(f"<b>Penalty:</b> -{final_penalty:.1f} pts ({source})")
+            lines.append(f"<b>Penalty:</b> -{final_penalty:.1f} pts (AI port summary)")
         if ai_summary:
             lines.append(f"<b>AI Status:</b> <i>{_wrap_text(ai_summary, max_chars=45)}</i>")
-
-        if news_lines:
-            lines.append("────────────")
-            for nl in news_lines[:3]:
-                lines.append(nl)
 
         markers.append({
             "name": name,
@@ -757,7 +643,7 @@ def aggregate_data(status_callback=None) -> dict:
 
     # Map markers (port weather is fetched here, for the map only)
     try:
-        map_markers = _derive_map_markers(composite, alerts, _WEATHER, port_summaries)
+        map_markers = _derive_map_markers(composite, _WEATHER, port_summaries)
     except Exception as e:
         logger.error("Map marker generation failed: %s", e)
         map_markers = []

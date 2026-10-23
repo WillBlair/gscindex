@@ -800,7 +800,7 @@ _DOCS_MARKDOWN = """
 
 <div class="section-heading"><span class="section-num">6.</span><h2>Port map</h2></div>
 <hr class="section-rule">
-<p>Each of the 37 ports scores 60% of the composite plus 40% of its local weather (Open-Meteo: weather code, wind gusts, the day's precipitation and temperature). It then loses the larger of two penalties: a news penalty from headlines that name the port (high 30, medium 15, low 5, plus 20% of the rest, capped at 50) or Claude's port penalty (0 to {port_penalty_max}). Weather is shown on the map only and is not part of the composite.</p>
+<p>Each of the 37 ports scores 60% of the composite plus 40% of its local weather (Open-Meteo: weather code, wind gusts, the day's precipitation and temperature). It then loses Claude's port penalty (0 to {port_penalty_max}), set from the day's port summary. Headlines are not matched to ports and do not change a port's score. Weather is shown on the map only and is not part of the composite.</p>
 
 <div class="section-heading"><span class="section-num">7.</span><h2>Public API</h2></div>
 <hr class="section-rule">

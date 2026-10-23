@@ -32,7 +32,7 @@ def _port_hover_text(marker: dict) -> str:
             continue
         # Field labels and severity tags start sections; all other breaks were
         # inserted by the aggregator to fit its old, smaller hover label.
-        starts_section = re.match(r"^(?:Region|Structural risk|Top risk|Main drags|Weather|AI Status|AI Penalty|Global alert|Global):|^\[(?:HIGH|MEDIUM|LOW)\]", text)
+        starts_section = re.match(r"^(?:Composite|Weather|Penalty|AI Status):", text)
         if starts_section or not sections:
             sections.append(text)
         else:

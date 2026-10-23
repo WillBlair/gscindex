@@ -411,13 +411,6 @@ def test_fallback_briefing_handles_unscored_alerts():
     assert "Unscored story" in text
 
 
-def test_map_skips_unscored_alerts():
-    from data.aggregator import _match_news_to_ports
-
-    alerts = [{"title": "Rotterdam port strike", "body": "", "sentiment": None, "severity": None}]
-    assert _match_news_to_ports(alerts) == {}
-
-
 # --- VADER ----------------------------------------------------------------------------------
 
 def test_no_vader_dependency():
