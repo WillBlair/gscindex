@@ -52,7 +52,8 @@ def _global_view(data):
 
 def test_sector_categories_have_their_own_timeout_and_drop_window():
     for cat in _SECTOR_CATS:
-        assert aggregator._provider_timeout(cat) == config.SECTOR_PROVIDER_TIMEOUT_SECONDS
+        expected = config.SECTOR_PROVIDER_TIMEOUT_OVERRIDES.get(cat, config.SECTOR_PROVIDER_TIMEOUT_SECONDS)
+        assert aggregator._provider_timeout(cat) == expected
         assert aggregator._drop_after_days(cat) == config.SECTOR_DROP_AFTER_DAYS
     assert aggregator._drop_after_days("energy") == config.CATEGORY_DROP_AFTER_DAYS["energy"]
     assert aggregator._provider_timeout("energy") == config.PROVIDER_TIMEOUT_SECONDS
@@ -273,6 +274,7 @@ def test_hung_sector_jobs_never_delay_global_providers(harness, monkeypatch):
 
     run, _ = harness
     monkeypatch.setattr(config, "SECTOR_PROVIDER_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(config, "SECTOR_PROVIDER_TIMEOUT_OVERRIDES", {})
     monkeypatch.setattr(config, "PROVIDER_TIMEOUT_SECONDS", 3.0)
     monkeypatch.setattr(config, "PROVIDER_TIMEOUT_OVERRIDES", {})
     release = threading.Event()
@@ -360,3 +362,34 @@ def test_hung_sector_job_does_not_delay_global_collection(harness, monkeypatch):
         1 - CATEGORY_WEIGHTS["energy"])
     assert data["composite"] == pytest.approx(expected)
     assert data["sectors"]["aerospace"]["excluded_categories"] == ["aero_flow"]
+
+
+def test_sector_timeout_overrides_for_the_multi_call_aero_providers(monkeypatch):
+    """Forgings & Castings makes 3 FRED calls and Mill Prices 2 (15 s each plus the CSV
+    fallback), so they get longer sector deadlines; with global collected first this cannot
+    delay Global."""
+    import concurrent.futures
+    import time
+    from types import SimpleNamespace
+
+    assert config.SECTOR_PROVIDER_TIMEOUT_OVERRIDES == {"aero_forge_cast": 120, "aero_mill_prices": 90}
+    assert aggregator._provider_timeout("aero_forge_cast") == 120.0
+    assert aggregator._provider_timeout("aero_mill_prices") == 90.0
+    assert aggregator._provider_timeout("aero_flow") == config.SECTOR_PROVIDER_TIMEOUT_SECONDS
+    assert aggregator._provider_timeout("energy") == config.PROVIDER_TIMEOUT_SECONDS
+    assert set(config.SECTOR_PROVIDER_TIMEOUT_OVERRIDES) <= _SECTOR_CATS
+
+    # Applied in the collect loop: the same 0.5 s job times out at the 0.2 s default but is
+    # kept under a 2 s override.
+    monkeypatch.setattr(config, "SECTOR_PROVIDER_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(config, "SECTOR_PROVIDER_TIMEOUT_OVERRIDES", {"aero_forge_cast": 2.0})
+
+    def job(cat):
+        time.sleep(0.5)
+        return cat, 50.0, None, {}, None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {pool.submit(job, c): SimpleNamespace(category=c) for c in ("aero_forge_cast", "aero_flow")}
+        results, timed_out = aggregator._collect_provider_results(futures, time.monotonic())
+    assert [r[0] for r in results] == ["aero_forge_cast"]
+    assert timed_out == {"aero_flow": "Provider timed out"}

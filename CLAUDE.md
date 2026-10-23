@@ -151,7 +151,8 @@ Background daemon thread (every 5 min)
     a worker a global job needs. Global provider futures are collected first, on the global
     deadlines alone; sector futures are collected last, after news and port summaries
   → each provider has its own deadline (45 s; 150 s for freight and physical;
-    SECTOR_PROVIDER_TIMEOUT_SECONDS 60 for sector providers)
+    SECTOR_PROVIDER_TIMEOUT_SECONDS 60 for sector providers, SECTOR_PROVIDER_TIMEOUT_OVERRIDES
+    aero_forge_cast 120, aero_mill_prices 90)
   → failed/timed-out category: last stored score while younger than CATEGORY_DROP_AFTER_DAYS
     (flagged fallback + stale), otherwise excluded; InputsExpired (every input past its drop
     window) is excluded at once, no stored score
@@ -449,7 +450,8 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 _FETCH_TASKS = RefreshTasks(max_workers=3)    # data/runtime.py; one outstanding job per task key, reused across cycles
 _SECTOR_TASKS = RefreshTasks(max_workers=2)   # the 7 sector providers only, so a hung sector job never starves Global
 # Provider deadlines counted from cycle start: PROVIDER_TIMEOUT_SECONDS 45, overrides physical 150, freight 150,
-# sector providers SECTOR_PROVIDER_TIMEOUT_SECONDS 60
+# sector providers SECTOR_PROVIDER_TIMEOUT_SECONDS 60, overrides aero_forge_cast 120, aero_mill_prices 90
+# (SECTOR_PROVIDER_TIMEOUT_OVERRIDES: 3 and 2 FRED calls at 15 s each plus the CSV fallback)
 # news 240 s, market 30 s, chokepoint traffic 30 s, port summaries 240 s
 # The register is collected only if already finished (never delays the composite)
 ```

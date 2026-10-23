@@ -504,6 +504,10 @@ SECTOR_DROP_AFTER_DAYS: int = 150
 
 # Seconds the aggregator waits for each sector provider, counted from the start of its cycle.
 SECTOR_PROVIDER_TIMEOUT_SECONDS: float = 60
+# Longer deadlines for the sector providers that make several FRED calls (15 s each, plus the
+# public CSV fallback): Forgings & Castings reads 3 series, Mill Prices 2. The aggregator collects
+# sector futures after the global ones, so these never delay Global.
+SECTOR_PROVIDER_TIMEOUT_OVERRIDES: dict[str, float] = {"aero_forge_cast": 120, "aero_mill_prices": 90}
 
 # Categories of the industry profiles retired in project 3 (Silicon Analysts and the old aerospace
 # adapter). Their stored rows stay in the database untouched; the aggregator never reads them and

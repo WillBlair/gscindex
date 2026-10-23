@@ -14,7 +14,8 @@ This is the main entry point for data. It:
     4. Computes and stores the composite (``result["composite"]``)
     5. Computes the sector indexes (``result["sectors"]``, ``config.SECTORS``) from their own
        categories only. Sector categories run in the same cycle with the same fallback and
-       exclusion rules (``SECTOR_DROP_AFTER_DAYS``, ``SECTOR_PROVIDER_TIMEOUT_SECONDS``) but never
+       exclusion rules (``SECTOR_DROP_AFTER_DAYS``, ``SECTOR_PROVIDER_TIMEOUT_SECONDS`` and
+       ``SECTOR_PROVIDER_TIMEOUT_OVERRIDES``), collected after the global providers, but never
        touch the composite, the global disruptions or the global degraded / fallback / stale /
        excluded lists
     6. Assembles alerts from the RSS news pipeline and the port map
@@ -298,7 +299,7 @@ def _derive_map_markers(
 def _provider_timeout(category: str) -> float:
     """Seconds to wait for one provider, counted from the start of the cycle."""
     if category in _SECTOR_OF:
-        return float(config.SECTOR_PROVIDER_TIMEOUT_SECONDS)
+        return float(config.SECTOR_PROVIDER_TIMEOUT_OVERRIDES.get(category, config.SECTOR_PROVIDER_TIMEOUT_SECONDS))
     return float(config.PROVIDER_TIMEOUT_OVERRIDES.get(category, config.PROVIDER_TIMEOUT_SECONDS))
 
 

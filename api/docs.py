@@ -584,6 +584,7 @@ def _docs_values() -> dict[str, str]:
         "timeout": f"{config.PROVIDER_TIMEOUT_SECONDS:g}",
         "timeout_long": f"{max(config.PROVIDER_TIMEOUT_OVERRIDES.values()):g}",
         "sector_timeout": f"{config.SECTOR_PROVIDER_TIMEOUT_SECONDS:g}",
+        "sector_timeout_long": f"{max(config.SECTOR_PROVIDER_TIMEOUT_OVERRIDES.values()):g}",
     }
 
 
@@ -1061,7 +1062,7 @@ flowchart LR
     <div class="p-card">
         <h3>Background data pipeline</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> every 5 minutes the providers run 3 at a time. Each has {timeout} seconds ({timeout_long} for Freight and Physical); one that runs over is treated as failed. The sector providers run 2 at a time on their own pool, {sector_timeout} seconds each, so a slow sector source never holds up a global one.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> every 5 minutes the providers run 3 at a time. Each has {timeout} seconds ({timeout_long} for Freight and Physical); one that runs over is treated as failed. The sector providers run 2 at a time on their own pool, {sector_timeout} seconds each (up to {sector_timeout_long} for the Aero categories that read several series). They are collected after the global ones, so a slow sector source never holds up a global one.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> results are saved to disk. A fresh deploy loads the last snapshot saved in the database, then a committed fallback snapshot if it is under 14 days old.</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> page loads read the in-memory snapshot and never call a data source.</div></div>
         </div>

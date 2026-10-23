@@ -214,3 +214,11 @@ def test_docs_sector_worst_months_agree_with_the_anchors_file():
     for key in ("boj_memory", "boj_logic", "fab_util_3344", "aero_caputl", "aero_inv_ship", "ppi_ti_mill",
                 "ppi_ni_mill", "ppi_ti_forge", "ppi_nonferrous_forge", "ppi_steel_invest_cast"):
         assert key in docs.WORST_MONTHS, key
+
+
+def test_docs_states_the_sector_timeout_overrides(body):
+    text = _text(body)
+    longest = max(config.SECTOR_PROVIDER_TIMEOUT_OVERRIDES.values())
+    assert (f"{config.SECTOR_PROVIDER_TIMEOUT_SECONDS:g} seconds each (up to {longest:g} for the Aero "
+            "categories that read several series)") in text
+    assert "collected after the global ones" in text
