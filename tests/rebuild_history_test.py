@@ -319,44 +319,82 @@ def test_sector_index_needs_the_coverage_minimum():
     assert bt.sector_index({}, "aerospace") == (None, 0)
 
 
-def test_sector_episodes_and_render_use_n_a_below_coverage():
+def test_sector_episode_labels_match_the_brief():
     from scripts import backtest_composite as bt
-    assert [label for _, label in bt.SECTOR_EPISODES["semiconductor"]] == [
+    assert [label for _, label in bt.sector_episodes("semiconductor")] == [
         "2021-06", "2021-12", "2022-06", "2023-03", "2024-06"]
-    assert [label for _, label in bt.SECTOR_EPISODES["aerospace"]] == [
+    assert [label for _, label in bt.sector_episodes("aerospace")] == [
         "2019-06", "2020-06", "2022-06", "2023-09", "2024-10"]
-    labels = ["2021-06", "today 2026-10-22"]
-    table = {"2021-06": {"aero_throughput": 80.0, "aero_flow": None, "aero_mill_prices": None, "aero_forge_cast": None},
-             "today 2026-10-22": {"aero_throughput": 80.0, "aero_flow": 76.0, "aero_mill_prices": 74.0,
-                                  "aero_forge_cast": 37.0}}
-    text = bt.render_sector("aerospace", labels, table)
+
+
+def test_sector_episode_lag_comes_from_the_providers_lag_keys(monkeypatch):
+    from scripts import backtest_composite as bt
+    providers = rebuild.default_providers()
+    semis_cats, aero_cats = (list(config.SECTORS[s]["weights"]) for s in ("semiconductor", "aerospace"))
+    assert set().union(*(bt.provider_lag_keys(providers[c]) for c in semis_cats)) == {"boj_cgpi", "g17"}
+    assert set().union(*(bt.provider_lag_keys(providers[c]) for c in aero_cats)) == {"g17", "census_m3", "bls_ppi"}
+    assert bt.sector_episodes("semiconductor", providers)[0][0] == date(2021, 7, 16)    # June end + 16
+    assert bt.sector_episodes("aerospace", providers)[0][0] == date(2019, 8, 4)         # June end + 35
+
+    # A change to what a provider reads (here: a slower M3 lag) moves the episode dates with it.
+    monkeypatch.setitem(config.PUBLICATION_LAG_DAYS, "census_m3", 50)
+    assert bt.sector_episodes("aerospace", providers)[0][0] == date(2019, 8, 19)
+    # The Semis lag follows the slowest of its own keys, so a slower BOJ lag takes over from g17.
+    monkeypatch.setitem(config.PUBLICATION_LAG_DAYS, "boj_cgpi", 30)
+    assert bt.sector_episodes("semiconductor", providers)[0][0] == date(2021, 7, 30)
+
+
+def test_sector_render_shows_n_a_below_coverage_and_the_index_value():
+    from scripts import backtest_composite as bt
+    today = "today 2026-10-22"
+    sparse = {"aero_throughput": 80.0, "aero_flow": None, "aero_mill_prices": None, "aero_forge_cast": None}
+    full = {"aero_throughput": 80.0, "aero_flow": 76.0, "aero_mill_prices": 74.0, "aero_forge_cast": 37.0}
+    labels, table = ["2021-06", today], {"2021-06": sparse, today: full}
+    assert bt.sector_index(sparse, "aerospace") == (None, 1)
+    expected, present = bt.sector_index(full, "aerospace")
+    assert present == 4 and expected == pytest.approx((80 + 76 + 74 + 37) / 4)
+
+    text = bt.render(labels, table, "aerospace", bt.sector_episodes("aerospace"))
     index_line = next(line for line in text.splitlines() if line.startswith("Aero index"))
-    assert "n/a" in index_line and "66.8" in index_line
+    cells = index_line.split()
+    assert cells[2] == "n/a" and float(cells[3]) == pytest.approx(expected, abs=0.05)
+    assert "2019-06 on 2019-08-04" in text.splitlines()[-1]       # the lookup-date footnote
+    assert not any("composite" in line for line in text.splitlines())   # no global rows in a sector table
 
 
-def test_sector_collect_looks_up_each_episode_and_survives_failures():
+def test_collect_looks_up_the_sector_episode_dates_not_the_global_ones():
     from scripts import backtest_composite as bt
 
     class P:
-        def __init__(self, value=None):
-            self.value = value
+        """History whose value on each day is that day's ordinal, so the lookup date is visible."""
+        def __init__(self, ok=True):
+            self.ok = ok
 
         def fetch_history(self, days):
-            if self.value is None:
+            if not self.ok:
                 raise RuntimeError("down")
-            return pd.Series(self.value, index=pd.date_range("2018-01-01", "2026-10-22", freq="D"))
+            index = pd.date_range("2008-01-01", TODAY, freq="D")
+            return pd.Series([float(d.toordinal()) for d in index], index=index)
 
         def fetch_current(self):
-            if self.value is None:
+            if not self.ok:
                 raise RuntimeError("down")
-            return self.value + 1, {}
+            return 71.0, {}
 
-    providers = {c: P(70.0) for c in config.SECTORS["aerospace"]["weights"]}
-    providers["aero_flow"] = P(None)
-    labels, table = bt.collect_sector("aerospace", providers, TODAY)
-    assert labels[-1] == f"today {TODAY.isoformat()}"
-    assert table["2019-06"]["aero_throughput"] == 70.0 and table["2019-06"]["aero_flow"] is None
-    assert table[labels[-1]]["aero_throughput"] == 71.0
+    cats = list(config.SECTORS["aerospace"]["weights"])
+    providers = {c: P() for c in cats}
+    providers["aero_flow"] = P(ok=False)
+    episodes = bt.sector_episodes("aerospace", rebuild.default_providers())
+    labels, table = bt.collect(providers, TODAY, episodes, cats)
+
+    assert labels == [label for _, label in episodes] + [f"today {TODAY.isoformat()}"]
+    for d, label in episodes:                                       # each sector episode date is what was looked up
+        assert table[label]["aero_throughput"] == float(d.toordinal())
+        assert table[label]["aero_flow"] is None                    # a failed provider is n/a, not a crash
+    assert set(table[labels[0]]) == set(cats)                       # sector categories only, no global ones
+    assert table[labels[-1]]["aero_throughput"] == 71.0 and table[labels[-1]]["aero_flow"] is None
+    global_dates = {d for d, _ in bt.EPISODES}
+    assert not global_dates & {d for d, _ in episodes}
 
 
 def test_backtest_widens_sector_fred_windows_too():

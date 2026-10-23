@@ -71,28 +71,32 @@ FRED_WINDOWS = ("ENERGY_FRED_LOOKBACK_DAYS", "INPUTS_FRED_LOOKBACK_DAYS",
 WIDE_FRED_DAYS = 80 * 365
 
 # Sector episodes: (year, month) of the reading. The lookup date is the first day every input
-# for that month was public, from the publication lags in config (the slowest input of the sector).
+# for that month was public: month end plus the slowest publication lag among the lag keys the
+# sector's own providers declare (so a provider change moves the dates with it).
 SECTOR_EPISODE_MONTHS: dict[str, list[tuple[int, int]]] = {
     "semiconductor": [(2021, 6), (2021, 12), (2022, 6), (2023, 3), (2024, 6)],
     "aerospace": [(2019, 6), (2020, 6), (2022, 6), (2023, 9), (2024, 10)],
 }
-SECTOR_LAG_KEYS: dict[str, tuple[str, ...]] = {
-    "semiconductor": ("boj_cgpi", "g17"),
-    "aerospace": ("g17", "census_m3", "bls_ppi"),
-}
 
 
-def sector_episodes(sector: str) -> list[tuple[date, str]]:
+def provider_lag_keys(provider) -> set[str]:
+    """The PUBLICATION_LAG_DAYS keys a sector provider reads: its own ``lag_key`` (Semis) or one
+    per input (Aero)."""
+    if getattr(provider, "inputs", ()):
+        return {spec.lag_key for spec in provider.inputs}
+    return {provider.lag_key}
+
+
+def sector_episodes(sector: str, providers: dict | None = None) -> list[tuple[date, str]]:
     """(lookup date, label) per episode month: month end plus the sector's slowest publication lag."""
-    lag = max(config.PUBLICATION_LAG_DAYS[k] for k in SECTOR_LAG_KEYS[sector])
+    providers = providers if providers is not None else default_providers()
+    keys = set().union(*(provider_lag_keys(providers[cat]) for cat in config.SECTORS[sector]["weights"]))
+    lag = max(config.PUBLICATION_LAG_DAYS[k] for k in keys)
     out = []
     for year, month in SECTOR_EPISODE_MONTHS[sector]:
         month_end = (date(year + month // 12, month % 12 + 1, 1)) - timedelta(days=1)
         out.append((month_end + timedelta(days=lag), f"{year}-{month:02d}"))
     return out
-
-
-SECTOR_EPISODES: dict[str, list[tuple[date, str]]] = {sector: sector_episodes(sector) for sector in SECTOR_EPISODE_MONTHS}
 
 
 @contextmanager
@@ -158,13 +162,19 @@ def default_providers() -> dict:
     return providers()
 
 
-def collect(providers: dict, today: date, episodes=EPISODES) -> tuple[list[str], dict[str, dict[str, float | None]]]:
-    """Scores per column label per category: episode dates plus today."""
+def collect(providers: dict, today: date, episodes=EPISODES,
+            categories=None) -> tuple[list[str], dict[str, dict[str, float | None]]]:
+    """Scores per column label per category: episode dates plus today.
+
+    ``categories`` defaults to the global weighted categories; pass a sector's categories with
+    that sector's episodes for a sector table.
+    """
+    categories = list(config.CATEGORY_WEIGHTS if categories is None else categories)
     first = min(d for d, _ in episodes)
     days = (today - first).days + LEAD_IN_DAYS
     labels = [label for _, label in episodes] + [f"today {today.isoformat()}"]
     table: dict[str, dict[str, float | None]] = {label: {} for label in labels}
-    for cat in config.CATEGORY_WEIGHTS:
+    for cat in categories:
         provider = providers[cat]
         started = time.monotonic()
         try:
@@ -184,66 +194,31 @@ def collect(providers: dict, today: date, episodes=EPISODES) -> tuple[list[str],
     return labels, table
 
 
-def collect_sector(sector: str, providers: dict, today: date) -> tuple[list[str], dict[str, dict[str, float | None]]]:
-    """Scores per column label per sector category: the sector's episode dates plus today."""
-    episodes = SECTOR_EPISODES[sector]
-    first = min(d for d, _ in episodes)
-    days = (today - first).days + LEAD_IN_DAYS
-    labels = [label for _, label in episodes] + [f"today {today.isoformat()}"]
-    table: dict[str, dict[str, float | None]] = {label: {} for label in labels}
-    for cat in config.SECTORS[sector]["weights"]:
-        provider = providers[cat]
-        started = time.monotonic()
-        try:
-            history = provider.fetch_history(days)
-        except Exception as exc:
-            logger.warning("%s: history unavailable: %s", cat, exc)
-            history = None
-        for d, label in episodes:
-            table[label][cat] = lookup(history, d)
-        try:
-            score, _ = provider.fetch_current()
-            table[labels[-1]][cat] = _finite(score)
-        except Exception as exc:
-            logger.warning("%s: fetch_current failed: %s", cat, exc)
-            table[labels[-1]][cat] = None
-        logger.info("%s done in %.1fs", cat, time.monotonic() - started)
-    return labels, table
-
-
-def render_sector(sector: str, labels: list[str], table: dict[str, dict[str, float | None]]) -> str:
-    spec = config.SECTORS[sector]
+def render(labels: list[str], table: dict[str, dict[str, float | None]],
+           sector: str | None = None, episodes=None) -> str:
+    """The global table, or with ``sector`` that sector's table (``episodes`` are its lookup dates)."""
+    spec = config.SECTORS[sector] if sector else None
+    weights = spec["weights"] if spec else config.CATEGORY_WEIGHTS
     width = max(len(label) for label in labels) + 2
     head = f"{'':<28}" + "".join(f"{label:>{width}}" for label in labels)
     cell = lambda v: "n/a" if v is None else f"{v:.1f}"  # noqa: E731
-    lines = [f"{spec['title']} index", head, "-" * len(head)]
-    for cat, weight in spec["weights"].items():
-        lines.append(f"{cat + f' ({weight:.0%})':<28}" + "".join(f"{cell(table[l][cat]):>{width}}" for l in labels))
+    row = lambda name, values: f"{name:<28}" + "".join(f"{v:>{width}}" for v in values)  # noqa: E731
+    lines = ([f"{spec['title']} index"] if spec else []) + [head, "-" * len(head)]
+    for cat, weight in weights.items():
+        lines.append(row(f"{cat} ({weight:.0%})", [cell(table[label][cat]) for label in labels]))
     lines.append("-" * len(head))
-    results = {label: sector_index(table[label], sector) for label in labels}
-    lines.append(f"{spec['label'] + ' index':<28}" + "".join(f"{cell(results[l][0]):>{width}}" for l in labels))
-    lines.append(f"{'categories present':<28}" + "".join(f"{results[l][1]:>{width}}" for l in labels))
-    lines.append(f"{spec['label']} index: mean of the categories present; n/a below {spec['min_categories']} of "
-                 f"{len(spec['weights'])}. Episode months are read on the first day all their inputs were public: "
-                 + ", ".join(f"{label} on {d.isoformat()}" for d, label in SECTOR_EPISODES[sector]) + ".")
-    return "\n".join(lines)
-
-
-def render(labels: list[str], table: dict[str, dict[str, float | None]]) -> str:
-    cats = list(config.CATEGORY_WEIGHTS)
-    width = max(len(label) for label in labels) + 2
-    head = f"{'':<28}" + "".join(f"{label:>{width}}" for label in labels)
-    cell = lambda v: "n/a" if v is None else f"{v:.1f}"  # noqa: E731
-    lines = [head, "-" * len(head)]
-    for cat in cats:
-        lines.append(f"{cat + f' ({config.CATEGORY_WEIGHTS[cat]:.0%})':<28}"
-                     + "".join(f"{cell(table[l][cat]):>{width}}" for l in labels))
-    lines.append("-" * len(head))
+    if spec:
+        results = {label: sector_index(table[label], sector) for label in labels}
+        lines.append(row(f"{spec['label']} index", [cell(results[label][0]) for label in labels]))
+        lines.append(row("categories present", [results[label][1] for label in labels]))
+        lines.append(f"{spec['label']} index: mean of the categories present; n/a below {spec['min_categories']} of "
+                     f"{len(weights)}. Episode months are read on the first day all their inputs were public: "
+                     + ", ".join(f"{label} on {d.isoformat()}" for d, label in episodes or []) + ".")
+        return "\n".join(lines)
     results = {label: composites(table[label]) for label in labels}
-    lines.append(f"{'composite (all 8)':<28}" + "".join(f"{cell(results[l][0]):>{width}}" for l in labels))
-    lines.append(f"{'categories present':<28}" + "".join(f"{results[l][2]:>{width}}" for l in labels))
-    lines.append(f"{'composite (available, renorm.)':<28}"
-                 + "".join(f"{cell(results[l][1]):>{width}}" for l in labels))
+    lines.append(row("composite (all 8)", [cell(results[label][0]) for label in labels]))
+    lines.append(row("categories present", [results[label][2] for label in labels]))
+    lines.append(row("composite (available, renorm.)", [cell(results[label][1]) for label in labels]))
     lines.append("")
     lines.append("composite (all 8): the index as defined; n/a when any category has no measurement that day.")
     lines.append("composite (available, renorm.): NOT the index. Categories that exist that day, weights "
@@ -267,9 +242,14 @@ def main(argv: list[str] | None = None) -> int:
     providers = default_providers()
     with widened_fred_windows():
         labels, table = collect(providers, today)
-        sector_tables = {sector: collect_sector(sector, providers, today) for sector in config.SECTORS}
+        sector_tables = {}
+        for sector in config.SECTORS:
+            episodes = sector_episodes(sector, providers)
+            sector_tables[sector] = (episodes, *collect(
+                providers, today, episodes, config.SECTORS[sector]["weights"]))
     text = "\n\n".join([render(labels, table)]
-                        + [render_sector(sector, *sector_tables[sector]) for sector in config.SECTORS])
+                        + [render(sector_labels, sector_table, sector, episodes)
+                           for sector, (episodes, sector_labels, sector_table) in sector_tables.items()])
     print(text)
     if not args.no_save:
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
