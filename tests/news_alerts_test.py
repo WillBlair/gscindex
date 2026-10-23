@@ -45,12 +45,14 @@ def env(monkeypatch):
     web = mock.Mock(return_value=[])
     batch = mock.Mock(side_effect=lambda arts: (_analysis(arts), "• Briefing bullet."))
     report = mock.Mock(return_value="## Critical Disruptions\nReport.")
+    briefing = mock.Mock(return_value="• Merged briefing.")
     monkeypatch.setattr(news_alerts, "fetch_rss_articles", rss)
     monkeypatch.setattr(news_alerts, "search_supply_chain_news", web)
     monkeypatch.setattr(news_alerts, "analyze_news_batch", batch)
     monkeypatch.setattr(news_alerts, "generate_full_report", report)
+    monkeypatch.setattr(news_alerts, "generate_briefing", briefing)
     monkeypatch.setattr(news_alerts.llm, "is_configured", lambda: True)
-    return {"store": store, "rss": rss, "web": web, "batch": batch, "report": report}
+    return {"store": store, "rss": rss, "web": web, "batch": batch, "report": report, "briefing": briefing}
 
 
 def _seed(store, alerts, *, now=None, **fields):
@@ -106,6 +108,7 @@ def test_incremental_scoring_only_sends_new_titles(env):
     assert len(alerts) == 4
     assert env["web"].call_count == 0          # web search runs on the daily full run only
     assert env["report"].call_count == 0       # report and briefing too
+    assert env["briefing"].call_count == 0
     assert briefing == "• Cached briefing." and report == "## Cached report"
     payload = env["store"][news_alerts.NEWS_CACHE_KEY]
     assert payload["stale"] is False
@@ -147,10 +150,70 @@ def test_full_run_adds_web_search_and_regenerates_briefing_and_report(env):
 
     assert env["web"].call_count == 1
     assert {a["title"] for a in env["batch"].call_args.args[0]} == {"Diesel prices jump", "Hormuz traffic halted (web)"}
-    assert briefing == "• Briefing bullet."
+    assert briefing == "• Merged briefing."
     assert report == "## Critical Disruptions\nReport."
     payload = env["store"][news_alerts.NEWS_CACHE_KEY]
     assert payload["ai_generated_at"] == pytest.approx(now, abs=5)
+
+
+def _full_run_seed(env, now):
+    cached = [_cached_alert("Port strike in Rotterdam", published="2026-10-21T10:00:00+00:00", sentiment=-2.0),
+              _cached_alert("Suez canal closed", published="2026-10-20T10:00:00+00:00", sentiment=-8.0),
+              _cached_alert("Diesel prices ease", published="2026-10-21T12:00:00+00:00", sentiment=-2.0)]
+    _seed(env["store"], cached, now=now, ai_generated_at=now - AI_CACHE_TTL_SECONDS - 1,
+          claude_ok_at=now - 60)
+    env["rss"].return_value = [_article("Port strike in Rotterdam")]   # nothing new
+
+
+def test_full_run_with_nothing_new_still_rebuilds_briefing_from_merged_alerts(env):
+    now = time.time()
+    _full_run_seed(env, now)
+
+    _, briefing, _ = news_alerts.fetch_supply_chain_news()
+
+    assert env["batch"].call_count == 0
+    assert briefing == "• Merged briefing."
+    inputs = env["briefing"].call_args.args[0]
+    # Most severe first, then newest within a severity; title plus Claude summary.
+    assert [i["title"].split(" - ")[0] for i in inputs] == [
+        "Suez canal closed", "Diesel prices ease", "Port strike in Rotterdam"]
+    assert inputs[0]["title"] == "Suez canal closed - Summary."
+    payload = env["store"][news_alerts.NEWS_CACHE_KEY]
+    assert payload["ai_generated_at"] == pytest.approx(now, abs=5)
+
+
+def test_failed_briefing_keeps_cache_and_retries_soon(env):
+    from config import AI_FAILURE_RETRY_SECONDS
+
+    now = time.time()
+    _full_run_seed(env, now)
+    env["briefing"].return_value = ""
+
+    _, briefing, _ = news_alerts.fetch_supply_chain_news()
+
+    assert briefing == "• Cached briefing."
+    payload = env["store"][news_alerts.NEWS_CACHE_KEY]
+    assert payload["ai_generated_at"] == pytest.approx(
+        now - AI_CACHE_TTL_SECONDS + AI_FAILURE_RETRY_SECONDS, abs=5)
+
+
+def test_failed_scoring_skips_paid_report_and_briefing(env):
+    from config import AI_FAILURE_RETRY_SECONDS
+
+    now = time.time()
+    _seed(env["store"], [_cached_alert("Port strike in Rotterdam")], now=now,
+          ai_generated_at=now - AI_CACHE_TTL_SECONDS - 1)
+    env["rss"].return_value = [_article("Diesel prices jump")]
+    env["batch"].side_effect = None
+    env["batch"].return_value = ({}, "")
+
+    _, briefing, report = news_alerts.fetch_supply_chain_news()
+
+    assert env["report"].call_count == 0 and env["briefing"].call_count == 0
+    assert briefing == "• Cached briefing." and report == "## Cached report"
+    payload = env["store"][news_alerts.NEWS_CACHE_KEY]
+    assert payload["ai_generated_at"] == pytest.approx(
+        now - AI_CACHE_TTL_SECONDS + AI_FAILURE_RETRY_SECONDS, abs=5)
 
 
 def test_keeps_newest_alerts_only(env):

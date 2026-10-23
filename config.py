@@ -45,6 +45,7 @@ NEWS_CACHE_MAX_AGE_SECONDS: int = 7 * 86400
 # daily AI_CACHE_TTL_SECONDS run. News is display-only; it feeds no score.
 NEWS_AI_REFRESH_SECONDS: int = int(os.environ.get("NEWS_AI_REFRESH_SECONDS", "21600"))
 NEWS_MAX_ALERTS: int = 60          # headlines kept, newest by published time
+NEWS_BRIEFING_MAX_ALERTS: int = 15 # top alerts (severity, then recency) the daily briefing reads
 
 # Shared disk cache key for RSS/AI news payload (alerts, briefing, report).
 NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v19"

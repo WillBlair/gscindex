@@ -34,11 +34,12 @@ from config import (
     NEWS_AI_MAX_ARTICLES,
     NEWS_AI_REFRESH_SECONDS,
     NEWS_BRIEFING_CACHE_KEY,
+    NEWS_BRIEFING_MAX_ALERTS,
     NEWS_CACHE_MAX_AGE_SECONDS,
     NEWS_MAX_ALERTS,
 )
 from data import llm
-from data.ai_analyst import analyze_news_batch, generate_full_report
+from data.ai_analyst import analyze_news_batch, generate_briefing, generate_full_report
 from data.cache import get_cached, set_cached
 from data.news_selection import _normalized_title, parse_article_datetime
 from data.rss_fetcher import fetch_rss_articles
@@ -345,6 +346,17 @@ def _claude_alert(c: dict, analysis: dict) -> dict:
     }
 
 
+def _briefing_inputs(alerts: list[dict]) -> list[dict]:
+    """The top NEWS_BRIEFING_MAX_ALERTS alerts, most severe first then newest, as headline text."""
+    newest_first = sorted(alerts, key=_published_sort_key, reverse=True)
+    ranked = sorted(newest_first, key=_numeric_sentiment)  # stable: recency kept within a severity
+    out = []
+    for a in ranked[:NEWS_BRIEFING_MAX_ALERTS]:
+        body = str(a.get("body") or "").strip()
+        out.append({"title": f"{a.get('title', '')} - {body}" if body else str(a.get("title", ""))})
+    return out
+
+
 def _as_tuple(payload: dict) -> tuple[list[dict], str, str]:
     return payload.get("alerts") or [], payload.get("briefing") or "", payload.get("full_report") or ""
 
@@ -376,7 +388,6 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
 
     configured = llm.is_configured()
     scoring_ok = True
-    ai_briefing = ""
     if not configured:
         present = {a.get("title_key") for a in old_alerts}
         alerts = _merge_alerts(old_alerts, [_unscored_alert(c) for c in candidates if c["key"] not in present])
@@ -385,7 +396,7 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
         claude_ok_at = now
     else:
         batch = [{"id": i, "title": c["title"], "description": c["description"]} for i, c in enumerate(to_score)]
-        results, ai_briefing = analyze_news_batch(batch)
+        results, _ = analyze_news_batch(batch)  # its briefing covers only the new items
         if results:
             logger.info("Claude scored %d new headlines", len(results))
             scored = [_claude_alert(c, results[i]) for i, c in enumerate(to_score)
@@ -420,11 +431,18 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
     })
 
     if full:
-        report = generate_full_report(candidates[:50]) if configured else ""
-        briefing = ai_briefing.strip() if isinstance(ai_briefing, str) else ""
-        full_ok = not configured or (scoring_ok and bool(report.strip()))
+        # The narrative is rebuilt from the merged alerts, not just this run's new headlines.
+        # After a failed scoring call the paid report and briefing calls are skipped; the
+        # cached ones stay and the whole full run retries after AI_FAILURE_RETRY_SECONDS.
+        report = briefing = ""
+        if configured and scoring_ok:
+            report = (generate_full_report(candidates[:50]) or "").strip()
+            briefing = (generate_briefing(_briefing_inputs(alerts)) or "").strip() if alerts else ""
+        if not configured or (scoring_ok and not alerts):
+            briefing = _build_fallback_briefing(alerts)
+        full_ok = not configured or (scoring_ok and bool(report) and bool(briefing))
         payload["briefing"] = briefing or payload.get("briefing") or _build_fallback_briefing(alerts)
-        if report.strip():
+        if report:
             payload["full_report"], payload["generated_at"] = report, now
         elif not (payload.get("full_report") or "").strip():
             payload["full_report"], payload["generated_at"] = _FALLBACK_REPORT, now
