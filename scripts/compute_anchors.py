@@ -677,7 +677,10 @@ def main(argv: list[str] | None = None) -> int:
     inputs["prices_paid"], pp_stats = build_prices_paid()
     for key, anchor in inputs.items():
         anchor["source"] = SOURCES[key.replace("_monthly", "")]
-    inputs.update(build_sectors())
+    # Sector keys first, in SECTOR_INPUT_KEYS order, as --sectors-only merged them into the
+    # committed file, so a full regeneration never reorders the JSON.
+    sector = build_sectors()
+    inputs = {**{key: sector[key] for key in SECTOR_INPUT_KEYS}, **inputs}
     weights, baseline = build_chokepoints()
     shares, not_found = build_port_shares()
 

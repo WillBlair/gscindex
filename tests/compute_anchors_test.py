@@ -157,3 +157,49 @@ def test_sectors_only_merge_keeps_global_keys_identical(tmp_path):
 
     with pytest.raises(ValueError):                        # a global key is never written
         merge_sector_anchors(path, {"gscpi": sector["boj_memory"]})
+
+
+def test_full_run_writes_inputs_in_the_committed_key_order(tmp_path, monkeypatch):
+    """A full regeneration orders ``inputs`` like the committed file (sector keys first, as
+    --sectors-only wrote them), so it never reorders the JSON. Builders are stubbed: offline."""
+    import json
+    from pathlib import Path
+
+    from data.providers import fred_client
+    from scripts import compute_anchors as ca
+
+    committed = json.loads((Path(ca.ROOT) / "data" / "score_anchors.json").read_text(encoding="utf-8"))
+
+    def anchor(key):
+        return {"transform": "identity", "direction": "lower_better", "best": 1.0, "normal": 2.0, "worst": 3.0}
+
+    prices = ("brent", "ulsd", "ttf", "copper", "aluminum", "ttf_monthly", "copper_monthly", "aluminum_monthly")
+    monkeypatch.setattr(ca, "ROOT", tmp_path)
+    monkeypatch.setattr(ca, "OUT", tmp_path / "score_anchors.json")
+    monkeypatch.setattr(fred_client, "fetch_fred_full", lambda series_id: pd.Series(dtype=float))
+    monkeypatch.setattr(ca, "cpi_reference", lambda cpi: 320.0)
+    monkeypatch.setattr(ca, "build_gscpi", lambda: anchor("gscpi"))
+    monkeypatch.setattr(ca, "build_prices", lambda cpi: {k: anchor(k) for k in prices})
+    monkeypatch.setattr(ca, "build_tariff_burden", lambda: anchor("tariff_burden"))
+    monkeypatch.setattr(ca, "build_tpu", lambda: (anchor("tpu"), "ok"))
+    monkeypatch.setattr(ca, "build_gpr", lambda: (anchor("gpr"), "ok"))
+    monkeypatch.setattr(ca, "build_tsifrght", lambda: anchor("tsifrght"))
+    monkeypatch.setattr(ca, "build_rail", lambda: (anchor("rail_volume"), "ok"))
+    monkeypatch.setattr(ca, "build_prices_paid", lambda: (anchor("prices_paid"), {}))
+    # Sector anchors come back in a scrambled order; the output must not depend on it.
+    monkeypatch.setattr(ca, "build_sectors", lambda: {
+        k: {**anchor(k), "source": f"dummy {k}"} for k in reversed(ca.SECTOR_INPUT_KEYS)})
+    monkeypatch.setattr(ca, "build_chokepoints", lambda: ({"Suez": 1.0}, {"1": 10.0}))
+    monkeypatch.setattr(ca, "build_port_shares", lambda: ({f"P{i}": 0.01 * (i + 1) for i in range(12)}, []))
+    monkeypatch.setattr(ca, "build_waterways", lambda: {
+        "mississippi_record_low": -10.7, "mississippi_record_low_date": "2022-10-17", "mississippi_threshold": 1.0})
+    for name in ("print_inputs", "print_categories", "print_sectors"):
+        monkeypatch.setattr(ca, name, lambda anchors: None)
+
+    assert ca.main([]) == 0
+    written = json.loads((tmp_path / "score_anchors.json").read_text(encoding="utf-8"))
+    assert list(written["inputs"]) == list(committed["inputs"])
+    assert list(written) == list(committed)
+    assert list(written["inputs"])[:len(ca.SECTOR_INPUT_KEYS)] == list(ca.SECTOR_INPUT_KEYS)
+    assert written["inputs"]["boj_memory"]["source"] == "dummy boj_memory"
+    assert written["inputs"]["gscpi"]["source"] == ca.SOURCES["gscpi"]
