@@ -75,14 +75,19 @@ def _today() -> date:
     return datetime.now(timezone.utc).date()
 
 
-def _number(value, low: float, high: float) -> float:
+def _finite(value) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return low
-    if not math.isfinite(number):
-        return low
-    return max(low, min(high, number))
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _number(value, low: float, high: float) -> float:
+    number = _finite(value)
+    return low if number is None else max(low, min(high, number))
 
 
 def register_score(events: list[dict]) -> float:
@@ -134,7 +139,7 @@ def _text(value, limit: int) -> str:
 
 
 def _untrusted(value) -> str:
-    # Angle brackets would let feed text close the <news_item> wrapper.
+    # Angle brackets would let text close the <news_item> or <open_events> wrapper.
     return str(value or "").replace("<", "(").replace(">", ")")
 
 
@@ -153,20 +158,49 @@ def _strings(values, limit: int, *, urls: bool = False) -> list[str]:
     return out
 
 
-def _fields(raw: dict) -> dict:
-    """Clamp one model entry to the register's field types and ranges."""
+def _fields(raw: dict, previous: dict | None = None) -> dict:
+    """Clamp one model entry to the register's field types and ranges.
+
+    For an update (``previous`` given), a blank basis keeps the stored basis and
+    share, a missing or invalid share keeps the stored share, and empty evidence
+    keeps the stored evidence, so a partial resend never zeroes a stored event.
+    """
     basis = _text(raw.get("trade_share_basis"), _BASIS_CHARS)
+    share = _finite(raw.get("trade_share_pct"))
+    evidence = _strings(raw.get("evidence"), REGISTER_MAX_EVIDENCE, urls=True)
+    if previous is not None:
+        if not basis:
+            basis = previous.get("trade_share_basis") or ""
+            share = previous.get("trade_share_pct")
+        elif share is None:
+            share = previous.get("trade_share_pct")
+        evidence = evidence or list(previous.get("evidence") or [])
     return {
         "title": _text(raw.get("title"), _TITLE_CHARS),
         "region": _text(raw.get("region"), _REGION_CHARS),
         "corridors": _strings(raw.get("corridors"), _MAX_CORRIDORS),
         "severity": _number(raw.get("severity"), 0.0, REGISTER_SEVERITY_MAX),
         # A share without a stated basis would be an invented number.
-        "trade_share_pct": _number(raw.get("trade_share_pct"), 0.0, 100.0) if basis else 0.0,
+        "trade_share_pct": _number(share, 0.0, 100.0) if basis else 0.0,
         "trade_share_basis": basis,
-        "evidence": _strings(raw.get("evidence"), REGISTER_MAX_EVIDENCE, urls=True),
+        "evidence": evidence,
         "rationale": _text(raw.get("rationale"), _RATIONALE_CHARS),
     }
+
+
+def _norm(text) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+
+def _duplicates(candidate: dict, event: dict) -> bool:
+    """Same normalized title, or the same region with an overlapping corridor."""
+    if _norm(candidate["title"]) == _norm(event.get("title")):
+        return True
+    region = _norm(candidate["region"])
+    if not region or region != _norm(event.get("region")):
+        return False
+    corridors = {_norm(c) for c in candidate["corridors"]} - {""}
+    return bool(corridors & {_norm(c) for c in event.get("corridors") or []})
 
 
 def _new_id(title: str, today: str, taken: set[str]) -> str:
@@ -193,6 +227,10 @@ def _apply(open_events: list[dict], entries, today: str) -> list[dict]:
             fields = _fields(raw)
             if not fields["title"]:
                 continue
+            # An event already open must not be counted twice; the open is dropped.
+            if any(_duplicates(fields, e) for e in list(by_id.values()) + new_events
+                   if e.get("closed") is None):
+                continue
             new_id = _new_id(fields["title"], today, set(by_id) | {e["id"] for e in new_events})
             new_events.append({"id": new_id, **fields, "opened": today, "updated": today, "closed": None})
             continue
@@ -200,11 +238,9 @@ def _apply(open_events: list[dict], entries, today: str) -> list[dict]:
             continue
         event = by_id[event_id]
         if action == "update":
-            fields = _fields(raw)
+            fields = _fields(raw, previous=event)
             if not fields["title"]:
                 continue
-            if not fields["evidence"]:
-                fields["evidence"] = event.get("evidence") or []
             event.update(fields)
         elif action == "close":
             event["closed"] = today
@@ -225,9 +261,18 @@ def _cap_open(events: list[dict]) -> list[dict]:
 
 
 def _event_view(event: dict) -> dict:
+    """The event as shown to the model; stored strings are sanitized like feed text."""
     keys = ("id", "title", "region", "corridors", "severity", "trade_share_pct",
             "trade_share_basis", "opened", "evidence")
-    return {k: event.get(k) for k in keys}
+    view = {}
+    for k in keys:
+        value = event.get(k)
+        if isinstance(value, str):
+            value = _untrusted(value)
+        elif isinstance(value, list):
+            value = [_untrusted(v) if isinstance(v, str) else v for v in value]
+        view[k] = value
+    return view
 
 
 def _research(open_events: list[dict], articles: list[dict]) -> list[dict]:
