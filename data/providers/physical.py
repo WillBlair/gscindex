@@ -12,7 +12,8 @@ renormalized over the inputs available):
     3. Mississippi (25%)  - USGS daily gauge height at St. Louis. 100 at or above the low-water
        threshold, 0 at the record low.
 
-The Rhine at Kaub is stored in ``gauge_readings`` each cycle and never scored.
+The Rhine at Kaub is stored in ``gauge_readings`` at most every
+``KAUB_STORE_INTERVAL_SECONDS`` and never scored.
 
 Thresholds come from ``config`` and ``SCORE_ANCHORS["waterways"]``; port throughput shares from
 ``SCORE_ANCHORS["port_throughput_share"]``. A missing anchor is a RuntimeError at fetch time.
@@ -34,6 +35,7 @@ import pandas as pd
 
 import config
 from data import database
+from data.cache import get_cached, set_cached
 from data.ports_data import MAJOR_PORTS
 from data.providers.base import BaseProvider
 from data.providers.readings import (
@@ -51,6 +53,7 @@ _SOURCES = {
 _RAW_LABELS = {_HAZARDS: "Active hazard alerts", _GATUN: "Gatun Lake level (ft)",
                _MISSISSIPPI: "St. Louis stage (ft)"}
 _WATERWAY_KEYS = ("gatun_record_low", "mississippi_record_low", "mississippi_threshold")
+_KAUB_MARKER_KEY = "kaub_stored_v1"
 
 
 def _today() -> date:
@@ -128,12 +131,21 @@ class PhysicalProvider(BaseProvider):
 
     @staticmethod
     def _store_kaub() -> None:
-        """Keep the latest Rhine level at Kaub for later study; it never affects the score."""
+        """Keep the latest Rhine level at Kaub for later study; it never affects the score.
+
+        At most one attempt (fetch and upsert) per ``KAUB_STORE_INTERVAL_SECONDS``, whether
+        or not it succeeds; the gauge is a daily study series, not a 5-minute one.
+        """
+        if get_cached(_KAUB_MARKER_KEY, ttl=config.KAUB_STORE_INTERVAL_SECONDS) is not None:
+            return
+        marker = {"attempted_at": datetime.now(timezone.utc).isoformat()}
         try:
             day, level_cm = waterways.fetch_kaub_latest()
             database.upsert_gauge_reading(day, "kaub", level_cm)
+            marker["day"] = day.isoformat()
         except Exception as exc:
             logger.info("Kaub reading not stored: %s", exc)
+        set_cached(_KAUB_MARKER_KEY, marker)
 
     def fetch_current(self) -> tuple[float, dict]:
         today = _today()

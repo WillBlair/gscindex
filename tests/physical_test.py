@@ -488,8 +488,13 @@ def _river_series(stage=9.0, last=TODAY, days=40):
     return pd.Series(stage, index=pd.date_range(end=pd.Timestamp(last), periods=days, freq="D"))
 
 
-def _run(fn, events=None, gatun=None, river=None, kaub=(date(2026, 10, 22), 27.0), upsert=None):
-    """Run ``fn`` with every source patched; a source passed as None fails."""
+def _run(fn, events=None, gatun=None, river=None, kaub=(date(2026, 10, 22), 27.0), upsert=None,
+         kaub_marker=None, kaub_cache=None):
+    """Run ``fn`` with every source patched; a source passed as None fails.
+
+    ``kaub_marker`` is what the Kaub throttle cache returns (None: due); ``kaub_cache``
+    receives the marker writes.
+    """
     def fail(name):
         def _raise(*a, **k):
             raise ValueError(f"{name} unavailable")
@@ -507,7 +512,9 @@ def _run(fn, events=None, gatun=None, river=None, kaub=(date(2026, 10, 22), 27.0
                            side_effect=returning(river) if river is not None else fail("stl")), \
          mock.patch.object(physical.waterways, "fetch_kaub_latest",
                            side_effect=returning(kaub) if kaub is not None else fail("kaub")), \
-         mock.patch.object(physical.database, "upsert_gauge_reading", upsert):
+         mock.patch.object(physical.database, "upsert_gauge_reading", upsert), \
+         mock.patch.object(physical, "get_cached", return_value=kaub_marker), \
+         mock.patch.object(physical, "set_cached", kaub_cache if kaub_cache is not None else mock.Mock()):
         return fn()
 
 
@@ -605,7 +612,7 @@ def test_physical_raw_label_matches_the_inputs_used(anchors):
     assert meta["raw_label"] == "Active hazard alerts; Gatun Lake level (ft); St. Louis stage (ft)"
 
 
-def test_physical_upserts_kaub_each_cycle_and_never_scores_it(anchors):
+def test_physical_upserts_kaub_when_due_and_never_scores_it(anchors):
     upsert = mock.Mock()
     score, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
                        gatun=_gatun_series(86.0), river=_river_series(9.0),
@@ -701,3 +708,33 @@ def test_physical_fetch_failures_are_not_inputs_expired(anchors):
     with pytest.raises(RuntimeError) as failure:
         _run(PhysicalProvider().fetch_current)
     assert not isinstance(failure.value, InputsExpired)
+
+
+def test_physical_stores_kaub_at_most_once_per_hour(anchors):
+    upsert, marker_writes = mock.Mock(), mock.Mock()
+    fetch_kaub = mock.Mock(return_value=(date(2026, 10, 22), 27.0))
+    with mock.patch.object(physical.waterways, "fetch_kaub_latest", fetch_kaub), \
+         mock.patch.object(physical.database, "upsert_gauge_reading", upsert), \
+         mock.patch.object(physical, "set_cached", marker_writes), \
+         mock.patch.object(physical, "get_cached", return_value=None) as get_marker:
+        PhysicalProvider()._store_kaub()
+    assert get_marker.call_args.args == ("kaub_stored_v1",)
+    assert get_marker.call_args.kwargs["ttl"] == config.KAUB_STORE_INTERVAL_SECONDS == 3600
+    upsert.assert_called_once_with(date(2026, 10, 22), "kaub", 27.0)
+    assert marker_writes.call_args.args[0] == "kaub_stored_v1"
+
+    # Within the hour the marker is fresh: no fetch, no database write.
+    fetch_kaub.reset_mock(); upsert.reset_mock()
+    with mock.patch.object(physical.waterways, "fetch_kaub_latest", fetch_kaub), \
+         mock.patch.object(physical.database, "upsert_gauge_reading", upsert), \
+         mock.patch.object(physical, "set_cached", mock.Mock()), \
+         mock.patch.object(physical, "get_cached", return_value={"day": "2026-10-22"}):
+        PhysicalProvider()._store_kaub()
+    fetch_kaub.assert_not_called()
+    upsert.assert_not_called()
+
+
+def test_physical_failed_kaub_attempt_also_waits_an_hour(anchors):
+    marker_writes = mock.Mock()
+    _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")], kaub=None, kaub_cache=marker_writes)
+    assert marker_writes.call_args.args[0] == "kaub_stored_v1"

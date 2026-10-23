@@ -515,6 +515,8 @@ HAZARD_LOOKBACK_DAYS = 90
 # Days of St. Louis gauge height requested for the current reading (the latest daily value
 # is used; the extra days cover a gap in the series).
 PHYSICAL_GAUGE_LOOKBACK_DAYS = 30
+# The Rhine at Kaub (stored for study, never scored) is fetched and upserted at most this often.
+KAUB_STORE_INTERVAL_SECONDS = 3600
 
 # Gatun Lake: the Neopanamax locks allow the full 50 ft draft only at or above this lake level
 # (Panama Canal Authority vessel requirements, as reported by FreightWaves:
