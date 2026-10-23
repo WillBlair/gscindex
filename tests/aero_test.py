@@ -294,10 +294,18 @@ def test_history_averages_the_inputs_present(anchors):
 
 
 def test_flow_history_skips_unmeasurable_months(anchors):
-    shipments = _monthly("2026-08-01", [10.0] * 9 + [0.0, 0.0, 0.0])
-    hist = _run(lambda: aero.FlowProvider().fetch_history(60),
-                {INVENTORY: _monthly("2026-08-01", [47.0] * 12), SHIPMENTS: shipments})
-    assert hist.dropna().between(0.0, 100.0).all()                         # never an extreme from a division blow-up
+    """August's 3-month mean of shipments is exactly 0, so August has no value and its public date
+    carries July's score unchanged. A division blow-up would score August 0 or 100 instead."""
+    shipments = _monthly("2026-08-01", [10.0] * 10 + [-5.0, -5.0])     # Jun 10; Jul mean 5; Aug mean 0
+    data = {INVENTORY: _monthly("2026-08-01", [47.0] * 12), SHIPMENTS: shipments}
+    hist = _run(lambda: aero.FlowProvider().fetch_history(90), data)
+    lag = pd.Timedelta(days=config.PUBLICATION_LAG_DAYS["census_m3"])
+    june, july, august = (pd.Timestamp(d) + lag for d in ("2026-06-30", "2026-07-31", "2026-08-31"))
+    july_score = 80.0 * (math.log(10.0) - math.log(47.0 / 5.0)) / (math.log(10.0) - math.log(4.7))
+    assert hist[june] == pytest.approx(80.0, abs=0.05)                  # mean 10: ratio 4.7, the anchor's normal
+    assert hist[july] == pytest.approx(july_score, abs=0.05) and 0.0 < july_score < 10.0
+    assert (hist.loc[august:] == hist[july]).all()                      # carried, not a new value
+    assert not hist.loc[august:].isin([0.0, 100.0]).any()
 
 
 def test_history_all_missing_raises(anchors):
