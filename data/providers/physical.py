@@ -1,16 +1,18 @@
 """
 Physical Disruption Provider
 ============================
-Physical events that stop ships, from three inputs (weights in ``config.PHYSICAL_WEIGHTS``,
+Physical events that stop ships, from two inputs (weights in ``config.PHYSICAL_WEIGHTS``,
 renormalized over the inputs available):
 
-    1. Natural hazards near ports (50%) - GDACS Orange and Red alerts for tropical cyclones,
+    1. Natural hazards near ports (2/3) - GDACS Orange and Red alerts for tropical cyclones,
        floods, earthquakes and volcanoes. An event within its type's radius of a port costs
        throughput share x level points (see ``data/sources/gdacs.py``).
-    2. Gatun Lake (25%)   - Panama Canal Authority daily lake level. 100 at or above 85 ft (the
-       full 50 ft draft level), 0 at the record low.
-    3. Mississippi (25%)  - USGS daily gauge height at St. Louis. 100 at or above the low-water
+    2. Mississippi (1/3)  - USGS daily gauge height at St. Louis. 100 at or above the low-water
        threshold, 0 at the record low.
+
+The Panama Canal's Gatun Lake level is deliberately not an input: the Panama Canal Authority's
+data page asks for written consent before redistribution, and Panama disruptions are already
+measured by IMF PortWatch Panama Canal transits in the Chokepoints category.
 
 The Rhine at Kaub is stored in ``gauge_readings`` at most every
 ``KAUB_STORE_INTERVAL_SECONDS`` and never scored.
@@ -44,15 +46,13 @@ from data.sources import gdacs, waterways
 
 logger = logging.getLogger(__name__)
 
-_HAZARDS, _GATUN, _MISSISSIPPI = "hazards", "gatun", "mississippi"
+_HAZARDS, _MISSISSIPPI = "hazards", "mississippi"
 _SOURCES = {
     _HAZARDS: "GDACS Orange and Red alerts near ports",
-    _GATUN: "Panama Canal Authority Gatun Lake level",
     _MISSISSIPPI: "USGS 07010000 Mississippi River at St. Louis",
 }
-_RAW_LABELS = {_HAZARDS: "Active hazard alerts", _GATUN: "Gatun Lake level (ft)",
-               _MISSISSIPPI: "St. Louis stage (ft)"}
-_WATERWAY_KEYS = ("gatun_record_low", "mississippi_record_low", "mississippi_threshold")
+_RAW_LABELS = {_HAZARDS: "Active hazard alerts", _MISSISSIPPI: "St. Louis stage (ft)"}
+_WATERWAY_KEYS = ("mississippi_record_low", "mississippi_threshold")
 _KAUB_MARKER_KEY = "kaub_stored_v1"
 
 
@@ -76,8 +76,7 @@ def _anchors() -> tuple[dict[str, float], dict[str, float]]:
         raise RuntimeError("no anchor for waterways (needs " + ", ".join(_WATERWAY_KEYS) + ")") from None
     if not all(math.isfinite(v) for v in anchors.values()):
         raise RuntimeError("no anchor for waterways (non-finite value)")
-    if anchors["gatun_record_low"] >= config.GATUN_FULL_DRAFT_FT or \
-            anchors["mississippi_record_low"] >= anchors["mississippi_threshold"]:
+    if anchors["mississippi_record_low"] >= anchors["mississippi_threshold"]:
         raise RuntimeError("no anchor for waterways (a record low is not below its full level)")
     return {str(k): float(v) for k, v in shares.items()}, anchors
 
@@ -97,7 +96,7 @@ def _daily_scores(series: pd.Series, score_fn, window: pd.DatetimeIndex, drop_af
 
 
 class PhysicalProvider(BaseProvider):
-    """Physical Disruption - port hazards, Gatun Lake and the Mississippi at St. Louis."""
+    """Physical Disruption - port hazards and the Mississippi at St. Louis."""
 
     category = "physical"
 
@@ -151,16 +150,13 @@ class PhysicalProvider(BaseProvider):
         today = _today()
         shares, anchors = _anchors()
         hazards, active = self._hazards_reading(today, shares)
-        gatun = self._gauge_reading(
-            _GATUN, today, waterways.fetch_gatun,
-            lambda v: waterways.gatun_score(v, anchors["gatun_record_low"]))
         river = self._gauge_reading(
             _MISSISSIPPI, today,
             lambda: waterways.fetch_mississippi_stl(
                 today - timedelta(days=config.PHYSICAL_GAUGE_LOOKBACK_DAYS)),
             lambda v: waterways.river_score(v, anchors["mississippi_threshold"],
                                             anchors["mississippi_record_low"]))
-        readings = [hazards, gatun, river]
+        readings = [hazards, river]
         self._store_kaub()
 
         score, status = blend_inputs(readings, config.PHYSICAL_WEIGHTS)
@@ -180,16 +176,12 @@ class PhysicalProvider(BaseProvider):
                 "affect a major port (cyclones within {TC:.0f} km, floods {FL:.0f} km, earthquakes "
                 "{EQ:.0f} km, volcanoes {VO:.0f} km), weighted by the port's share of world port "
                 "calls.".format(**config.HAZARD_RADIUS_KM))
-        if gatun in used:
-            sentences.append(
-                f"Gatun Lake is {gatun.raw_value}; the Panama Canal allows the full 50 ft draft only at "
-                f"{config.GATUN_FULL_DRAFT_FT:.0f} ft or above.")
         if river in used:
             sentences.append(
                 f"The Mississippi at St. Louis reads {river.raw_value}; low stages cut barge drafts and "
                 "tow sizes.")
         weight_text = ", ".join(f"{label} {config.PHYSICAL_WEIGHTS[key]:.0%}" for key, label in
-                                ((_HAZARDS, "hazards"), (_GATUN, "Gatun Lake"), (_MISSISSIPPI, "Mississippi")))
+                                ((_HAZARDS, "hazards"), (_MISSISSIPPI, "Mississippi")))
         metadata = {
             "source": "; ".join(r.source for r in readings),
             "raw_value": " / ".join(r.raw_value for r in used),
@@ -197,8 +189,7 @@ class PhysicalProvider(BaseProvider):
             "description": " ".join(sentences),
             "calculation": (
                 f"Hazards: 100 minus {config.HAZARD_SCALE:g} x the sum, over affected ports, of port-call share x level "
-                "points (Orange 0.5, Red 1.0), clipped to 0-100. Gatun Lake: 100 at or above "
-                f"{config.GATUN_FULL_DRAFT_FT:.0f} ft, 0 at the record low, linear between. Mississippi: "
+                "points (Orange 0.5, Red 1.0), clipped to 0-100. Mississippi: "
                 "100 at or above the low-water stage (the gauge's 10th-percentile stage), 0 at its record "
                 f"low, linear between. Weights {weight_text}, renormalized over available inputs."),
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
@@ -223,13 +214,9 @@ class PhysicalProvider(BaseProvider):
         shares, anchors = _anchors()
         window = pd.date_range(pd.Timestamp(today - timedelta(days=days)) + pd.Timedelta(days=1),
                                pd.Timestamp(today), freq="D")
-        gatun_drop = config.FRESHNESS[_GATUN][1]
         river_drop = config.FRESHNESS[_MISSISSIPPI][1]
         builders = {
             _HAZARDS: lambda: self._hazard_history(window, shares),
-            _GATUN: lambda: _daily_scores(
-                waterways.fetch_gatun(), lambda v: waterways.gatun_score(v, anchors["gatun_record_low"]),
-                window, gatun_drop),
             _MISSISSIPPI: lambda: _daily_scores(
                 waterways.fetch_mississippi_stl(window[0].date() - timedelta(days=river_drop)),
                 lambda v: waterways.river_score(v, anchors["mississippi_threshold"],

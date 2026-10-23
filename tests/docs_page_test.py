@@ -35,7 +35,7 @@ def test_docs_lists_eight_categories_and_credit(body):
                    "Daily Treasury Statement", "BOPGIMP", "Caldara", "Iacoviello", "Trade Policy Uncertainty",
                    "Bureau of Transportation Statistics", "Surface Transportation Board", "AgTransport",
                    "Federal Reserve Bank of Philadelphia", "Federal Reserve Bank of Dallas",
-                   "IMF Primary Commodity Prices", "GDACS", "Panama Canal Authority", "USGS", "USITC"):
+                   "IMF Primary Commodity Prices", "GDACS", "USGS", "USITC"):
         assert credit in text, credit
 
 
@@ -124,3 +124,12 @@ def test_docs_headlines_mention_the_hourly_unscored_refresh(body):
     minutes = f"{config.NEWS_RSS_REFRESH_SECONDS / 60:g}"
     assert (f"The feeds are re-read every {minutes} minutes, and new headlines appear with no "
             "severity until Claude's next run.") in _text(body)
+
+
+def test_docs_drops_gatun_and_panama_canal_authority(body):
+    text = _text(body)
+    assert "gatun" not in text.lower()
+    assert "Panama Canal Authority" not in text
+    assert "PortWatch transits in Chokepoints" in text
+    assert f"{round(config.PHYSICAL_WEIGHTS['hazards'] * 100)}% hazards, " \
+           f"{round(config.PHYSICAL_WEIGHTS['mississippi'] * 100)}% Mississippi" in text

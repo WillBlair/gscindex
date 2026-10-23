@@ -383,13 +383,10 @@
   },
   "port_throughput_basis": "share of all PortWatch Daily_Ports_Data port calls, 2022-01-01..2023-12-31",
   "waterways": {
-    "gatun_record_low": 78.31,
-    "gatun_record_low_date": "2016-05-18",
-    "gatun_history": "1965-01-01 to 2026-10-21",
     "mississippi_record_low": -5.32,
     "mississippi_record_low_date": "1989-12-26",
     "mississippi_threshold": 0.535,
     "mississippi_history": "1982-10-01 to 2026-10-22 (10th percentile of daily values)",
-    "source": "Panama Canal Authority Gatun Lake level history CSV; USGS 07010000 daily gauge height (00065)"
+    "source": "USGS 07010000 daily gauge height (00065)"
   }
 }

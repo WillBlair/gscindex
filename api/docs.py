@@ -365,8 +365,8 @@ _CATEGORY_SUMMARY = {
     "freight": ("Year-over-year growth in US freight and rail volume", "BTS, STB"),
     "inputs": ("Manufacturers' prices paid, real copper and aluminum prices",
                "Philadelphia, New York and Dallas Feds, IMF, live futures"),
-    "physical": ("Natural hazards near major ports, Panama Canal and Mississippi River water levels",
-                 "GDACS, Panama Canal Authority, USGS"),
+    "physical": ("Natural hazards near major ports and the Mississippi River water level",
+                 "GDACS, USGS"),
 }
 # Categories built from events rather than anchored levels: a normal day reads about 100.
 _EVENT_CATEGORIES = ("chokepoints", "physical")
@@ -436,26 +436,18 @@ def _chokepoint_text() -> tuple[str, str]:
     return f"Tonnage weights: {listing}.", closure
 
 
-def _waterway_text() -> tuple[str, str]:
+def _river_text() -> str:
     waterways = config.SCORE_ANCHORS.get("waterways") if isinstance(config.SCORE_ANCHORS, dict) else None
-    full = f"{config.GATUN_FULL_DRAFT_FT:.0f} ft"
     try:
-        gatun_low = float(waterways["gatun_record_low"])
-        gatun_day = date.fromisoformat(str(waterways["gatun_record_low_date"]))
         river_low = float(waterways["mississippi_record_low"])
         river_day = date.fromisoformat(str(waterways["mississippi_record_low_date"]))
         threshold = float(waterways["mississippi_threshold"])
     except (KeyError, TypeError, ValueError):
-        return (f"Gatun Lake: 100 at {full} or above, 0 at the record low.",
-                "Mississippi: 100 at or above the gauge's 10th-percentile stage, 0 at the record low.")
-    gatun = (f"Gatun Lake: 100 at {full} or above (the level the Panama Canal needs for the full "
-             f"50 ft draft), falling in a straight line to 0 at the record low, {gatun_low:.2f} ft "
-             f"({gatun_day:%b %Y}).")
-    river = (f"Mississippi at St. Louis: 100 at {threshold:.2f} ft or above, falling in a straight line "
-             f"to 0 at the record low, {river_low:.2f} ft ({river_day:%b %Y}). {threshold:.2f} ft is the "
-             "gauge's 10th-percentile daily stage since 1982, because no official low-water stage for "
-             "St. Louis was found.")
-    return gatun, river
+        return "Mississippi: 100 at or above the gauge's 10th-percentile stage, 0 at the record low."
+    return (f"Mississippi at St. Louis: 100 at {threshold:.2f} ft or above, falling in a straight line "
+            f"to 0 at the record low, {river_low:.2f} ft ({river_day:%b %Y}). {threshold:.2f} ft is the "
+            "gauge's 10th-percentile daily stage since 1982, because no official low-water stage for "
+            "St. Louis was found.")
 
 
 def _burden_reference() -> str:
@@ -491,7 +483,7 @@ def _docs_values() -> dict[str, str]:
     weights = config.CATEGORY_WEIGHTS
     normal = sum(w * (100 if cat in _EVENT_CATEGORIES else 80) for cat, w in weights.items())
     weights_text, closure_text = _chokepoint_text()
-    gatun_text, river_text = _waterway_text()
+    river_text = _river_text()
     radius = config.HAZARD_RADIUS_KM
     drop = config.CATEGORY_DROP_AFTER_DAYS
     return {
@@ -548,14 +540,12 @@ def _docs_values() -> dict[str, str]:
         "iw_copper": _pct(config.INPUT_WEIGHTS["copper"]),
         "iw_aluminum": _pct(config.INPUT_WEIGHTS["aluminum"]),
         "pw_hazards": _pct(config.PHYSICAL_WEIGHTS["hazards"]),
-        "pw_gatun": _pct(config.PHYSICAL_WEIGHTS["gatun"]),
         "pw_river": _pct(config.PHYSICAL_WEIGHTS["mississippi"]),
         "hazard_scale": f"{config.HAZARD_SCALE:,.0f}",
         "r_tc": f"{radius['TC']:.0f}", "r_fl": f"{radius['FL']:.0f}",
         "r_eq": f"{radius['EQ']:.0f}", "r_vo": f"{radius['VO']:.0f}",
         "orange_points": f"{config.HAZARD_LEVEL_POINTS['Orange']:g}",
         "red_points": f"{config.HAZARD_LEVEL_POINTS['Red']:g}",
-        "gatun_text": gatun_text,
         "river_text": river_text,
         "news_hours": f"{config.NEWS_AI_REFRESH_SECONDS / 3600:g}",
         "rss_minutes": f"{config.NEWS_RSS_REFRESH_SECONDS / 60:g}",
@@ -695,11 +685,12 @@ def _category_cards(v: dict[str, str]) -> str:
                         f"metals are {v['fresh_copper']}; the monthly fallback is {v['fresh_copper_monthly']}."),
         ],
         "physical": [
-            ("Sources", "GDACS (Global Disaster Alert and Coordination System) alerts. Panama Canal Authority "
-                        "Gatun Lake level. USGS gauge 07010000, Mississippi River at St. Louis."),
-            ("Measures", "Natural events that stop ships near major ports, and low water on two waterways "
-                         "that carry bulk cargo."),
-            ("Score", f"{v['pw_hazards']} hazards, {v['pw_gatun']} Gatun Lake, {v['pw_river']} Mississippi. "
+            ("Sources", "GDACS (Global Disaster Alert and Coordination System) alerts. USGS gauge 07010000, "
+                        "Mississippi River at St. Louis."),
+            ("Measures", "Natural events that stop ships near major ports, and low water on the Mississippi, "
+                         "which carries bulk cargo. Panama Canal disruptions are covered by PortWatch transits "
+                         "in Chokepoints."),
+            ("Score", f"{v['pw_hazards']} hazards, {v['pw_river']} Mississippi. "
                       "Each Orange or Red GDACS alert for a tropical cyclone, flood, earthquake or volcano "
                       f"whose center is within {v['r_tc']}, {v['r_fl']}, {v['r_eq']} or {v['r_vo']} km of one "
                       f"of the 37 ports costs {v['hazard_scale']} &times; the port's share of world port calls "
@@ -707,7 +698,7 @@ def _category_cards(v: dict[str, str]) -> str:
                       "minus the total, floored at 0. The cyclone radius is "
                       "our judgment, because GDACS gives only the storm's center."),
             ("Anchors", "There is no 80 point: a quiet day scores 100. One Red alert over a median top-10 "
-                        f"port costs about 50 hazard points. {v['gatun_text']} {v['river_text']}"),
+                        f"port costs about 50 hazard points. {v['river_text']}"),
             ("Updates", f"Daily. Each input is {v['fresh_hazards']}. The Rhine gauge at Kaub is recorded, not "
                         "scored."),
         ],
@@ -837,7 +828,7 @@ flowchart LR
     style H fill:#07090C,stroke:#8A94A3,color:#F2F4F7
 
     A["NY Fed, FRED, Treasury<br>BTS, STB, Caldara-Iacoviello"] --> E
-    B["IMF PortWatch, GDACS<br>Panama Canal, USGS"] --> E
+    B["IMF PortWatch, GDACS<br>USGS"] --> E
     C["Yahoo Finance<br>(live futures)"] --> E
     D["RSS feeds and web search<br>(display only)"] --> F
     E["Background thread<br>8 category providers"] --> G["Neon Postgres<br>daily scores"]
@@ -906,7 +897,6 @@ flowchart LR
 | [Federal Reserve Bank of Dallas](https://fred.stlouisfed.org/series/PRMSAMFRBDAL) | Texas Manufacturing Outlook Survey prices paid for raw materials |
 | [IMF Primary Commodity Prices](https://www.imf.org/en/Research/commodity-prices) | European natural gas, copper and aluminum (FRED PNGASEUUSDM, PCOPPUSDM, PALUMUSDM) |
 | [GDACS](https://www.gdacs.org) | Natural hazard alerts |
-| [Panama Canal Authority](https://evtms-rpts.pancanal.com/eng/h2o/index.html) | Gatun Lake level |
 | [USGS](https://waterdata.usgs.gov/monitoring-location/07010000/) | Mississippi River gauge height at St. Louis (site 07010000) |
 | [USITC](https://www.usitc.gov/documents/dataweb/ave_table_1891_2018.pdf) | Duties as a share of imports, 1891 to 2018 (tariff burden zero point) |
 | [Open-Meteo](https://open-meteo.com) | Port weather for the map |

@@ -14,7 +14,7 @@ The script also writes the chokepoint tonnage weights and monthly baselines, the
 prices-paid stats, port throughput shares and the waterway record lows.
 
 It downloads public data only (FRED, NY Fed, Caldara-Iacoviello, Treasury, USDA AgTransport,
-IMF PortWatch, Panama Canal Authority, USGS) through the app's own fetchers, so every anchor is
+IMF PortWatch, USGS) through the app's own fetchers, so every anchor is
 fitted on exactly the quantity the provider scores. It writes the JSON and nothing else (no
 database). Output is deterministic for a given data vintage. Anchors are frozen: re-running it
 is a deliberate, versioned change. Review the printed table and commit the JSON.
@@ -456,20 +456,14 @@ def build_port_shares() -> tuple[dict, list[str]]:
 
 def build_waterways() -> dict:
     from data.sources import waterways
-    gatun = waterways.fetch_gatun()
     stl = waterways.fetch_mississippi_stl(None)
-    TODAY["gatun"] = (float(gatun.iloc[-1]), gatun.index[-1].date(), f"{gatun.iloc[-1]:.2f} ft")
     TODAY["mississippi"] = (float(stl.iloc[-1]), stl.index[-1].date(), f"{stl.iloc[-1]:.2f} ft")
     return {
-        "gatun_record_low": round(float(gatun.min()), 4),
-        "gatun_record_low_date": f"{gatun.idxmin():%Y-%m-%d}",
-        "gatun_history": f"{gatun.index[0]:%Y-%m-%d} to {gatun.index[-1]:%Y-%m-%d}",
         "mississippi_record_low": round(float(stl.min()), 4),
         "mississippi_record_low_date": f"{stl.idxmin():%Y-%m-%d}",
         "mississippi_threshold": round(float(stl.quantile(0.10)), 4),
         "mississippi_history": f"{stl.index[0]:%Y-%m-%d} to {stl.index[-1]:%Y-%m-%d} (10th percentile of daily values)",
-        "source": ("Panama Canal Authority Gatun Lake level history CSV; USGS 07010000 daily "
-                   "gauge height (00065)"),
+        "source": "USGS 07010000 daily gauge height (00065)",
     }
 
 
@@ -570,8 +564,7 @@ def main() -> int:
           f"{config.HAZARD_SCALE * float(np.median(top10)):.0f} points "
           f"(range {config.HAZARD_SCALE * top10[-1]:.0f}-{config.HAZARD_SCALE * top10[0]:.0f})")
     w = anchors["waterways"]
-    print(f"Waterways: Gatun record low {w['gatun_record_low']} ft ({w['gatun_record_low_date']}); "
-          f"Mississippi record low {w['mississippi_record_low']} ft ({w['mississippi_record_low_date']}), "
+    print(f"Waterways: Mississippi record low {w['mississippi_record_low']} ft ({w['mississippi_record_low_date']}), "
           f"threshold (p10) {w['mississippi_threshold']} ft")
     print_categories(anchors)
     return 0

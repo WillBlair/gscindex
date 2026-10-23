@@ -85,7 +85,7 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "geopolitical":  0.10,  # Caldara-Iacoviello daily GPR (Claude register in shadow)
     "freight":       0.10,  # BTS Freight TSI YoY + weekly STB rail carloads and intermodal YoY
     "inputs":        0.10,  # regional Fed prices paid + real copper and aluminum
-    "physical":      0.05,  # GDACS hazards near ports + Gatun Lake + Mississippi at St. Louis
+    "physical":      0.05,  # GDACS hazards near ports + Mississippi at St. Louis
 }
 
 # Seconds the aggregator waits for each provider, counted from the start of the refresh
@@ -145,7 +145,6 @@ INPUT_LABELS: dict[str, str] = {
     "copper_monthly":   "Copper (monthly)",
     "aluminum_monthly": "Aluminum (monthly)",
     "hazards":          "Natural hazards",
-    "gatun":            "Gatun Lake level",
     "mississippi":      "Mississippi River stage",
 }
 
@@ -385,7 +384,6 @@ FRESHNESS: dict[str, tuple[int, int]] = {
     "rail_volume":      (14, 45),
     "prices_paid":      (60, 150),
     "hazards":          (3, 9),
-    "gatun":            (3, 9),
     "mississippi":      (3, 9),
 }
 
@@ -491,10 +489,13 @@ REGISTER_SEVERITY_MAX = 10.0     # severity is clamped to 0..this
 REGISTER_SCORE_FACTOR = 0.3      # points per unit of severity x trade share %
 
 # Physical Disruption: natural hazards near ports (GDACS Orange and Red alerts, weighted by
-# port throughput share), the Panama Canal's Gatun Lake level and the Mississippi River stage
-# at St. Louis. Keys are the canonical input keys; weights are renormalized over what is available.
-# The Kaub (Rhine) gauge is stored for later study and never scored.
-PHYSICAL_WEIGHTS: dict[str, float] = {"hazards": 0.5, "gatun": 0.25, "mississippi": 0.25}
+# port throughput share) and the Mississippi River stage at St. Louis. Keys are the canonical
+# input keys; weights are renormalized over what is available. The Kaub (Rhine) gauge is stored
+# for later study and never scored.
+# The Panama Canal's Gatun Lake level is deliberately not an input: the Panama Canal Authority's
+# data page asks for written consent before redistribution, and Panama disruptions are already
+# measured by IMF PortWatch Panama Canal transits in the Chokepoints category.
+PHYSICAL_WEIGHTS: dict[str, float] = {"hazards": 2 / 3, "mississippi": 1 / 3}
 
 # GDACS hazard penalty = HAZARD_SCALE x sum over affected ports of (port throughput share x
 # level points). Shares are each port's share of all PortWatch port calls in 2022-2023
@@ -521,11 +522,6 @@ PHYSICAL_GAUGE_LOOKBACK_DAYS = 30
 # The Rhine at Kaub (stored for study, never scored) is fetched and upserted at most this often.
 KAUB_STORE_INTERVAL_SECONDS = 3600
 
-# Gatun Lake: the Neopanamax locks allow the full 50 ft draft only at or above this lake level
-# (Panama Canal Authority vessel requirements, as reported by FreightWaves:
-# https://www.freightwaves.com/news/panama-canal-ups-maximum-authorized-draft-for-neopanamax-locks).
-# Score is 100 at or above it and 0 at the record low, SCORE_ANCHORS["waterways"]["gatun_record_low"].
-GATUN_FULL_DRAFT_FT: float = 85.0
 # Mississippi at St. Louis: no single published stage was found that the Coast Guard or the Corps
 # ties to draft or tow limits (the Corps has said it can hold a 9 ft channel down to about -5 ft,
 # while the Coast Guard decides restrictions from observed conditions, not the gauge reading), so
@@ -533,5 +529,4 @@ GATUN_FULL_DRAFT_FT: float = 85.0
 # SCORE_ANCHORS["waterways"]["mississippi_threshold"], and 0 is its record low,
 # SCORE_ANCHORS["waterways"]["mississippi_record_low"] (both computed in Task 12).
 # Sanity bounds on source values; a unit or datum change falls outside and counts as missing.
-GATUN_PLAUSIBLE_FT: tuple[float, float] = (50.0, 100.0)
 MISSISSIPPI_STL_PLAUSIBLE_FT: tuple[float, float] = (-15.0, 50.0)

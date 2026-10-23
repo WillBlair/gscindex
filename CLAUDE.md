@@ -11,7 +11,7 @@ Real-time supply chain health dashboard built with Python/Dash. Scores 8 baselin
 - **Data:** Pandas, NumPy, openpyxl (reads the TPU workbook)
 - **Production server:** Gunicorn (1 worker, 4 gthreads, 120s timeout)
 - **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback). Subscribers, daily score history, latest dashboard snapshot, newsletter send log, disruption register, river gauge readings
-- **Data sources (all free):** FRED, NY Fed GSCPI CSV, IMF PortWatch (ArcGIS), U.S. Treasury Fiscal Data (DTS), Caldara-Iacoviello GPR (.dta) and TPU (.xlsx) files, USDA AgTransport Socrata (STB rail), GDACS, Panama Canal Authority CSV, USGS water services, PEGELONLINE (Kaub, stored only), Open-Meteo (map weather), yfinance, Silicon Analysts
+- **Data sources (all free):** FRED, NY Fed GSCPI CSV, IMF PortWatch (ArcGIS), U.S. Treasury Fiscal Data (DTS), Caldara-Iacoviello GPR (.dta) and TPU (.xlsx) files, USDA AgTransport Socrata (STB rail), GDACS, USGS water services, PEGELONLINE (Kaub, stored only), Open-Meteo (map weather), yfinance, Silicon Analysts
 - **AI:** Anthropic API (Claude, default model `claude-sonnet-5-5`). Display only: no category score depends on it
 - **Sentiment:** none. VADER and `vaderSentiment` were removed in methodology v2
 - **Caching:** File-based with atomic writes, 1-hour default TTL
@@ -92,7 +92,7 @@ data/
     rail.py               # STB EP 724 weekly carloads via USDA AgTransport
     fed_surveys.py        # Philadelphia, Empire, Dallas prices paid (FRED); delivery times (context)
     gdacs.py              # GDACS Orange/Red events, hazard_score
-    waterways.py          # Gatun Lake (ACP CSV), Mississippi at St. Louis (USGS), Kaub (stored only)
+    waterways.py          # Mississippi at St. Louis (USGS), Kaub (stored only)
   providers/
     base.py               # Abstract BaseProvider interface
     readings.py           # InputReading, period_end, freshness_status, blend_inputs, inputs_metadata
@@ -104,7 +104,7 @@ data/
     geopolitical.py       # Daily GPR, anchored; register hook at GEO_REGISTER_WEIGHT (0)
     freight.py            # TSIFRGHT YoY + weekly STB rail YoY, anchored
     inputs.py             # Fed prices-paid composite + real copper and aluminum
-    physical.py           # GDACS hazards near ports + Gatun Lake + Mississippi
+    physical.py           # GDACS hazards near ports + Mississippi
     weather.py            # Open-Meteo, all 37 ports: MAP ONLY, not a composite category
     fred_client.py        # Shared FRED wrapper (public CSV when no key), fetch_fred_full for anchors
     silicon_analysts.py   # Semiconductor profile: 4 chip categories
@@ -208,7 +208,7 @@ CATEGORY_WEIGHTS = {
     "geopolitical":  0.10,  # Caldara-Iacoviello daily GPR (register in shadow)
     "freight":       0.10,  # TSIFRGHT YoY + weekly STB rail YoY
     "inputs":        0.10,  # Fed prices paid + real copper and aluminum
-    "physical":      0.05,  # GDACS hazards near ports + Gatun Lake + Mississippi
+    "physical":      0.05,  # GDACS hazards near ports + Mississippi
 }
 ```
 
@@ -309,7 +309,7 @@ The aggregator adds `score`, `tier`, and for failures `is_fallback`, `stored_on`
 
 ### Provider-Specific Patterns
 
-Input keys are canonical across config, anchors, readings and metadata: `gscpi`, `chokepoint_flow`, `brent`, `ulsd`, `ttf`, `ttf_monthly`, `tariff_burden`, `tpu`, `gpr`, `geo_register`, `tsifrght`, `rail_volume`, `prices_paid`, `copper`, `aluminum`, `copper_monthly`, `aluminum_monthly`, `hazards`, `gatun`, `mississippi`.
+Input keys are canonical across config, anchors, readings and metadata: `gscpi`, `chokepoint_flow`, `brent`, `ulsd`, `ttf`, `ttf_monthly`, `tariff_burden`, `tpu`, `gpr`, `geo_register`, `tsifrght`, `rail_volume`, `prices_paid`, `copper`, `aluminum`, `copper_monthly`, `aluminum_monthly`, `hazards`, `mississippi`.
 
 **Supply chain**: latest GSCPI month, anchored (lower better; baseline 1998–2019; worst 2021-12). BDRY (double-counts the Baltic Dry Index inside GSCPI) and WEI are hover context only.
 
@@ -325,7 +325,7 @@ Input keys are canonical across config, anchors, readings and metadata: `gscpi`,
 
 **Inputs**: 0.5 prices paid + 0.25 copper + 0.25 aluminum. Prices paid = mean of per-survey z-scores (each against its own 2004–2019 mean/sd in `SCORE_ANCHORS["prices_paid_stats"]`) for Philadelphia `PPCDFSA066MSFRBPHI`, Empire `PPCDISA066MSFRBNY`, Dallas `PRMSAMFRBDAL`. Kansas City is omitted (no stable file or FRED series; would need HTML scraping). Metals: IMF `PCOPPUSDM` / `PALUMUSDM`, live `HG=F` (×2204.62 $/lb→$/mt) and `ALI=F`, log real, anchored 1992–2019; the monthly value is used as `*_monthly` when live fails. Delivery times are context.
 
-**Physical**: 0.5 hazards + 0.25 Gatun + 0.25 Mississippi. Hazards: GDACS Orange/Red TC, FL, EQ, VO events active today; an event within `HAZARD_RADIUS_KM` (TC 450 km, a judgment; FL 100, EQ 150, VO 50) of a port costs `HAZARD_SCALE` (5000) × port throughput share × level points (Orange 0.5, Red 1.0); score = 100 − total, clipped. Gatun: 100 at ≥ 85 ft, linear to 0 at the record low (78.31 ft). Mississippi at St. Louis (USGS 07010000): 100 at ≥ the gauge's historical 10th percentile (0.535 ft), linear to 0 at the record low (−5.32 ft). Kaub is stored in `gauge_readings` at most hourly (`KAUB_STORE_INTERVAL_SECONDS`, cache marker `kaub_stored_v1`), never scored. Gatun stays an input pending Will's decision on the ACP redistribution notice.
+**Physical**: 2/3 hazards + 1/3 Mississippi (`PHYSICAL_WEIGHTS`). Hazards: GDACS Orange/Red TC, FL, EQ, VO events active today; an event within `HAZARD_RADIUS_KM` (TC 450 km, a judgment; FL 100, EQ 150, VO 50) of a port costs `HAZARD_SCALE` (5000) × port throughput share × level points (Orange 0.5, Red 1.0); score = 100 − total, clipped. Mississippi at St. Louis (USGS 07010000): 100 at ≥ the gauge's historical 10th percentile (0.535 ft), linear to 0 at the record low (−5.32 ft). Kaub is stored in `gauge_readings` at most hourly (`KAUB_STORE_INTERVAL_SECONDS`, cache marker `kaub_stored_v1`), never scored. There is no Panama Canal Gatun Lake input: the Panama Canal Authority data page asks for written consent before redistribution, and Panama disruptions are already measured by IMF PortWatch Panama Canal transits in Chokepoints.
 
 **Weather (map only)**: continuous linear deductions averaged per port, not part of the composite:
 ```python
@@ -384,7 +384,7 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 | GPR daily / monthly | `gpr_daily_v1` / `gpr_monthly_v1` | 12 hours |
 | STB rail weekly | `stb_rail_weekly_v1` | 12 hours |
 | GDACS events | `gdacs_events_v1_<year>H<n>` | 6 hours for the current half-year chunk, 30 days for settled chunks |
-| Gatun Lake / St. Louis gauge | `gatun_levels_v1` / per-window key | 6 hours |
+| St. Louis gauge | per-window key (`stl_stage_v1_<start>`) | 6 hours |
 | Weather (port batch, map) | `weather_batch_ports_v3` | 4 hours |
 | Market data pane | `raw_market_data_v2` | 1 hour |
 | Silicon Analysts | | `INDUSTRY_PROVIDER_CACHE_TTL` (24 hours; 1 hour after a failed fetch) |
@@ -677,5 +677,4 @@ All tunable values live in `config.py`; generated anchors live in `data/score_an
 - `index_history` does not renormalize past days under an exclusion, so the sparkline's previous point can differ from "yesterday" in the readout on degraded days.
 - A failed category's stored-score fallback age is measured from the date the score was stored, not from its data's as-of date.
 - The St. Louis gauge threshold is statistical (10th percentile), not an official navigation stage, and the waterway record lows are not cut at 2025 like the other anchors.
-- Gatun Lake stays a scored input although the Panama Canal Authority page asks for written consent before redistribution; the site shows only the derived score and latest level. Will to decide.
 - `tests/check_fred_gpr.py` is a stale manual script, not a test.

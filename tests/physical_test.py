@@ -1,4 +1,4 @@
-"""Offline tests for the Physical Disruption category (GDACS hazards, Gatun Lake, St. Louis)."""
+"""Offline tests for the Physical Disruption category (GDACS hazards, St. Louis)."""
 from datetime import date, timedelta
 from unittest import mock
 
@@ -22,8 +22,7 @@ PORTS = [
 SHARES = {"Houston": 0.05, "Rotterdam": 0.04, "Shanghai": 0.10}
 RADIUS = {"TC": 450.0, "FL": 100.0, "EQ": 150.0, "VO": 50.0}
 
-WATERWAY_ANCHORS = {"gatun_record_low": 78.0, "mississippi_record_low": -6.0,
-                    "mississippi_threshold": 5.0}
+WATERWAY_ANCHORS = {"mississippi_record_low": -6.0, "mississippi_threshold": 5.0}
 ANCHORS = {"port_throughput_share": SHARES, "waterways": WATERWAY_ANCHORS}
 
 
@@ -287,14 +286,6 @@ def test_gdacs_http_error_raises(no_cache):
 
 # ------------------------------------------------------------------------------- scores
 
-def test_gatun_score():
-    assert waterways.gatun_score(86.0, 78.0) == 100.0
-    assert waterways.gatun_score(85.0, 78.0) == 100.0
-    assert waterways.gatun_score(81.5, 78.0) == pytest.approx(50.0)
-    assert waterways.gatun_score(78.0, 78.0) == 0.0
-    assert waterways.gatun_score(70.0, 78.0) == 0.0
-
-
 def test_river_score():
     assert waterways.river_score(9.0, 5.0, -6.0) == 100.0
     assert waterways.river_score(-0.5, 5.0, -6.0) == pytest.approx(50.0)
@@ -304,35 +295,12 @@ def test_river_score():
 
 def test_scores_reject_degenerate_anchors_and_non_finite_input():
     with pytest.raises(ValueError):
-        waterways.gatun_score(80.0, 85.0)            # record low not below the full-draft level
-    with pytest.raises(ValueError):
         waterways.river_score(1.0, -6.0, -6.0)
     with pytest.raises(ValueError):
-        waterways.gatun_score(float("nan"), 78.0)
+        waterways.river_score(float("nan"), 5.0, -6.0)
 
 
 # ------------------------------------------------------------------------------- waterways sources
-
-GATUN_CSV = "DATE_LOG,GATUN_LAKE_LEVEL(FEET)\n2026-10-19,86.00\n2026-10-20,86.20\n2026-10-21,86.24\n"
-
-
-def test_parse_gatun_csv():
-    s = waterways.parse_gatun_csv(GATUN_CSV)
-    assert s.index.tolist() == [pd.Timestamp("2026-10-19"), pd.Timestamp("2026-10-20"),
-                                pd.Timestamp("2026-10-21")]
-    assert s.tolist() == [86.0, 86.2, 86.24]
-
-
-@pytest.mark.parametrize("text", [
-    "", "DATE_LOG,GATUN_LAKE_LEVEL(FEET)\n", "<html>maintenance</html>",
-    "DATE,LEVEL\n2026-10-21,86.0\n",
-    "DATE_LOG,GATUN_LAKE_LEVEL(FEET)\n2026-10-21,n/a\n",
-    "DATE_LOG,GATUN_LAKE_LEVEL(FEET)\n2026-10-21,26.2\n",   # metres: outside the plausible feet range
-])
-def test_parse_gatun_csv_empty_or_reshaped_raises(text):
-    with pytest.raises(ValueError):
-        waterways.parse_gatun_csv(text)
-
 
 def _usgs(values, code="00065", no_data="-999999.0"):
     return {"value": {"timeSeries": [{
@@ -393,26 +361,6 @@ def no_wcache():
     with mock.patch.object(waterways, "get_cached", return_value=None), \
          mock.patch.object(waterways, "set_cached") as save:
         yield save
-
-
-def test_fetch_gatun_url_and_cache(no_wcache):
-    resp = mock.Mock(text=GATUN_CSV)
-    resp.raise_for_status = mock.Mock()
-    with mock.patch.object(waterways.requests, "get", return_value=resp) as get:
-        s = waterways.fetch_gatun()
-    assert get.call_args.args[0] == ("https://evtms-rpts.pancanal.com/eng/h2o/"
-                                     "Download_Gatun_Lake_Water_Level_History.csv")
-    assert s.iloc[-1] == 86.24
-    assert no_wcache.call_args.args[0] == "gatun_levels_v1"
-
-
-def test_fetch_gatun_bad_payload_not_cached(no_wcache):
-    resp = mock.Mock(text="<html></html>")
-    resp.raise_for_status = mock.Mock()
-    with mock.patch.object(waterways.requests, "get", return_value=resp):
-        with pytest.raises(ValueError):
-            waterways.fetch_gatun()
-    no_wcache.assert_not_called()
 
 
 def test_fetch_mississippi_url_params_and_no_stat_code(no_wcache):
@@ -480,15 +428,11 @@ def anchors(monkeypatch):
     monkeypatch.setattr(physical, "MAJOR_PORTS", [(p["name"], p["lat"], p["lon"], []) for p in PORTS])
 
 
-def _gatun_series(level=86.0, last=TODAY - timedelta(days=1), days=40):
-    return pd.Series(level, index=pd.date_range(end=pd.Timestamp(last), periods=days, freq="D"))
-
-
 def _river_series(stage=9.0, last=TODAY, days=40):
     return pd.Series(stage, index=pd.date_range(end=pd.Timestamp(last), periods=days, freq="D"))
 
 
-def _run(fn, events=None, gatun=None, river=None, kaub=(date(2026, 10, 22), 27.0), upsert=None,
+def _run(fn, events=None, river=None, kaub=(date(2026, 10, 22), 27.0), upsert=None,
          kaub_marker=None, kaub_cache=None):
     """Run ``fn`` with every source patched; a source passed as None fails.
 
@@ -506,8 +450,6 @@ def _run(fn, events=None, gatun=None, river=None, kaub=(date(2026, 10, 22), 27.0
     upsert = upsert if upsert is not None else mock.Mock()
     with mock.patch.object(physical.gdacs, "fetch_events",
                            side_effect=returning(events) if events is not None else fail("gdacs")), \
-         mock.patch.object(physical.waterways, "fetch_gatun",
-                           side_effect=returning(gatun) if gatun is not None else fail("gatun")), \
          mock.patch.object(physical.waterways, "fetch_mississippi_stl",
                            side_effect=returning(river) if river is not None else fail("stl")), \
          mock.patch.object(physical.waterways, "fetch_kaub_latest",
@@ -520,31 +462,31 @@ def _run(fn, events=None, gatun=None, river=None, kaub=(date(2026, 10, 22), 27.0
 
 def test_physical_all_clear_scores_100(anchors):
     score, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
-                       gatun=_gatun_series(86.0), river=_river_series(9.0))
+                       river=_river_series(9.0))
     assert score == 100.0
-    assert meta["is_stale"] is False and meta["as_of"] == "2026-10-21"    # the Gatun file ends yesterday
-    assert [i["name"] for i in meta["inputs"]] == ["hazards", "gatun", "mississippi"]
+    assert meta["is_stale"] is False and meta["as_of"] == "2026-10-22"
+    assert [i["name"] for i in meta["inputs"]] == ["hazards", "mississippi"]
     assert all(i["status"] == "live" for i in meta["inputs"])
 
 
 def test_physical_blends_with_config_weights(anchors):
-    # Red typhoon over Houston: share 0.05 -> hazards 50. Gatun 81.5 (record low 78) -> 50.
-    # St. Louis 9.0 above the threshold -> 100. 0.5 x 50 + 0.25 x 50 + 0.25 x 100 = 62.5.
+    # Red typhoon over Houston: share 0.05 -> hazards 50. St. Louis 9.0 above the threshold -> 100.
+    # 2/3 x 50 + 1/3 x 100 = 66.7.
     score, _ = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")],
-                    gatun=_gatun_series(81.5), river=_river_series(9.0))
-    assert score == pytest.approx(62.5, abs=0.1)
+                    river=_river_series(9.0))
+    assert score == pytest.approx(66.7, abs=0.1)
 
 
-def test_physical_missing_gauges_uses_hazards_only(anchors):
+def test_physical_missing_river_uses_hazards_only(anchors):
     score, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")])
     assert score == pytest.approx(50.0, abs=0.1)
     statuses = {i["name"]: i["status"] for i in meta["inputs"]}
-    assert statuses == {"hazards": "live", "gatun": "missing", "mississippi": "missing"}
+    assert statuses == {"hazards": "live", "mississippi": "missing"}
 
 
-def test_physical_missing_hazards_uses_gauges(anchors):
-    score, meta = _run(PhysicalProvider().fetch_current, gatun=_gatun_series(81.5), river=_river_series(9.0))
-    assert score == pytest.approx(75.0, abs=0.1)         # (0.25 x 50 + 0.25 x 100) / 0.5
+def test_physical_missing_hazards_uses_river(anchors):
+    score, meta = _run(PhysicalProvider().fetch_current, river=_river_series(-0.5))
+    assert score == pytest.approx(50.0, abs=0.1)         # river score 50, renormalized to the one input
     assert {i["name"]: i["status"] for i in meta["inputs"]}["hazards"] == "missing"
 
 
@@ -567,55 +509,56 @@ def test_physical_events_not_covering_today_are_ignored(anchors):
 
 
 def test_physical_waterway_reading_dates_and_staleness(anchors):
-    gatun = _gatun_series(86.0, last=TODAY - timedelta(days=5))     # stale after 3 days
-    river = _river_series(9.0, last=TODAY - timedelta(days=12))     # dropped after 9 days
-    _, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
-                   gatun=gatun, river=river)
+    river = _river_series(9.0, last=TODAY - timedelta(days=5))      # stale after 3 days
+    _, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)], river=river)
     by_name = {i["name"]: i for i in meta["inputs"]}
-    assert by_name["gatun"]["status"] == "stale" and by_name["gatun"]["as_of"] == "2026-10-17"
-    assert by_name["mississippi"]["status"] == "missing"
+    assert by_name["mississippi"]["status"] == "stale" and by_name["mississippi"]["as_of"] == "2026-10-17"
     assert meta["is_stale"] is True
     assert meta["as_of"] == "2026-10-17"          # oldest input used
+    dropped = _river_series(9.0, last=TODAY - timedelta(days=12))   # dropped after 9 days
+    _, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)], river=dropped)
+    assert {i["name"]: i["status"] for i in meta["inputs"]}["mississippi"] == "missing"
 
 
 def test_physical_non_finite_latest_waterway_value_is_missing(anchors):
-    gatun = _gatun_series(86.0)
-    gatun.iloc[-1] = np.nan
-    score, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")], gatun=gatun)
+    river = _river_series(9.0)
+    river.iloc[-1] = np.nan
+    score, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")], river=river)
     by_name = {i["name"]: i for i in meta["inputs"]}
     # The latest finite reading is the day before; it is still used.
-    assert by_name["gatun"]["as_of"] == "2026-10-20"
+    assert by_name["mississippi"]["as_of"] == "2026-10-21"
     only_nan = pd.Series([np.nan], index=pd.DatetimeIndex([TODAY]))
-    _, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")], gatun=only_nan)
-    assert {i["name"]: i["status"] for i in meta["inputs"]}["gatun"] == "missing"
+    _, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")], river=only_nan)
+    assert {i["name"]: i["status"] for i in meta["inputs"]}["mississippi"] == "missing"
 
 
 def test_physical_metadata_contract(anchors):
     _, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")],
-                   gatun=_gatun_series(86.0), river=_river_series(9.0))
+                   river=_river_series(9.0))
     for key in ("source", "raw_value", "raw_label", "description", "calculation", "updated",
                 "as_of", "is_stale", "inputs"):
         assert key in meta
-    assert "GDACS" in meta["source"] and "Gatun" in meta["source"]
-    assert "St. Louis" in meta["source"]
+    assert "GDACS" in meta["source"] and "St. Louis" in meta["source"]
+    assert "gatun" not in str(meta).lower() and "panama canal authority" not in str(meta).lower()
 
 
 def test_physical_raw_label_matches_the_inputs_used(anchors):
     _, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")])
     assert meta["raw_label"] == "Active hazard alerts"
     assert len(meta["raw_value"].split(" / ")) == len(meta["raw_label"].split("; ")) == 1
-    _, meta = _run(PhysicalProvider().fetch_current, gatun=_gatun_series(86.0), river=_river_series(9.0))
-    assert meta["raw_label"] == "Gatun Lake level (ft); St. Louis stage (ft)"
-    assert len(meta["raw_value"].split(" / ")) == 2
+    _, meta = _run(PhysicalProvider().fetch_current, river=_river_series(9.0))
+    assert meta["raw_label"] == "St. Louis stage (ft)"
+    assert len(meta["raw_value"].split(" / ")) == 1
     _, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
-                   gatun=_gatun_series(86.0), river=_river_series(9.0))
-    assert meta["raw_label"] == "Active hazard alerts; Gatun Lake level (ft); St. Louis stage (ft)"
+                   river=_river_series(9.0))
+    assert meta["raw_label"] == "Active hazard alerts; St. Louis stage (ft)"
+    assert len(meta["raw_value"].split(" / ")) == 2
 
 
 def test_physical_upserts_kaub_when_due_and_never_scores_it(anchors):
     upsert = mock.Mock()
     score, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
-                       gatun=_gatun_series(86.0), river=_river_series(9.0),
+                       river=_river_series(9.0),
                        kaub=(date(2026, 10, 22), 27.0), upsert=upsert)
     upsert.assert_called_once_with(date(2026, 10, 22), "kaub", 27.0)
     assert "kaub" not in [i["name"] for i in meta["inputs"]]
@@ -634,11 +577,11 @@ def test_physical_kaub_failure_is_swallowed(anchors):
 def test_physical_missing_anchor_raises_clear_error(anchors, monkeypatch, missing):
     monkeypatch.setattr(config, "SCORE_ANCHORS", {k: v for k, v in ANCHORS.items() if k != missing})
     with pytest.raises(RuntimeError, match=f"no anchor for {missing}"):
-        _run(PhysicalProvider().fetch_current, events=[], gatun=_gatun_series(), river=_river_series())
+        _run(PhysicalProvider().fetch_current, events=[], river=_river_series())
 
 
 def test_physical_missing_waterway_key_raises_clear_error(anchors, monkeypatch):
-    partial = {"gatun_record_low": 78.0}
+    partial = {"mississippi_record_low": -6.0}
     monkeypatch.setattr(config, "SCORE_ANCHORS", {**ANCHORS, "waterways": partial})
     with pytest.raises(RuntimeError, match="no anchor for waterways"):
         _run(PhysicalProvider().fetch_current, events=[])
@@ -650,12 +593,20 @@ def test_physical_port_missing_from_shares_counts_zero(anchors, monkeypatch):
     assert score == 100.0
 
 
+def test_physical_weights_and_inputs_exclude_gatun(anchors):
+    assert config.PHYSICAL_WEIGHTS == {"hazards": 2 / 3, "mississippi": 1 / 3}
+    _, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
+                   river=_river_series(9.0))
+    assert [i["name"] for i in meta["inputs"]] == ["hazards", "mississippi"]
+    assert "gatun" not in " ".join(str(i).lower() for i in meta["inputs"])
+
+
 def test_physical_category_constants(monkeypatch):
     monkeypatch.undo()
     assert PhysicalProvider.category == "physical"
     assert config.CATEGORY_LABELS["physical"] == "Physical Disruption"
-    assert config.PHYSICAL_WEIGHTS == {"hazards": 0.5, "gatun": 0.25, "mississippi": 0.25}
-    assert config.GATUN_FULL_DRAFT_FT == 85.0
+    assert config.PHYSICAL_WEIGHTS == {"hazards": 2 / 3, "mississippi": 1 / 3}
+    assert not hasattr(config, "GATUN_FULL_DRAFT_FT") and "gatun" not in config.FRESHNESS
     assert config.HAZARD_RADIUS_KM == {"TC": 450, "FL": 100, "EQ": 150, "VO": 50}
     assert config.HAZARD_LEVEL_POINTS == {"Orange": 0.5, "Red": 1.0} and config.HAZARD_SCALE == 5000.0
     colors = list(config.CATEGORY_COLORS.values())
@@ -666,8 +617,8 @@ def test_physical_category_constants(monkeypatch):
 
 def test_physical_history_daily_scores_at_actual_dates(anchors):
     events = [_event("TC", "Red", start="2026-10-10", end="2026-10-12")]
-    gatun = _gatun_series(86.0, last=TODAY - timedelta(days=1), days=8)       # starts 2026-10-15
-    series = _run(lambda: PhysicalProvider().fetch_history(30), events=events, gatun=gatun)
+    river = _river_series(9.0, days=8)                                         # starts 2026-10-15
+    series = _run(lambda: PhysicalProvider().fetch_history(30), events=events, river=river)
     assert series.index[-1] == pd.Timestamp(TODAY) and len(series) == 30
     # Hazard-only days: the Red cyclone is active 10-10..10-12 (score 50), clear before and after.
     assert series[pd.Timestamp("2026-10-11")] == pytest.approx(50.0, abs=0.1)
@@ -677,8 +628,8 @@ def test_physical_history_daily_scores_at_actual_dates(anchors):
 
 
 def test_physical_history_keeps_leading_gap_without_hazards(anchors):
-    gatun = _gatun_series(86.0, last=TODAY - timedelta(days=1), days=8)
-    series = _run(lambda: PhysicalProvider().fetch_history(30), gatun=gatun)
+    river = _river_series(9.0, days=8)
+    series = _run(lambda: PhysicalProvider().fetch_history(30), river=river)
     assert series[:pd.Timestamp("2026-10-13")].isna().all()          # before the first gauge reading
     assert series[pd.Timestamp("2026-10-16")] == 100.0
 
@@ -686,8 +637,8 @@ def test_physical_history_keeps_leading_gap_without_hazards(anchors):
 def test_physical_history_blends_with_weights(anchors):
     events = [_event("TC", "Red", start="2026-10-20", end="2026-10-22")]
     series = _run(lambda: PhysicalProvider().fetch_history(10), events=events,
-                  gatun=_gatun_series(81.5, days=40), river=_river_series(9.0))
-    assert series[pd.Timestamp("2026-10-21")] == pytest.approx(62.5, abs=0.1)
+                  river=_river_series(9.0, days=40))
+    assert series[pd.Timestamp("2026-10-21")] == pytest.approx(66.7, abs=0.1)
 
 
 def test_physical_history_all_missing_raises(anchors):
@@ -699,8 +650,7 @@ def test_physical_aged_out_gauges_raise_inputs_expired(anchors):
     from data.providers.readings import InputsExpired
     old = TODAY - timedelta(days=20)                                   # past the 9-day drop
     with pytest.raises(InputsExpired):
-        _run(PhysicalProvider().fetch_current, gatun=_gatun_series(86.0, last=old),
-             river=_river_series(9.0, last=old))
+        _run(PhysicalProvider().fetch_current, river=_river_series(9.0, last=old))
 
 
 def test_physical_fetch_failures_are_not_inputs_expired(anchors):

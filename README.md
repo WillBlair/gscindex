@@ -66,7 +66,7 @@ The index is a weighted average of eight category scores (0 to 100, where **100 
 | Geopolitical Risk | 10% | Caldara-Iacoviello daily Geopolitical Risk index, 30-day mean |
 | Freight Volume | 10% | Year-over-year growth of the BTS Freight TSI and of weekly STB rail carloads plus intermodal units |
 | Input Costs | 10% | Philadelphia, New York and Dallas Fed prices-paid surveys, real copper and aluminum prices |
-| Physical Disruption | 5% | GDACS hazard alerts near the 37 ports, Panama Canal Gatun Lake level, Mississippi River stage at St. Louis |
+| Physical Disruption | 5% | GDACS hazard alerts near the 37 ports, Mississippi River stage at St. Louis |
 
 **Scale.** Most inputs are mapped through three fixed anchors from their own history: 100 = the healthiest 5% of months before 2020, 80 = the pre-2020 median ("normal"), 0 = the worst monthly average on record through 2025. Prices are inflation-adjusted and logged; volumes use year-over-year growth. Chokepoints and Physical Disruption are event scores where a normal day reads about 100. The anchors live in `data/score_anchors.json` and change only with a new methodology version.
 
@@ -106,7 +106,7 @@ Health tiers: **Healthy** (80 to 100), **Stable** (60 to 79), **Stressed** (40 t
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 4 gthreads)
 - **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback): subscribers, daily score history, latest dashboard snapshot, disruption register, river gauge readings
-- **Data sources:** FRED, NY Fed GSCPI, IMF PortWatch, U.S. Treasury Fiscal Data, Caldara-Iacoviello GPR and TPU files, USDA AgTransport (STB rail), GDACS, Panama Canal Authority, USGS, Open-Meteo, yfinance, Silicon Analysts. All free; only FRED and Silicon Analysts take an optional key
+- **Data sources:** FRED, NY Fed GSCPI, IMF PortWatch, U.S. Treasury Fiscal Data, Caldara-Iacoviello GPR and TPU files, USDA AgTransport (STB rail), GDACS, USGS, Open-Meteo, yfinance, Silicon Analysts. All free; only FRED and Silicon Analysts take an optional key
 - **AI:** Anthropic API (default model `claude-sonnet-5-5`), optional
 - **Spreadsheets:** openpyxl reads the TPU workbook
 - **Caching:** File-based with atomic writes (1-hour default TTL)
