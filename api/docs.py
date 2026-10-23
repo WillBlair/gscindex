@@ -558,6 +558,7 @@ def _docs_values() -> dict[str, str]:
         "gatun_text": gatun_text,
         "river_text": river_text,
         "news_hours": f"{config.NEWS_AI_REFRESH_SECONDS / 3600:g}",
+        "rss_minutes": f"{config.NEWS_RSS_REFRESH_SECONDS / 60:g}",
         "briefing_alerts": str(config.NEWS_BRIEFING_MAX_ALERTS),
         "news_max_days": f"{config.NEWS_CACHE_MAX_AGE_SECONDS / 86400:g}",
         "retry_minutes": f"{config.AI_FAILURE_RETRY_SECONDS / 60:g}",
@@ -781,7 +782,7 @@ _DOCS_MARKDOWN = """
     <div class="p-card">
         <h3>Headlines, briefing and report</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Headlines:</strong> articles from 17 RSS feeds, plus a daily Claude web search, are filtered for relevance. Every {news_hours} hours Claude scores the headlines it has not seen yet; earlier scores are kept. Without an API key, headlines show with no severity.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Headlines:</strong> articles from 17 RSS feeds, plus a daily Claude web search, are filtered for relevance. The feeds are re-read every {rss_minutes} minutes, and new headlines appear with no severity until Claude's next run. Every {news_hours} hours Claude scores the headlines it has not seen yet; earlier scores are kept. Without an API key, headlines show with no severity.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Topics:</strong> tags use whole-word matching, so "port" does not match "report".</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Briefing and report:</strong> once a day Claude writes a 3-bullet briefing from the top {briefing_alerts} headlines and the full report at <span class="code-inline">/report</span>.</div></div>
             <div class="step-item"><div class="step-num">4</div><div class="step-text"><strong>Failures:</strong> a failed call is retried after {retry_minutes} minutes. The last result stays up, marked stale, for up to {news_max_days} days.</div></div>

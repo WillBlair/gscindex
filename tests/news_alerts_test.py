@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from config import AI_CACHE_TTL_SECONDS, NEWS_AI_REFRESH_SECONDS, NEWS_MAX_ALERTS
+from config import AI_CACHE_TTL_SECONDS, NEWS_AI_REFRESH_SECONDS, NEWS_MAX_ALERTS, NEWS_RSS_REFRESH_SECONDS
 from data import news_alerts
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -131,12 +131,94 @@ def test_titles_claude_rejected_are_not_resent(env):
 
 def test_not_due_returns_cache_without_fetching(env):
     now = time.time()
-    _seed(env["store"], [_cached_alert("Port strike in Rotterdam")], now=now, alerts_scored_at=now - 60)
+    _seed(env["store"], [_cached_alert("Port strike in Rotterdam")], now=now, alerts_scored_at=now - 60,
+          rss_refreshed_at=now - 60)
 
     alerts, _, _ = news_alerts.fetch_supply_chain_news()
 
     assert [a["title"] for a in alerts] == ["Port strike in Rotterdam"]
     assert env["rss"].call_count == 0 and env["batch"].call_count == 0
+
+
+# --- hourly RSS refresh (no Claude) ----------------------------------------------------------
+
+def _seed_scoring_not_due(store, alerts, now, **fields):
+    """Claude scoring and the full run are not due; the hourly RSS re-read is."""
+    return _seed(store, alerts, now=now, alerts_scored_at=now - 60,
+                 rss_refreshed_at=now - NEWS_RSS_REFRESH_SECONDS - 1, **fields)
+
+
+def test_hourly_refresh_appends_new_headlines_unscored_without_claude(env):
+    now = time.time()
+    _seed_scoring_not_due(env["store"], [_cached_alert("Port strike in Rotterdam")], now,
+                          scored_titles=[news_alerts.title_key("Celebrity yacht tour")])
+    env["rss"].return_value = [
+        _article("PORT STRIKE in Rotterdam"),                                   # same normalized title
+        _article("Diesel prices jump", published="2026-10-22T11:00:00+00:00"),
+        _article("Celebrity yacht tour"),                                       # Claude rejected it
+    ]
+
+    alerts, briefing, _ = news_alerts.fetch_supply_chain_news()
+
+    assert env["batch"].call_count == 0 and env["web"].call_count == 0
+    assert env["report"].call_count == 0 and env["briefing"].call_count == 0
+    assert [a["title"] for a in alerts] == ["Diesel prices jump", "Port strike in Rotterdam"]
+    new = alerts[0]
+    assert new["severity"] is None and new["severity_label"] == "unscored"
+    assert new["scored_by"] is None and new["sentiment"] is None
+    assert alerts[1]["scored_by"] == "claude"
+    assert briefing == "• Cached briefing."
+    payload = env["store"][news_alerts.NEWS_CACHE_KEY]
+    assert payload["rss_refreshed_at"] == pytest.approx(now, abs=5)
+    assert payload["alerts_scored_at"] == pytest.approx(now - 60, abs=1)   # scoring clock untouched
+    assert payload["stale"] is False
+
+
+def test_hourly_refresh_keeps_the_newest_alerts_only(env):
+    now = time.time()
+    start = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    cached = [_cached_alert(f"Old story {i}", published=(start + timedelta(days=i)).isoformat())
+              for i in range(NEWS_MAX_ALERTS)]
+    _seed_scoring_not_due(env["store"], cached, now)
+    env["rss"].return_value = [_article("Fresh port strike", published="2026-10-22T09:00:00+00:00")]
+
+    alerts, _, _ = news_alerts.fetch_supply_chain_news()
+
+    assert len(alerts) == NEWS_MAX_ALERTS
+    assert alerts[0]["title"] == "Fresh port strike" and alerts[0]["scored_by"] is None
+    assert "Old story 0" not in {a["title"] for a in alerts}
+
+
+def test_hourly_refresh_rss_failure_keeps_the_cache(env):
+    now = time.time()
+    _seed_scoring_not_due(env["store"], [_cached_alert("Port strike in Rotterdam")], now)
+    env["rss"].side_effect = RuntimeError("feeds down")
+
+    alerts, _, _ = news_alerts.fetch_supply_chain_news()
+
+    assert [a["title"] for a in alerts] == ["Port strike in Rotterdam"]
+    assert env["batch"].call_count == 0
+
+
+def test_next_scoring_run_scores_the_unscored_headlines(env):
+    now = time.time()
+    _seed_scoring_not_due(env["store"], [_cached_alert("Port strike in Rotterdam")], now)
+    env["rss"].return_value = [_article("Port strike in Rotterdam"), _article("Diesel prices jump")]
+    news_alerts.fetch_supply_chain_news()                       # hourly: Diesel added unscored
+    assert env["batch"].call_count == 0
+
+    payload = env["store"][news_alerts.NEWS_CACHE_KEY]
+    payload["alerts_scored_at"] = now - NEWS_AI_REFRESH_SECONDS - 1
+    # The unscored headline has left the feeds by the time the scoring run comes.
+    env["rss"].return_value = [_article("Port strike in Rotterdam")]
+    alerts, _, _ = news_alerts.fetch_supply_chain_news()
+
+    sent = env["batch"].call_args.args[0]
+    assert [a["title"] for a in sent] == ["Diesel prices jump"]
+    by_title = {a["title"]: a for a in alerts}
+    assert len(alerts) == 2
+    assert by_title["Diesel prices jump"]["scored_by"] == "claude"
+    assert by_title["Diesel prices jump"]["severity"] == "high"
 
 
 def test_full_run_adds_web_search_and_regenerates_briefing_and_report(env):

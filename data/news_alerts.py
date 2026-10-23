@@ -8,7 +8,9 @@ Claude scores headlines incrementally: every ``NEWS_AI_REFRESH_SECONDS`` the RSS
 read and only headlines Claude has not judged yet are sent to ``analyze_news_batch``; earlier
 severities and summaries are kept, and the newest ``NEWS_MAX_ALERTS`` alerts stay. The daily
 full run (``AI_CACHE_TTL_SECONDS``) adds Claude web search and regenerates the briefing and
-the full report.
+the full report. Between Claude runs the feeds are re-read every ``NEWS_RSS_REFRESH_SECONDS``
+and new headlines join the cached alerts unscored (no Claude call); the next scoring run
+scores them, even if they have left the feeds by then.
 
 A failed Claude call keeps the cached alerts, flags the payload ``stale`` and retries after
 ``AI_FAILURE_RETRY_SECONDS``. A Claude result older than ``NEWS_CACHE_MAX_AGE_SECONDS`` is
@@ -37,6 +39,7 @@ from config import (
     NEWS_BRIEFING_MAX_ALERTS,
     NEWS_CACHE_MAX_AGE_SECONDS,
     NEWS_MAX_ALERTS,
+    NEWS_RSS_REFRESH_SECONDS,
 )
 from data import llm
 from data.ai_analyst import analyze_news_batch, generate_briefing, generate_full_report
@@ -325,6 +328,16 @@ def _unscored_alert(c: dict) -> dict:
     }
 
 
+def _alert_candidate(alert: dict) -> dict:
+    """A cached alert back in candidate form, so Claude can score it after it left the feeds."""
+    return {
+        "title": str(alert.get("title") or ""), "description": str(alert.get("body") or ""),
+        "url": alert.get("url") or "#", "source": alert.get("source") or "Industry News",
+        "published": alert.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+        "key": alert["title_key"],
+    }
+
+
 def _claude_alert(c: dict, analysis: dict) -> dict:
     severity = _clamp_severity(analysis.get("severity_score", 0.0))
     label = _score_to_severity(severity)
@@ -384,7 +397,11 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
         raise RuntimeError("No RSS articles available from any feed")
 
     judged |= {a["title_key"] for a in old_alerts if a.get("scored_by") == "claude"}
-    to_score = [c for c in candidates if c["key"] not in judged][:NEWS_AI_MAX_ARTICLES]
+    # Unscored alerts the hourly RSS refresh added that have since left the feeds.
+    feed_keys = {c["key"] for c in candidates}
+    pending = [_alert_candidate(a) for a in old_alerts
+               if a.get("scored_by") != "claude" and a.get("title_key") and a["title_key"] not in feed_keys]
+    to_score = [c for c in candidates + pending if c["key"] not in judged][:NEWS_AI_MAX_ARTICLES]
 
     configured = llm.is_configured()
     scoring_ok = True
@@ -416,7 +433,7 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
                 alerts = _merge_alerts(old_alerts, [_unscored_alert(c) for c in candidates
                                                     if c["key"] not in present])
 
-    candidate_keys = {c["key"] for c in candidates}
+    candidate_keys = feed_keys | {c["key"] for c in pending}
     payload = dict(cached)
     payload.update({
         "alerts": alerts,
@@ -428,6 +445,7 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
         # A failed call retries after AI_FAILURE_RETRY_SECONDS instead of waiting a full
         # interval (or retrying every cycle).
         "alerts_scored_at": now if scoring_ok else now - NEWS_AI_REFRESH_SECONDS + AI_FAILURE_RETRY_SECONDS,
+        "rss_refreshed_at": now,
     })
 
     if full:
@@ -452,19 +470,45 @@ def _refresh(cached: dict, *, full: bool, now: float) -> dict:
     return payload
 
 
+def _append_rss(cached: dict, now: float) -> dict:
+    """Hourly: new RSS headlines join the cached alerts unscored. No Claude call.
+
+    A headline already shown, or one Claude judged not relevant, is skipped (normalized title
+    key). A feed failure keeps the cached alerts.
+    """
+    payload = dict(cached)
+    payload["rss_refreshed_at"] = now
+    try:
+        candidates = _candidates(fetch_rss_articles(max_items=50))
+    except Exception as exc:
+        logger.warning("Hourly RSS refresh failed; keeping the cached alerts: %s", exc)
+        return payload
+    old_alerts = list(cached.get("alerts") or [])
+    known = {a.get("title_key") for a in old_alerts} | set(cached.get("scored_titles") or [])
+    new = [_unscored_alert(c) for c in candidates if c["key"] not in known]
+    if new:
+        logger.info("Hourly RSS refresh added %d unscored headlines", len(new))
+        payload["alerts"] = _merge_alerts(old_alerts, new)
+    return payload
+
+
 @serialized
 def fetch_supply_chain_news() -> tuple[list[dict], str, str]:
     """Headlines, briefing and full report for display. No score.
 
     Returns the cached payload until an incremental (``NEWS_AI_REFRESH_SECONDS``) or full
-    (``AI_CACHE_TTL_SECONDS``) run is due, then updates and caches it. Raises
+    (``AI_CACHE_TTL_SECONDS``) run is due, then updates and caches it. In between, every
+    ``NEWS_RSS_REFRESH_SECONDS`` new RSS headlines are appended unscored. Raises
     ``RuntimeError`` when there are no articles and nothing cached.
     """
     now = time.time()
     cached = cached_payload() or {}
     full = _due(cached, "ai_generated_at", AI_CACHE_TTL_SECONDS, now)
-    if not full and not _due(cached, "alerts_scored_at", NEWS_AI_REFRESH_SECONDS, now):
+    if full or _due(cached, "alerts_scored_at", NEWS_AI_REFRESH_SECONDS, now):
+        payload = _refresh(cached, full=full, now=now)
+    elif _due(cached, "rss_refreshed_at", NEWS_RSS_REFRESH_SECONDS, now):
+        payload = _append_rss(cached, now)
+    else:
         return _as_tuple(cached)
-    payload = _refresh(cached, full=full, now=now)
     set_cached(NEWS_CACHE_KEY, payload)
     return _as_tuple(payload)

@@ -44,6 +44,9 @@ NEWS_CACHE_MAX_AGE_SECONDS: int = 7 * 86400
 # severities are kept). Web search, the briefing and the full report stay on the
 # daily AI_CACHE_TTL_SECONDS run. News is display-only; it feeds no score.
 NEWS_AI_REFRESH_SECONDS: int = int(os.environ.get("NEWS_AI_REFRESH_SECONDS", "21600"))
+# Between Claude runs the RSS feeds are re-read this often; new headlines join the cached
+# alerts unscored until the next NEWS_AI_REFRESH_SECONDS run scores them (no Claude call).
+NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
 NEWS_MAX_ALERTS: int = 60          # headlines kept, newest by published time
 NEWS_BRIEFING_MAX_ALERTS: int = 15 # top alerts (severity, then recency) the daily briefing reads
 

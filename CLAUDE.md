@@ -45,6 +45,7 @@ AI_WEB_SEARCH             # Set to 0 to turn off Claude web search
 AI_CACHE_TTL_SECONDS      # Default 86400 (daily Claude runs: briefing, report, ports, register, web search)
 AI_FAILURE_RETRY_SECONDS  # Default 3600
 NEWS_AI_REFRESH_SECONDS   # Default 21600 (incremental headline scoring every 6 h)
+NEWS_RSS_REFRESH_SECONDS  # Default 3600 (between Claude runs, new RSS headlines join the alerts unscored)
 SILICON_ANALYSTS_API_KEY  # Optional. Raises the Silicon Analysts daily request cap
 NEWSLETTER_SECRET         # Signs unsubscribe links (falls back to ADMIN_TOKEN)
 NEWSLETTER_POSTAL_ADDRESS # Footer address for the newsletter (CAN-SPAM)
@@ -388,7 +389,7 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 | Market data pane | `raw_market_data_v2` | 1 hour |
 | Silicon Analysts | | `INDUSTRY_PROVIDER_CACHE_TTL` (24 hours; 1 hour after a failed fetch) |
 | Aerospace | | 1 hour |
-| News payload (alerts, briefing, report) | `NEWS_BRIEFING_CACHE_KEY` (`newsapi_briefing_v19`) | usable up to `NEWS_CACHE_MAX_AGE_SECONDS` (7 days); incremental scoring every `NEWS_AI_REFRESH_SECONDS` (6 h), full run (web search, briefing, report) every `AI_CACHE_TTL_SECONDS` (24 h), tracked inside the payload |
+| News payload (alerts, briefing, report) | `NEWS_BRIEFING_CACHE_KEY` (`newsapi_briefing_v19`) | usable up to `NEWS_CACHE_MAX_AGE_SECONDS` (7 days); RSS re-read every `NEWS_RSS_REFRESH_SECONDS` (1 h; new headlines appended unscored, no Claude call), incremental scoring every `NEWS_AI_REFRESH_SECONDS` (6 h; also scores those unscored headlines), full run (web search, briefing, report) every `AI_CACHE_TTL_SECONDS` (24 h), tracked inside the payload |
 | Port summaries | `ai_port_summaries_v6` | `AI_CACHE_TTL_SECONDS` (24 hours) |
 | Disruption register score | `disruption_register_v1` | `AI_CACHE_TTL_SECONDS` (24 hours) |
 | Failed Claude call | `*_failed_v1` | retried after `AI_FAILURE_RETRY_SECONDS` (1 hour) |

@@ -118,3 +118,9 @@ def test_docs_failed_category_step_separates_fetch_failure_from_expired_inputs(b
 def test_docs_tariff_burden_freshness_reads_config(body):
     stale, drop = config.FRESHNESS["tariff_burden"]
     assert f"The burden is stale after {stale} days, dropped after {drop}" in _text(body)
+
+
+def test_docs_headlines_mention_the_hourly_unscored_refresh(body):
+    minutes = f"{config.NEWS_RSS_REFRESH_SECONDS / 60:g}"
+    assert (f"The feeds are re-read every {minutes} minutes, and new headlines appear with no "
+            "severity until Claude's next run.") in _text(body)
