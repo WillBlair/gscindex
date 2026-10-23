@@ -1,6 +1,6 @@
 # Global Supply Chain Index
 
-A real-time supply chain health dashboard. It scores eight categories from published data, combines them into a weighted composite index (0 to 100), and serves interactive views and a public JSON API.
+A real-time supply chain health dashboard. It scores eight categories from published data, combines them into a weighted composite index (0 to 100), and serves interactive views and a public JSON API. Two separate sector indexes, Semis and Aero, are built only from their own industry data.
 
 Live site: [gscindex.com](https://gscindex.com)
 
@@ -12,8 +12,11 @@ works on desktop, tablet and phone.
 - **Index readout:** the weighted index, its health tier, the change versus
   yesterday, a sparkline with a 7D / 30D / 90D selector, and each category's
   score and change.
-- **Profiles:** switch between Global, Semis and Aero in the header. Weights and
-  scores follow the selected profile.
+- **Tabs:** switch between Global, Semis and Aero in the header. Global is the
+  composite. Semis and Aero each show their own index and only their own
+  categories, at equal weights. A sector index below its coverage minimum shows
+  "Not enough data". The map, markets, headlines and briefing are the same on
+  every tab.
 - **Port map:** hover or tap a marker for its score, the composite and local
   weather behind it, and its disruption summary. On desktop, drag to pan and
   scroll to zoom. On phones and touch screens, drag and scroll zoom are off so
@@ -23,21 +26,22 @@ works on desktop, tablet and phone.
   UN Global Platform; IMF PortWatch).
 - **Headlines:** sorted HIGH, then MED, then LOW, newest first within each.
   Search by text and filter by severity and topic. Filters, the trend range and
-  the profile are remembered for the browser session.
+  the tab are remembered for the browser session.
 - **Briefing:** the AI summary, with a link to the full report.
 - **Category table:** weight, today's score as a bar with a tick for yesterday,
   change, effect on the index, a 30-day sparkline and the source. Hover a
   category name, or tap it on a phone, for each input with its as-of date and
   status, the raw values and the calculation.
 - **Header actions:** Methodology (`/docs`), API (a modal), CSV (the selected
-  profile's scores, nominal weights, contributions, status and as-of dates) and Subscribe
+  tab's scores, nominal weights, contributions, status and as-of dates) and Subscribe
   (a small popover for the daily briefing email).
 - **Refresh:** panes update in place every 5 minutes (every 20 seconds while
   warming up) and keep your filters and scroll position. Refreshing reads the
   latest cache; it does not trigger provider API calls.
 - **Data quality:** "yesterday" is exactly the previous UTC date from stored daily
   scores. If that day is missing, the value shows a dash instead of a guess.
-  Fallback and stale categories are marked in the table.
+  Fallback and stale categories are marked in the table. Missing days are gaps
+  in the sparkline, never a line drawn across.
 
 For local use, install `requirements.txt` and run `python app.py` at
 `http://127.0.0.1:8050`. FRED data uses the authenticated API when a key is configured, otherwise its
@@ -76,16 +80,32 @@ The index is a weighted average of eight category scores (0 to 100, where **100 
 
 Health tiers: **Healthy** (80 to 100), **Stable** (60 to 79), **Stressed** (40 to 59), **Critical** (0 to 39).
 
+### Sector Indexes
+
+Semis and Aero are separate indexes, each the equal-weight mean of its own categories. They use the same anchored scale, freshness limits and fallback rules as the global categories. Global is never blended into them, and they never change the composite, its disruptions or its degraded flags.
+
+| Index | Category | Data source |
+|-------|----------|-------------|
+| Semis | Memory Prices | Bank of Japan import price index for MOS memory chips (contract-currency basis), year over year |
+| Semis | Logic Chip Prices | Bank of Japan import price index for MOS logic chips (contract-currency basis), year over year |
+| Semis | Fab Utilization | Federal Reserve G.17 capacity utilization, semiconductors and electronic components (lower is better) |
+| Aero | Aero Throughput | Federal Reserve G.17 capacity utilization, aerospace (higher is better) |
+| Aero | Delivery Flow | Census M3 nondefense aircraft inventories over 3-month shipments |
+| Aero | Mill Prices | BLS PPI for titanium and nickel-alloy mill shapes, year over year |
+| Aero | Forgings & Castings | BLS PPI for titanium forgings, nonferrous forgings and steel investment castings, year over year |
+
+The Semis index needs at least 2 of its 3 categories and the Aero index at least 3 of its 4; otherwise it shows "Not enough data". The Bank of Japan data is fetched at most once a day and credited on `/docs`, in the CSV and in the API: "This service uses the API provided by the 'Bank of Japan Time-Series Data Search.' The Bank of Japan does not guarantee the content of the service." Commercial reuse of the memory and logic scores requires the Bank of Japan's permission.
+
 ### Dashboard Features
 
-- **Index readout**: score, health tier, same-profile change versus yesterday, and a 7, 30 or 90 day trend
+- **Index readout**: score, health tier, same-tab change versus yesterday, and a 7, 30 or 90 day trend
 - **Category table**: weight, score bar with yesterday's tick, change, effect on the index, 30-day sparkline, source with a stale or fallback suffix, and a hover or tap detail per category
 - **World map**: 37 ports scored by the index composite (60%) + local weather from Open-Meteo (40%), minus one news or AI disruption penalty, with port conditions on hover
 - **Headlines**: supply-chain articles with Claude severity (unscored without an API key), sorted by severity then recency, with search and filters
 - **AI briefing**: Claude-generated summary (optional; refreshed daily)
 - **Market indicators**: energy, shipping, metals and macro quotes via yfinance
-- **Profiles**: Global, Semis and Aero views
-- **CSV export**: the selected profile's scores, weights, status and as-of dates
+- **Tabs**: the Global composite and the separate Semis and Aero sector indexes
+- **CSV export**: the selected tab's scores, weights, status and as-of dates (sector exports add each input)
 - **Newsletter signup**: email collection stored in PostgreSQL (prod) or SQLite (dev)
 - **Auto-refresh**: panes update in place every 5 min, or every 20s while warming up
 
@@ -106,7 +126,7 @@ Health tiers: **Healthy** (80 to 100), **Stable** (60 to 79), **Stressed** (40 t
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 4 gthreads)
 - **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback): subscribers, daily score history, latest dashboard snapshot, disruption register, river gauge readings
-- **Data sources:** FRED, NY Fed GSCPI, IMF PortWatch, U.S. Treasury Fiscal Data, Caldara-Iacoviello GPR and TPU files, USDA AgTransport (STB rail), GDACS, USGS, Open-Meteo, yfinance, Silicon Analysts. All free; only FRED and Silicon Analysts take an optional key
+- **Data sources:** FRED, NY Fed GSCPI, IMF PortWatch, U.S. Treasury Fiscal Data, Caldara-Iacoviello GPR and TPU files, USDA AgTransport (STB rail), GDACS, USGS, Open-Meteo, yfinance, Bank of Japan Time-Series Data Search. All free; only FRED takes an optional key
 - **AI:** Anthropic API (default model `claude-sonnet-5-5`), optional
 - **Spreadsheets:** openpyxl reads the TPU workbook
 - **Caching:** File-based with atomic writes (1-hour default TTL)
@@ -162,7 +182,6 @@ Health tiers: **Healthy** (80 to 100), **Stable** (60 to 79), **Stressed** (40 t
 | `ANTHROPIC_EFFORT` | No | Claude effort level (default `medium`) |
 | `AI_CACHE_TTL_SECONDS` | No | How long each daily Claude result is reused (default `86400`) |
 | `NEWS_AI_REFRESH_SECONDS` | No | How often Claude scores new headlines (default `21600`) |
-| `SILICON_ANALYSTS_API_KEY` | No | Raises the Silicon Analysts request cap (semiconductor profile) |
 | `DATABASE_URL` | No | PostgreSQL for subscribers, score history, and the cold-start snapshot (omit for SQLite fallback) |
 | `ADMIN_TOKEN` | No | `Authorization: Bearer` token for `/api/v1/newsletter-data` and `/api/v1/admin/*` |
 | `NEWSLETTER_SECRET` | No | Signs unsubscribe links (falls back to `ADMIN_TOKEN`) |
@@ -172,23 +191,23 @@ Health tiers: **Healthy** (80 to 100), **Stable** (60 to 79), **Stressed** (40 t
 | `GSC_DISABLE_BACKGROUND` | No | Set to `1` to skip the background updater on import |
 | `PORT` | No | Gunicorn port (default `10000`); `python app.py` always uses `8050` |
 
-The other sources (Open-Meteo, PortWatch, Treasury, GDACS, USGS and the rest) need no key.
+The other sources (Open-Meteo, PortWatch, Treasury, GDACS, USGS, the Bank of Japan and the rest) need no key.
 
 ## API Endpoints
 
 ```
-GET  /api/v1/latest              Public JSON: methodology_version, composite index, per-category objects, degradation flags, disruptions, map markers
+GET  /api/v1/latest              Public JSON: methodology_version, composite index, per-category objects, degradation flags, disruptions, map markers, sector indexes
 GET  /api/v1/newsletter-data     Admin: scores + briefing (Authorization: Bearer ADMIN_TOKEN)
 GET  /api/v1/admin/subscribers   Admin: subscriber list (Authorization: Bearer ADMIN_TOKEN)
 GET  /unsubscribe?t=TOKEN        Unsubscribe confirmation page
 POST /unsubscribe?t=TOKEN        Unsubscribe (also RFC 8058 one-click)
-GET  /health                     Monitoring: state, data_age_seconds, last_fetch_status, fallback/stale/excluded categories
+GET  /health                     Monitoring: state, data_age_seconds, last_fetch_status, fallback/stale/excluded categories, per-sector degraded and coverage
 GET  /healthz                    Alias for /health
 ```
 
 All `/api/v1/*` routes are limited to 500 requests per hour and 2000 per day per visitor IP. Admin routes accept the token only in the `Authorization` header.
 
-`/api/v1/latest` returns `methodology_version` (2), `timestamp`, `composite_index` (the stored composite, renormalized under an exclusion), `categories` (per category: `score`, nominal `weight`, `as_of`, `source`, `is_stale`, `is_fallback`, `stored_on`, `inputs`), `degraded`, `fallback_categories`, `excluded_categories`, `stale_categories`, `disruptions` and `map_markers`. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch".
+`/api/v1/latest` returns `methodology_version` (2), `timestamp`, `composite_index` (the stored composite, renormalized under an exclusion), `categories` (per category: `score`, nominal `weight`, `as_of`, `source`, `is_stale`, `is_fallback`, `stored_on`, `inputs`), `degraded`, `fallback_categories`, `excluded_categories`, `stale_categories`, `disruptions`, `map_markers` and `sectors`. `categories` and the flag lists cover the eight global categories only. `sectors` has one block per sector index (`semiconductor`, `aerospace`) with its `index`, `tier`, `coverage`, `degraded`, its own flag lists, its `categories` and its `terms`. The global data is CC-BY-4.0. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch". The Semis `terms` carry the Bank of Japan credit; commercial reuse of the memory and logic scores requires the Bank of Japan's permission. The Aero data and Semis fab utilization are US government data, CC-BY-4.0 with credit.
 
 ## Project Structure
 
@@ -215,9 +234,9 @@ gscindex/
 │   ├── port_analyst.py         # Claude per-port summaries + disruption penalties
 │   ├── llm.py                  # Shared Anthropic client (model, effort, fallbacks)
 │   ├── ports_data.py           # 37 major port definitions
-│   ├── sources/                # Treasury DTS, TPU, GPR, STB rail, Fed surveys, GDACS, waterways, Yahoo helpers
+│   ├── sources/                # Treasury DTS, TPU, GPR, STB rail, Fed surveys, GDACS, waterways, Bank of Japan, Yahoo helpers
 │   └── providers/              # supply_chain, chokepoints, energy, tariffs, geopolitical, freight,
-│                               # inputs, physical, weather (map only), silicon_analysts, aerospace
+│                               # inputs, physical, weather (map only), semis and aero (sector indexes)
 ├── scoring/
 │   ├── anchors.py              # Anchored 0-100 mapping
 │   └── engine.py               # Weighted composite and weight renormalization
@@ -229,7 +248,9 @@ gscindex/
 │   ├── newsletter.py           # /unsubscribe
 │   └── admin.py                # Admin routes
 ├── scripts/
-│   ├── compute_anchors.py      # Rebuilds data/score_anchors.json (a deliberate, versioned change)
+│   ├── compute_anchors.py      # Rebuilds data/score_anchors.json (a deliberate, versioned change; --sectors-only adds sector anchors)
+│   ├── rebuild_category_history.py  # Recomputes stored daily category scores (dry run by default)
+│   ├── backtest_composite.py   # Prints the composite at past episodes
 │   ├── send_newsletter.py      # Cron job for email delivery
 │   └── refresh_fallback_snapshot.py  # Refreshes the committed cold-start snapshot
 └── requirements.txt
@@ -239,10 +260,12 @@ gscindex/
 
 ```
 Background daemon thread (every 5 min)
-  → 3-worker pool runs 10 providers (8 categories + 2 industry adapters) + news + market data
+  → 3-worker pool runs the 8 category providers + news + market data
     + port summaries + chokepoint traffic + the disruption register
+  → a separate 2-worker pool runs the 7 sector providers (Semis, Aero)
   → failed categories: last stored score while recent, else excluded (weights renormalized)
   → scoring/engine.py computes the composite, stored in the snapshot
+  → each sector index is computed from its own categories only
   → Writes to in-memory cache + disk (atomic)
 
 Main thread (serves requests)
@@ -254,10 +277,11 @@ Main thread (serves requests)
 
 ## Customization
 
-- **Category weights:** Edit `CATEGORY_WEIGHTS` in `config.py` (must sum to 1.0). The industry profiles take the baseline weights × `INDUSTRY_BASELINE_SHARE` plus their own industry weights.
+- **Category weights:** Edit `CATEGORY_WEIGHTS` in `config.py` (must sum to 1.0). The sector indexes are set in `SECTORS` (equal weights per sector, and a coverage minimum); the header tabs come from `TABS`.
 - **Anchors:** `scripts/compute_anchors.py` rewrites `data/score_anchors.json`. Anchors are frozen; regenerating them is a methodology change.
 - **Health tiers and colors:** `HEALTH_TIERS` and `COLORS` in `config.py`.
 - **New data provider:** Create a module in `data/providers/` inheriting from `BaseProvider`, register it in `data/aggregator.py`, and add its weight, freshness limits and drop limit in `config.py`.
+- **Monetizing:** ads, a paid API or a paid tier would need the Bank of Japan's permission in advance, because the Semis memory and logic scores use its API.
 
 ## Deployment
 

@@ -170,3 +170,148 @@ def test_latest_api_meta_credits_portwatch_verbatim(client, monkeypatch):
     meta = client.get("/api/v1/latest").get_json()["meta"]
     assert "Sources: UN Global Platform; IMF PortWatch" in meta["credits"]
     assert meta["documentation"] == "https://gscindex.com/docs"
+
+
+# ---------------------------------------------------------------- sector indexes
+
+from datetime import datetime, timezone  # noqa: E402
+
+from config import SECTORS  # noqa: E402
+
+_BOJ_CREDIT_VERBATIM = (
+    "This service uses the API provided by the 'Bank of Japan Time-Series Data Search.' "
+    "The Bank of Japan does not guarantee the content of the service.")
+_SECTOR_SCORES = {
+    "semis_memory_prices": 0.0, "semis_logic_prices": 65.94, "semis_fab_utilization": 84.6,
+    "aero_throughput": 80.0, "aero_flow": 76.2, "aero_mill_prices": 74.1, "aero_forge_cast": 37.3,
+}
+
+
+def _sector_block(index, tier, coverage, degraded=False, **lists):
+    block = {"index": index, "tier": tier, "coverage": coverage, "degraded": degraded,
+             "stale_categories": [], "excluded_categories": [], "fallback_categories": []}
+    block.update(lists)
+    return block
+
+
+def _sector_snapshot():
+    snap = _snapshot()
+    snap["current_scores"].update(_SECTOR_SCORES)
+    for cat in _SECTOR_SCORES:
+        snap["category_metadata"][cat] = _meta(cat, as_of="2026-09-30")
+    snap["sectors"] = {
+        "semiconductor": _sector_block(50.18, "Stressed", 3),
+        "aerospace": _sector_block(66.9, "Stable", 4),
+    }
+    return snap
+
+
+def test_latest_has_sectors_and_global_categories_unchanged(client, monkeypatch):
+    monkeypatch.setattr(cache, "get_cached_dashboard", _sector_snapshot)
+    body = client.get("/api/v1/latest").get_json()
+
+    # Global output is exactly what it was: sector categories never appear at the top level.
+    assert set(body["categories"]) == set(CATEGORY_WEIGHTS)
+    assert body["composite_index"] == 47.3
+    assert body["degraded"] is False
+    assert body["meta"]["license"] == "CC-BY-4.0"
+
+    assert set(body["sectors"]) == set(SECTORS)
+    semis = body["sectors"]["semiconductor"]
+    assert semis["index"] == 50.2
+    assert semis["tier"] == "Stressed"
+    assert semis["coverage"] == 3
+    assert semis["degraded"] is False
+    assert set(semis["categories"]) == set(SECTORS["semiconductor"]["weights"])
+    logic = semis["categories"]["semis_logic_prices"]
+    for key in ("score", "weight", "as_of", "stored_on", "source", "is_stale", "is_fallback", "inputs"):
+        assert key in logic, key
+    assert logic["score"] == 65.9
+    assert logic["weight"] == pytest.approx(1 / 3)
+    assert logic["as_of"] == "2026-09-30"
+
+    aero = body["sectors"]["aerospace"]
+    assert aero["index"] == 66.9
+    assert set(aero["categories"]) == set(SECTORS["aerospace"]["weights"])
+    assert aero["categories"]["aero_forge_cast"]["weight"] == pytest.approx(0.25)
+    assert "CC-BY-4.0" in aero["terms"]
+    for credit in ("Federal Reserve", "Census", "Bureau of Labor Statistics"):
+        assert credit in aero["terms"], credit
+    assert "Bank of Japan" not in aero["terms"]
+
+
+def test_latest_sector_block_reports_its_own_degradation(client, monkeypatch):
+    snap = _sector_snapshot()
+    for cat in ("semis_memory_prices", "semis_logic_prices"):
+        del snap["current_scores"][cat]
+    snap["sectors"]["semiconductor"] = _sector_block(
+        None, None, 1, degraded=True, excluded_categories=["semis_logic_prices", "semis_memory_prices"])
+    monkeypatch.setattr(cache, "get_cached_dashboard", lambda: snap)
+    body = client.get("/api/v1/latest").get_json()
+
+    semis = body["sectors"]["semiconductor"]
+    assert semis["index"] is None and semis["tier"] is None
+    assert semis["coverage"] == 1 and semis["degraded"] is True
+    assert semis["excluded_categories"] == ["semis_logic_prices", "semis_memory_prices"]
+    assert semis["categories"]["semis_memory_prices"]["score"] is None
+    # The global flags are untouched by the sector outage.
+    assert body["degraded"] is False
+    assert body["excluded_categories"] == []
+
+
+def test_latest_sectors_from_a_snapshot_saved_before_sectors(client, monkeypatch):
+    monkeypatch.setattr(cache, "get_cached_dashboard", _snapshot)
+    sectors = client.get("/api/v1/latest").get_json()["sectors"]
+    assert set(sectors) == set(SECTORS)
+    for block in sectors.values():
+        assert block["index"] is None and block["coverage"] == 0 and block["degraded"] is True
+        assert all(c["score"] is None for c in block["categories"].values())
+
+
+def test_semis_terms_boj_verbatim(client, monkeypatch):
+    monkeypatch.setattr(cache, "get_cached_dashboard", _sector_snapshot)
+    terms = client.get("/api/v1/latest").get_json()["sectors"]["semiconductor"]["terms"]
+    assert _BOJ_CREDIT_VERBATIM in terms
+    assert "Commercial reuse of the memory and logic" in terms
+    assert "requires the Bank of Japan's permission" in terms
+    # Fab utilization is Federal Reserve data, not BOJ data.
+    assert "Federal Reserve" in terms and "CC-BY-4.0" in terms
+    assert "—" not in terms
+
+
+def test_health_sectors_block_and_status_unaffected(monkeypatch):
+    monkeypatch.setenv("GSC_DISABLE_BACKGROUND", "1")
+    import app as application
+    monkeypatch.setattr("data.cache.get_cached_dashboard", lambda: None)
+    monkeypatch.setattr(application, "_LAST_UPDATE", datetime.now(timezone.utc))
+    monkeypatch.setattr(application, "_HAS_FETCHED_OK", True)
+    monkeypatch.setattr(application, "_FETCH_STARTED_AT", None)
+    client = application.server.test_client()
+
+    monkeypatch.setattr(application, "_DATA_CACHE", _sector_snapshot())
+    healthy = client.get("/health")
+    assert healthy.get_json()["sectors"] == {
+        "semiconductor": {"degraded": False, "coverage": 3},
+        "aerospace": {"degraded": False, "coverage": 4},
+    }
+
+    # Every sector category out: the sector blocks say so, the global status does not change.
+    snap = _sector_snapshot()
+    for cat in _SECTOR_SCORES:
+        del snap["current_scores"][cat]
+    snap["sectors"] = {
+        "semiconductor": _sector_block(None, None, 0, degraded=True,
+                                       excluded_categories=sorted(SECTORS["semiconductor"]["weights"])),
+        "aerospace": _sector_block(None, None, 0, degraded=True,
+                                   excluded_categories=sorted(SECTORS["aerospace"]["weights"])),
+    }
+    monkeypatch.setattr(application, "_DATA_CACHE", snap)
+    outage = client.get("/health")
+    body = outage.get_json()
+    assert outage.status_code == healthy.status_code == 200
+    assert body["state"] == healthy.get_json()["state"] == "healthy"
+    assert body["sectors"] == {
+        "semiconductor": {"degraded": True, "coverage": 0},
+        "aerospace": {"degraded": True, "coverage": 0},
+    }
+    assert body["fallback_categories"] == [] and body["excluded_categories"] == []

@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from config import CATEGORY_WEIGHTS, METHODOLOGY_VERSION
+from config import BOJ_CREDIT, CATEGORY_WEIGHTS, METHODOLOGY_VERSION, SECTORS
 from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 from scoring import snapshot_composite
 
@@ -39,9 +39,11 @@ def _score(value) -> float | None:
     return round(float(value), 1)
 
 
-def category_objects(data: dict) -> dict:
-    """One object per category: the weighted ones (an excluded one has score None), then any
-    other scored category (industry profiles, weight None).
+def category_objects(data: dict, weights: dict[str, float] = CATEGORY_WEIGHTS) -> dict:
+    """One object per category in ``weights`` (an excluded one has score None).
+
+    The top-level ``categories`` are the global weighted ones only; each sector's categories are
+    listed under its own block in ``sectors``.
 
     ``as_of`` is the date of the oldest input used. A category serving its last stored
     score has ``as_of`` None and ``stored_on`` set to the date that score was stored.
@@ -49,11 +51,11 @@ def category_objects(data: dict) -> dict:
     scores = data.get("current_scores") or {}
     metadata = data.get("category_metadata") or {}
     out = {}
-    for cat in list(CATEGORY_WEIGHTS) + [c for c in scores if c not in CATEGORY_WEIGHTS]:
+    for cat, weight in weights.items():
         meta = metadata.get(cat) or {}
         out[cat] = {
             "score": _score(scores.get(cat)),
-            "weight": CATEGORY_WEIGHTS.get(cat),
+            "weight": weight,
             "as_of": meta.get("as_of"),
             "stored_on": meta.get("stored_on"),
             "source": meta.get("source"),
@@ -61,6 +63,46 @@ def category_objects(data: dict) -> dict:
             "is_fallback": bool(meta.get("is_fallback", False)),
             "inputs": [{**i, "score": _score(i.get("score"))}
                        for i in meta.get("inputs") or [] if isinstance(i, dict)],
+        }
+    return out
+
+
+# Reuse terms per sector. The memory and logic scores are built from Bank of Japan data (its API
+# terms need the credit line and its permission for commercial use); everything else is US
+# government data, released like the global index under CC-BY-4.0 with credit.
+SECTOR_TERMS: dict[str, str] = {
+    "semiconductor": (
+        f"{BOJ_CREDIT} Commercial reuse of the memory and logic chip price scores requires the Bank of "
+        "Japan's permission. Fab utilization is Federal Reserve G.17 data, CC-BY-4.0 with credit to the "
+        "Federal Reserve Board."),
+    "aerospace": (
+        "CC-BY-4.0. Credit: Federal Reserve Board (G.17 capacity utilization), U.S. Census Bureau (M3 "
+        "shipments and inventories) and U.S. Bureau of Labor Statistics (Producer Price Index), via FRED."),
+}
+
+
+def sector_objects(data: dict) -> dict:
+    """Per sector: its index and flags (aggregator ``sectors`` block) and its own categories.
+
+    A snapshot saved before the sector indexes existed has no block: the index is None, coverage 0
+    and the sector is degraded.
+    """
+    blocks = data.get("sectors") if isinstance(data.get("sectors"), dict) else {}
+    out = {}
+    for sector, spec in SECTORS.items():
+        block = blocks.get(sector) if isinstance(blocks.get(sector), dict) else {}
+        index = _score(block.get("index"))
+        out[sector] = {
+            "index": index,
+            "tier": block.get("tier") if index is not None else None,
+            "coverage": int(block.get("coverage") or 0),
+            "min_categories": spec["min_categories"],
+            "degraded": bool(block.get("degraded", True)),
+            "fallback_categories": list(block.get("fallback_categories") or []),
+            "excluded_categories": list(block.get("excluded_categories") or []),
+            "stale_categories": list(block.get("stale_categories") or []),
+            "categories": category_objects(data, spec["weights"]),
+            "terms": SECTOR_TERMS[sector],
         }
     return out
 
@@ -97,6 +139,9 @@ def get_latest_data():
         "stale_categories": data.get("stale_categories", []),
         "disruptions": data.get("disruptions", []),
         "map_markers": data.get("map_markers", []),
+        # Sector indexes (Semis, Aero): separate from the composite above, each with its own
+        # categories, flags and reuse terms. Their problems never change the global flags.
+        "sectors": sector_objects(data),
         "meta": {
             "source": "Global Supply Chain Index",
             "license": "CC-BY-4.0",

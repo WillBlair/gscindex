@@ -120,6 +120,13 @@ _DOCS_TEMPLATE = """
         .prose p { margin-bottom: 18px; font-size: 15px; color: #D6DBE3; line-height: 1.65; }
         .prose strong { color: #F2F4F7; font-weight: 600; }
 
+        .prose p.sub-heading {
+            font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            font-size: 12px;
+            color: #8A94A3;
+            margin: 28px 0 10px;
+        }
+
         /* ── Card grids: panes separated by 1px rules ─────────── */
         .grid-3, .grid-2, .grid-1 {
             display: grid;
@@ -335,6 +342,17 @@ WORST_MONTHS: dict[str, date] = {
     "tsifrght": date(2009, 4, 1),
     "rail_volume": date(2009, 5, 1),
     "prices_paid": date(2021, 11, 1),
+    # Sector inputs
+    "boj_memory": date(2025, 12, 1),
+    "boj_logic": date(2022, 2, 1),
+    "fab_util_3344": date(2000, 7, 1),
+    "aero_caputl": date(2020, 4, 1),
+    "aero_inv_ship": date(2020, 7, 1),
+    "ppi_ti_mill": date(2006, 4, 1),
+    "ppi_ni_mill": date(1988, 9, 1),
+    "ppi_ti_forge": date(2023, 5, 1),
+    "ppi_nonferrous_forge": date(2022, 8, 1),
+    "ppi_steel_invest_cast": date(2022, 7, 1),
 }
 
 # How each input's anchor values are shown, in the units readers know (anchors are stored
@@ -352,6 +370,16 @@ _ANCHOR_FORMATS = {
     "tsifrght": lambda v: f"{v:+.1f}%",
     "rail_volume": lambda v: f"{v:+.1f}%",
     "prices_paid": lambda v: f"z {v:+.2f}",
+    "boj_memory": lambda v: f"{v:+.1f}%",
+    "boj_logic": lambda v: f"{v:+.1f}%",
+    "fab_util_3344": lambda v: f"{v:.1f}%",
+    "aero_caputl": lambda v: f"{v:.1f}%",
+    "aero_inv_ship": lambda v: f"{math.exp(v):.2f} months",
+    "ppi_ti_mill": lambda v: f"{v:+.1f}%",
+    "ppi_ni_mill": lambda v: f"{v:+.1f}%",
+    "ppi_ti_forge": lambda v: f"{v:+.1f}%",
+    "ppi_nonferrous_forge": lambda v: f"{v:+.1f}%",
+    "ppi_steel_invest_cast": lambda v: f"{v:+.1f}%",
 }
 
 # Category table: what each category measures and its main sources.
@@ -555,6 +583,7 @@ def _docs_values() -> dict[str, str]:
         "port_penalty_max": f"{config.PORT_PENALTY_MAX:g}",
         "timeout": f"{config.PROVIDER_TIMEOUT_SECONDS:g}",
         "timeout_long": f"{max(config.PROVIDER_TIMEOUT_OVERRIDES.values()):g}",
+        "sector_timeout": f"{config.SECTOR_PROVIDER_TIMEOUT_SECONDS:g}",
     }
 
 
@@ -706,10 +735,197 @@ def _category_cards(v: dict[str, str]) -> str:
     return "\n".join(_card(label(cat), v[f"w_{cat}"], cards[cat]) for cat in config.CATEGORY_WEIGHTS)
 
 
+def _baseline(key: str) -> str:
+    """'Jan 2001 to Dec 2019' from the anchor's recorded baseline."""
+    anchor = _anchor(key)
+    try:
+        first, last = (date.fromisoformat(m + "-01") for m in str(anchor["baseline"]).split(" (")[0].split(" to "))
+        return f"{first:%b %Y} to {last:%b %Y}"
+    except (KeyError, TypeError, ValueError):
+        return "the years before 2020"
+
+
+def _code(text: str) -> str:
+    return f'<span class="code-inline">{text}</span>'
+
+
+def _sector_cards(sector: str) -> str:
+    """One card per sector category: sources, measure, score, anchors, updates."""
+    weights = config.SECTORS[sector]["weights"]
+    lag = config.PUBLICATION_LAG_DAYS
+    label = lambda cat: config.CATEGORY_LABELS[cat].replace("&", "&amp;")
+    yoy = "The year-over-year % change of the monthly index, lower is better."
+    cards = {
+        "semis_memory_prices": [
+            ("Source", "Bank of Japan Corporate Goods Price Index, import price index for MOS memory "
+                       f"integrated circuits on a contract-currency basis ({_code('PRCG20_2500850005')}), "
+                       "monthly from 2000."),
+            ("Measures", "What Japan pays for imported memory chips, in the currency of each contract, so "
+                         "yen moves do not count. Fast price growth means tight supply and rising costs "
+                         "for chip buyers."),
+            ("Score", f"{yoy} Baseline {_baseline('boj_memory')}, since a year-over-year change needs a "
+                      "year of data."),
+            ("Anchors", _anchors("boj_memory") + "."),
+            ("Updates", f"The Bank of Japan publishes about {lag['boj_cgpi']} days after the month ends. "
+                        f"The site asks for each series at most once a day. The input is {_fresh('boj_memory')}."),
+        ],
+        "semis_logic_prices": [
+            ("Source", "Bank of Japan Corporate Goods Price Index, import price index for MOS logic "
+                       f"integrated circuits on a contract-currency basis ({_code('PRCG20_2500850004')})."),
+            ("Measures", "What Japan pays for imported logic chips (processors and other chips that are "
+                         "not memory), in the currency of each contract."),
+            ("Score", f"{yoy} Baseline {_baseline('boj_logic')}."),
+            ("Anchors", _anchors("boj_logic") + "."),
+            ("Updates", f"Same schedule as memory. The input is {_fresh('boj_logic')}."),
+        ],
+        "semis_fab_utilization": [
+            ("Source", "Federal Reserve Board G.17 Industrial Production and Capacity Utilization, "
+                       f"semiconductors and other electronic components ({_code('CAPUTLG3344S')} on FRED), "
+                       "monthly from 1972."),
+            ("Measures", "The share of US chip and electronic component capacity in use."),
+            ("Score", "The utilization level in percent, lower is better: spare capacity can absorb a jump "
+                      f"in demand or an outage elsewhere. Baseline {_baseline('fab_util_3344')}."),
+            ("Anchors", _anchors("fab_util_3344") + "."),
+            ("Updates", f"G.17 comes out about {lag['g17']} days after the month ends. The input is "
+                        f"{_fresh('fab_util_3344')}."),
+        ],
+        "aero_throughput": [
+            ("Source", "Federal Reserve Board G.17, capacity utilization for aerospace and miscellaneous "
+                       f"transportation equipment ({_code('CAPUTLG3364T9S')} on FRED)."),
+            ("Measures", "The share of US aerospace manufacturing capacity in use. Plants near their normal "
+                         "rate are turning out aircraft and parts at a steady pace."),
+            ("Score", f"The utilization level in percent, higher is better. Baseline {_baseline('aero_caputl')}."),
+            ("Anchors", _anchors("aero_caputl") + ". The record low is counted from 1972 (see the "
+                        "limitations below)."),
+            ("Updates", f"G.17 comes out about {lag['g17']} days after the month ends. The input is "
+                        f"{_fresh('aero_caputl')}."),
+        ],
+        "aero_flow": [
+            ("Source", "Census Bureau M3 survey, nondefense aircraft and parts: inventories "
+                       f"({_code('ANAPTI')}) and shipments ({_code('ANAPVS')}) on FRED."),
+            ("Measures", "How many months of shipments are sitting in inventory. Work piling up unshipped "
+                         "points to a blockage in the production line."),
+            ("Score", "Inventories divided by the mean of the last 3 months of shipments, on a log scale, "
+                      "lower is better. A month with no positive shipments mean is not scored. Baseline "
+                      f"{_baseline('aero_inv_ship')}."),
+            ("Anchors", _anchors("aero_inv_ship") + "."),
+            ("Updates", f"M3 comes out about {lag['census_m3']} days after the month ends. The input is "
+                        f"{_fresh('aero_inv_ship')}."),
+        ],
+        "aero_mill_prices": [
+            ("Sources", "Bureau of Labor Statistics Producer Price Index on FRED: titanium and titanium-base "
+                        f"alloy mill shapes ({_code('WPU102505')}) and nickel and nickel-base alloy mill shapes "
+                        f"({_code('WPU102504')})."),
+            ("Measures", "Prices for the metal that aircraft and engine makers buy before forging or "
+                         "machining it."),
+            ("Score", f"{yoy} The category is the mean of the two input scores (one alone if the other is "
+                      f"missing). Baseline {_baseline('ppi_ti_mill')}."),
+            ("Anchors", f"{_anchors('ppi_ti_mill', 'Titanium')}. {_anchors('ppi_ni_mill', 'Nickel alloy')}."),
+            ("Updates", f"The PPI comes out about {lag['bls_ppi']} days after the month ends. Each input is "
+                        f"{_fresh('ppi_ti_mill')}."),
+        ],
+        "aero_forge_cast": [
+            ("Sources", "Bureau of Labor Statistics Producer Price Index on FRED: titanium and titanium alloy "
+                        f"forgings ({_code('PCU33211233211242')}), nonferrous forging "
+                        f"({_code('PCU332112332112')}) and steel investment castings "
+                        f"({_code('PCU3315123315120')})."),
+            ("Measures", "Prices for the forged and cast parts that go into engines and airframes. Few shops "
+                         "make them, so fast price growth points to tight capacity."),
+            ("Score", f"{yoy} The category is the mean of the input scores that are available. Baseline "
+                      f"{_baseline('ppi_ti_forge')}."),
+            ("Anchors", f"{_anchors('ppi_ti_forge', 'Titanium forgings')}. "
+                        f"{_anchors('ppi_nonferrous_forge', 'Nonferrous forgings')}. "
+                        f"{_anchors('ppi_steel_invest_cast', 'Steel castings')}."),
+            ("Updates", f"The PPI comes out about {lag['bls_ppi']} days after the month ends. Each input is "
+                        f"{_fresh('ppi_ti_forge')}."),
+        ],
+    }
+    return "\n".join(_card(label(cat), _pct(weight), cards[cat]) for cat, weight in weights.items())
+
+
+def _sector_section() -> str:
+    """Section 5: the Semis and Aero indexes, read from config.SECTORS and the anchors file."""
+    semis, aero = config.SECTORS["semiconductor"], config.SECTORS["aerospace"]
+    memory = _anchor("boj_memory")
+    memory_zero = (f"above {_ANCHOR_FORMATS['boj_memory'](memory['worst'])} "
+                   f"({WORST_MONTHS['boj_memory']:%b %Y})") if memory else "above its worst month on record"
+    caputl = _anchor("aero_caputl")
+    caputl_zero = (f"{_ANCHOR_FORMATS['aero_caputl'](caputl['worst'])} ({WORST_MONTHS['aero_caputl']:%b %Y})"
+                   if caputl else f"the low of {WORST_MONTHS['aero_caputl']:%b %Y}")
+
+    def coverage(spec: dict) -> str:
+        return f"at least {spec['min_categories']} of its {len(spec['weights'])} categories"
+
+    def steps(items: list[tuple[str, str]]) -> str:
+        body = "\n".join(_step(i, label, text) for i, (label, text) in enumerate(items, 1))
+        return f'<div class="step-list" style="margin-bottom: 28px;">\n{body}\n</div>'
+
+    rules = steps([
+        ("Index", f"The {semis['title'].lower()} index is the mean of its categories at "
+                  f"{_pct(next(iter(semis['weights'].values())))} each, and the {aero['title'].lower()} "
+                  f"index at {_pct(next(iter(aero['weights'].values())))} each. Only categories with a score "
+                  "count (measured, stale or a stored fallback), and their weights are scaled up to sum to 1."),
+        ("Coverage", f"The {semis['label']} index is shown only when {coverage(semis)} have a score, and "
+                     f"the {aero['label']} index when {coverage(aero)} do. Otherwise the readout shows \"Not "
+                     "enough data\". Past days follow the same rule, so a day below coverage is a gap in the "
+                     "sparkline."),
+        ("Fallbacks", "The rules in section 3 apply. A category whose source fails shows its last stored "
+                      f"score, flagged stale and fallback, for up to {config.SECTOR_DROP_AFTER_DAYS} days, "
+                      "then it is excluded. If its inputs load but are past their drop limits, it is excluded "
+                      "right away. A neutral placeholder score is never used."),
+        ("Separation", "A sector problem never changes the global index, its disruptions list, its degraded "
+                       "flag or the status of /health. Each sector reports its own flags."),
+    ])
+    limitations = steps([
+        ("Gluts read as healthy", "Chip and aerospace metal prices are cost gauges, like Energy. A price "
+                                  "glut or a demand collapse reads as healthy. In March 2023, during a memory "
+                                  "glut, Memory Prices read 99."),
+        ("Memory at 0", f"Memory Prices reads 0 whenever its year-over-year change is {memory_zero}, the "
+                        "worst month on record through 2025. In the September 2026 data memory import prices "
+                        "were up 316% on a year earlier, so the category reads 0. It cannot show how much "
+                        "further past the record prices go."),
+        ("Utilization", "Fab Utilization does not separate spare capacity from weak demand. Low utilization "
+                        "because orders fell reads as healthy. Aero Throughput has the opposite problem: low "
+                        "utilization from weak orders reads as supply trouble."),
+        ("Aerospace record", "The aerospace utilization series starts in 1948. Its record low is counted "
+                             "from 1972, like the semiconductor series, because the postwar readings of 1948 "
+                             f"to 1950 are not comparable. So 0 is {caputl_zero}. Counted from 1948, 0 would "
+                             "be March 1950."),
+        ("Left out", "Order backlogs are not scored, because a large backlog can mean strong demand or a "
+                     "supply problem. Lead times are not covered, because no free source publishes them on "
+                     "a regular schedule."),
+    ])
+    credits = (
+        f"<p>Credits. {config.BOJ_CREDIT} Commercial reuse of the memory and logic chip price scores requires "
+        "the Bank of Japan's permission. Fab utilization and the aerospace inputs are US government data from "
+        "the Federal Reserve Board (G.17), the Census Bureau (M3) and the Bureau of Labor Statistics "
+        "(Producer Price Index), released here under CC-BY-4.0 like the global index.</p>")
+    return "\n".join([
+        '<div class="section-heading"><span class="section-num">5.</span><h2>Sector indexes</h2></div>',
+        '<hr class="section-rule">',
+        f"<p>The {semis['label']} and {aero['label']} tabs each show a separate index for one industry. Each "
+        "is built only from its own categories, the way S&amp;P Global's sector PMIs use only that sector's "
+        "survey answers. Global is not blended into them and they are not blended into Global. The NY Fed "
+        "index in Supply Chain already includes the Taiwan and Korea PMIs, so adding chip data to Global "
+        "would count Asia twice.</p>",
+        "<p>Every sector input is an official monthly series with a long history, scored on the same fixed "
+        "scale as the global inputs (section 2). The map, markets, headlines and briefing are the same on "
+        "every tab.</p>",
+        rules,
+        f'<p class="sub-heading">{semis["title"]} index ({semis["label"]} tab)</p>',
+        f'<div class="grid-1">\n{_sector_cards("semiconductor")}\n</div>',
+        f'<p class="sub-heading">{aero["title"]} index ({aero["label"]} tab)</p>',
+        f'<div class="grid-1">\n{_sector_cards("aerospace")}\n</div>',
+        '<p class="sub-heading">Limitations of the sector indexes</p>',
+        limitations,
+        credits,
+    ])
+
+
 _DOCS_MARKDOWN = """
 <div class="section-heading"><span class="section-num">1.</span><h2>How the index is calculated</h2></div>
 <hr class="section-rule">
-<p>The Global Supply Chain Index is a weighted average of eight category scores. Each category runs from 0 to 100, where <strong>100 is healthiest</strong>. The site recalculates every 5 minutes. Most sources publish daily, weekly or monthly, so a category moves only when its source does.</p>
+<p>The Global Supply Chain Index is a weighted average of eight category scores. Each category runs from 0 to 100, where <strong>100 is healthiest</strong>. The site recalculates every 5 minutes. Most sources publish daily, weekly or monthly, so a category moves only when its source does. The Semis and Aero tabs show two separate sector indexes, described in section 5.</p>
 
 {category_rows}
 
@@ -765,7 +981,9 @@ _DOCS_MARKDOWN = """
 {category_cards}
 </div>
 
-<div class="section-heading"><span class="section-num">5.</span><h2>What Claude does</h2></div>
+{sector_section}
+
+<div class="section-heading"><span class="section-num">6.</span><h2>What Claude does</h2></div>
 <hr class="section-rule">
 <p>Anthropic's Claude writes the headline severities, the briefing, the full report, the port summaries and the disruption register. None of these set a category score.</p>
 
@@ -789,30 +1007,31 @@ _DOCS_MARKDOWN = """
     </div>
 </div>
 
-<div class="section-heading"><span class="section-num">6.</span><h2>Port map</h2></div>
+<div class="section-heading"><span class="section-num">7.</span><h2>Port map</h2></div>
 <hr class="section-rule">
 <p>Each of the 37 ports scores 60% of the composite plus 40% of its local weather (Open-Meteo: weather code, wind gusts, the day's precipitation and temperature). It then loses Claude's port penalty (0 to {port_penalty_max}), set from the day's port summary. Headlines are not matched to ports and do not change a port's score. Weather is shown on the map only and is not part of the composite.</p>
 
-<div class="section-heading"><span class="section-num">7.</span><h2>Public API</h2></div>
+<div class="section-heading"><span class="section-num">8.</span><h2>Public API</h2></div>
 <hr class="section-rule">
-<p><span class="code-inline">GET /api/v1/latest</span> is free and returns the latest snapshot as JSON, limited to 500 requests per hour and 2,000 per day per IP. Data is licensed CC-BY-4.0. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch".</p>
+<p><span class="code-inline">GET /api/v1/latest</span> is free and returns the latest snapshot as JSON, limited to 500 requests per hour and 2,000 per day per IP. Data is licensed CC-BY-4.0. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch". The Semis memory and logic scores come from Bank of Japan data and carry their own terms (section 5).</p>
 
 | Field | Contents |
 |:---|:---|
 | <span class="code-inline">methodology_version</span> | 2 |
 | <span class="code-inline">timestamp</span> | When the snapshot was made (UTC) |
 | <span class="code-inline">composite_index</span> | The composite stored with the snapshot. Under an exclusion it uses renormalized weights |
-| <span class="code-inline">categories</span> | One object per category: <span class="code-inline">score</span> (null when excluded), <span class="code-inline">weight</span> (nominal), <span class="code-inline">as_of</span> (date of the oldest input used), <span class="code-inline">source</span>, <span class="code-inline">is_stale</span>, <span class="code-inline">is_fallback</span>, <span class="code-inline">stored_on</span> (date of the stored score a fallback shows) and <span class="code-inline">inputs</span> (each input's name, score, as_of, status, source and raw value) |
+| <span class="code-inline">categories</span> | One object per global category: <span class="code-inline">score</span> (null when excluded), <span class="code-inline">weight</span> (nominal), <span class="code-inline">as_of</span> (date of the oldest input used), <span class="code-inline">source</span>, <span class="code-inline">is_stale</span>, <span class="code-inline">is_fallback</span>, <span class="code-inline">stored_on</span> (date of the stored score a fallback shows) and <span class="code-inline">inputs</span> (each input's name, score, as_of, status, source and raw value) |
 | <span class="code-inline">degraded</span> | True when any category is on a fallback or excluded |
 | <span class="code-inline">fallback_categories</span> | Categories showing their last stored score |
 | <span class="code-inline">excluded_categories</span> | Categories left out of the composite |
 | <span class="code-inline">stale_categories</span> | Categories using an input past its stale limit |
 | <span class="code-inline">disruptions</span> | Low-scoring categories (impact = 100 &minus; score) and high-severity headlines (impact = severity &times; 10) |
 | <span class="code-inline">map_markers</span> | The 37 ports with score and hover text |
+| <span class="code-inline">sectors</span> | One block per sector index (<span class="code-inline">semiconductor</span>, <span class="code-inline">aerospace</span>): <span class="code-inline">index</span> (null below coverage), <span class="code-inline">tier</span>, <span class="code-inline">coverage</span> (categories with a score), <span class="code-inline">min_categories</span>, <span class="code-inline">degraded</span>, its own fallback, excluded and stale lists, <span class="code-inline">categories</span> (the same objects as above, with the sector weights) and <span class="code-inline">terms</span> (reuse terms and credits). The global fields above never include sector categories |
 
-<p><span class="code-inline">GET /health</span> returns <span class="code-inline">state</span> (warming_up, healthy or degraded, with HTTP 503 for degraded), <span class="code-inline">data_age_seconds</span>, <span class="code-inline">last_fetch_status</span>, <span class="code-inline">last_fetch_error</span> (the error type only), <span class="code-inline">fallback_categories</span>, <span class="code-inline">stale_categories</span> and <span class="code-inline">excluded_categories</span>.</p>
+<p><span class="code-inline">GET /health</span> returns <span class="code-inline">state</span> (warming_up, healthy or degraded, with HTTP 503 for degraded), <span class="code-inline">data_age_seconds</span>, <span class="code-inline">last_fetch_status</span>, <span class="code-inline">last_fetch_error</span> (the error type only), <span class="code-inline">fallback_categories</span>, <span class="code-inline">stale_categories</span>, <span class="code-inline">excluded_categories</span> and <span class="code-inline">sectors</span> (each sector's <span class="code-inline">degraded</span> and <span class="code-inline">coverage</span>). A sector outage never changes <span class="code-inline">state</span> or the HTTP status.</p>
 
-<div class="section-heading"><span class="section-num">8.</span><h2>Infrastructure</h2></div>
+<div class="section-heading"><span class="section-num">9.</span><h2>Infrastructure</h2></div>
 <hr class="section-rule">
 <p>The site is built with <strong>Plotly Dash</strong>, served by Gunicorn and hosted on Render. A background thread does all the fetching, so page loads read from memory.</p>
 
@@ -827,11 +1046,11 @@ flowchart LR
     style G fill:#07090C,stroke:#8A94A3,color:#F2F4F7
     style H fill:#07090C,stroke:#8A94A3,color:#F2F4F7
 
-    A["NY Fed, FRED, Treasury<br>BTS, STB, Caldara-Iacoviello"] --> E
+    A["NY Fed, FRED, Treasury<br>BTS, STB, Caldara-Iacoviello<br>Bank of Japan"] --> E
     B["IMF PortWatch, GDACS<br>USGS"] --> E
     C["Yahoo Finance<br>(live futures)"] --> E
     D["RSS feeds and web search<br>(display only)"] --> F
-    E["Background thread<br>8 category providers"] --> G["Neon Postgres<br>daily scores"]
+    E["Background thread<br>8 category providers<br>7 sector providers"] --> G["Neon Postgres<br>daily scores"]
     F["Claude<br>headlines, ports, register"] --> H
     E --> H["Dash UI<br>dashboard and API"]
 </div>
@@ -840,7 +1059,7 @@ flowchart LR
     <div class="p-card">
         <h3>Background data pipeline</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> every 5 minutes the providers run 3 at a time. Each has {timeout} seconds ({timeout_long} for Freight and Physical); one that runs over is treated as failed.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> every 5 minutes the providers run 3 at a time. Each has {timeout} seconds ({timeout_long} for Freight and Physical); one that runs over is treated as failed. The sector providers run 2 at a time on their own pool, {sector_timeout} seconds each, so a slow sector source never holds up a global one.</div></div>
             <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> results are saved to disk. A fresh deploy loads the last snapshot saved in the database, then a committed fallback snapshot if it is under 14 days old.</div></div>
             <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> page loads read the in-memory snapshot and never call a data source.</div></div>
         </div>
@@ -854,7 +1073,7 @@ flowchart LR
     </div>
 </div>
 
-<div class="section-heading"><span class="section-num">9.</span><h2>News sources</h2></div>
+<div class="section-heading"><span class="section-num">10.</span><h2>News sources</h2></div>
 <hr class="section-rule">
 <p>Headlines come from 17 RSS feeds from industry, trade policy and weather alert sources, plus a daily Claude web search. They are shown for context and do not feed any score.</p>
 
@@ -877,12 +1096,13 @@ flowchart LR
     </div>
 </div>
 
-<div class="section-heading"><span class="section-num">10.</span><h2>Limitations</h2></div>
+<div class="section-heading"><span class="section-num">11.</span><h2>Limitations</h2></div>
 <hr class="section-rule">
 <p>The index measures supply-side stress and input costs. In a demand collapse, such as April 2020, oil and metal prices fall, so the Energy and Input Costs categories read as healthy and offset the disruption elsewhere. The backtest reads April 2020 at about 70 (Stable), even though the NY Fed index (Supply Chain 30) and freight (51) were stressed.</p>
 <p>This is a property of averaging cost categories with disruption categories. It is disclosed here and has not been tuned away.</p>
+<p>The sector indexes have their own limitations, listed in section 5.</p>
 
-<div class="section-heading"><span class="section-num">11.</span><h2>Data sources and credits</h2></div>
+<div class="section-heading"><span class="section-num">12.</span><h2>Data sources and credits</h2></div>
 <hr class="section-rule">
 
 | Source | Data used |
@@ -904,6 +1124,10 @@ flowchart LR
 | [GDACS](https://www.gdacs.org) | Natural hazard alerts |
 | [USGS](https://waterdata.usgs.gov/monitoring-location/07010000/) | Mississippi River gauge height at St. Louis (site 07010000) |
 | [USITC](https://www.usitc.gov/documents/dataweb/ave_table_1891_2018.pdf) | Duties as a share of imports, 1891 to 2018 (tariff burden zero point) |
+| [Bank of Japan, Time-Series Data Search](https://www.stat-search.boj.or.jp) | Corporate Goods Price Index, import prices for MOS memory and logic integrated circuits (PRCG20_2500850005, PRCG20_2500850004). This service uses the API provided by the 'Bank of Japan Time-Series Data Search.' The Bank of Japan does not guarantee the content of the service. |
+| [Federal Reserve Board, G.17](https://www.federalreserve.gov/releases/g17/) | Capacity utilization for semiconductors and electronic components, and for aerospace (FRED CAPUTLG3344S, CAPUTLG3364T9S) |
+| [U.S. Census Bureau, M3 survey](https://www.census.gov/manufacturing/m3/) | Nondefense aircraft and parts inventories and shipments (FRED ANAPTI, ANAPVS) |
+| [U.S. Bureau of Labor Statistics, Producer Price Index](https://www.bls.gov/ppi/) | Titanium and nickel alloy mill shapes, titanium and nonferrous forgings, steel investment castings (FRED WPU102505, WPU102504, PCU33211233211242, PCU332112332112, PCU3315123315120) |
 | [Open-Meteo](https://open-meteo.com) | Port weather for the map |
 | [Anthropic](https://www.anthropic.com) | Claude: headline severities, briefing, report, port summaries, disruption register |
 """
@@ -912,6 +1136,7 @@ flowchart LR
 def _docs_markdown() -> str:
     values = _docs_values()
     values["category_cards"] = _category_cards(values)
+    values["sector_section"] = _sector_section()
     return _DOCS_MARKDOWN.format(**values)
 
 

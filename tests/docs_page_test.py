@@ -143,3 +143,70 @@ def test_docs_has_limitations_section(body):
     assert "April 2020" in section and "demand collapse" in section
     assert "about 70" in section and "has not been tuned away" in section
     assert "\u2014" not in section
+
+
+def _sector_section(text: str) -> str:
+    return text[text.index("Sector indexes"):text.index("What Claude does")]
+
+
+def test_docs_sector_section_and_no_silicon_analysts(body):
+    assert "<h2>Sector indexes</h2>" in body
+    text = _text(body)
+    assert "silicon analysts" not in text.lower()
+    for old in ("Aircraft Orders", "Aero Metals", "Aircraft PPI", "Wafer Prices", "Lead Times"):
+        assert old not in text, old
+    section = _sector_section(text)
+    assert "—" not in section
+
+    for key, spec in config.SECTORS.items():
+        assert spec["title"] in section, key
+        for cat in spec["weights"]:
+            assert config.CATEGORY_LABELS[cat] in section.replace("&amp;", "&"), cat
+    # Equal weights and the coverage rule, from config.
+    assert "33%" in section and "25%" in section
+    assert "at least 2 of its 3 categories" in section
+    assert "at least 3 of its 4 categories" in section
+    assert "Not enough data" in section
+
+    # Every series used, and anchors and freshness read from the anchors file and config.
+    for code in ("PRCG20_2500850005", "PRCG20_2500850004", "CAPUTLG3344S", "CAPUTLG3364T9S", "ANAPTI",
+                 "ANAPVS", "WPU102505", "WPU102504", "PCU33211233211242", "PCU332112332112",
+                 "PCU3315123315120"):
+        assert code in section, code
+    memory = config.SCORE_ANCHORS["inputs"]["boj_memory"]
+    assert f"0 at {memory['worst']:+.1f}% (Dec 2025)" in section
+    fab = config.SCORE_ANCHORS["inputs"]["fab_util_3344"]
+    assert f"80 at {fab['normal']:.1f}%" in section
+    flow = config.SCORE_ANCHORS["inputs"]["aero_inv_ship"]
+    assert f"{math.exp(flow['worst']):.2f} months" in section
+    stale, drop = config.FRESHNESS["boj_memory"]
+    assert f"stale after {stale} days, dropped after {drop}" in section
+    assert f"{config.SECTOR_DROP_AFTER_DAYS} days" in section
+
+
+def test_docs_sector_limitations_and_credits(body):
+    text = _text(body)
+    section = _sector_section(text)
+    memory = config.SCORE_ANCHORS["inputs"]["boj_memory"]
+    # Disclosed limitations (spec settled item 1 and the anchor rulings).
+    assert "glut" in section and "demand collapse" in section
+    assert f"above {memory['worst']:+.1f}%" in section and "316%" in section
+    assert "does not separate" in section
+    assert "1972" in section and "1948" in section
+    # Credits: the BOJ line verbatim, and the US government sources.
+    assert ("This service uses the API provided by the 'Bank of Japan Time-Series Data Search.' "
+            "The Bank of Japan does not guarantee the content of the service.") in text
+    assert "requires the Bank of Japan's permission" in section
+    for credit in ("Federal Reserve Board", "G.17", "Census Bureau", "M3", "Bureau of Labor Statistics",
+                   "Producer Price Index"):
+        assert credit in text, credit
+    # The API and /health sector fields are described.
+    assert "sectors" in text and "terms" in text
+
+
+def test_docs_sector_worst_months_agree_with_the_anchors_file():
+    from api import docs
+
+    for key in ("boj_memory", "boj_logic", "fab_util_3344", "aero_caputl", "aero_inv_ship", "ppi_ti_mill",
+                "ppi_ni_mill", "ppi_ti_forge", "ppi_nonferrous_forge", "ppi_steel_invest_cast"):
+        assert key in docs.WORST_MONTHS, key

@@ -27,7 +27,7 @@ from dash import Input, Output, State, ctx, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
-from config import APP_TITLE, CATEGORY_WEIGHTS, FALLBACK_SNAPSHOT_MAX_AGE_DAYS, RETIRED_CATEGORIES
+from config import APP_TITLE, CATEGORY_WEIGHTS, FALLBACK_SNAPSHOT_MAX_AGE_DAYS, RETIRED_CATEGORIES, SECTORS
 from data import aggregate_data
 
 # Load .env before anything reads API keys
@@ -411,6 +411,15 @@ def create_app() -> dash.Dash:
             fallback_categories = list(snapshot.get("fallback_categories") or [])
             stale_categories = list(snapshot.get("stale_categories") or [])
             excluded_categories = list(snapshot.get("excluded_categories") or [])
+            sector_blocks = snapshot.get("sectors") if isinstance(snapshot.get("sectors"), dict) else {}
+
+        # Per-sector status, reported only here: a sector outage never changes state or the
+        # HTTP status below. A snapshot without a sector block counts as degraded, coverage 0.
+        sectors = {}
+        for sector in SECTORS:
+            block = sector_blocks.get(sector) if isinstance(sector_blocks.get(sector), dict) else {}
+            sectors[sector] = {"degraded": bool(block.get("degraded", True)),
+                               "coverage": int(block.get("coverage") or 0)}
 
         age_seconds = round((now_utc - last_update).total_seconds(), 1) if last_update else None
         try:
@@ -448,6 +457,7 @@ def create_app() -> dash.Dash:
             "fallback_categories": fallback_categories,
             "stale_categories": stale_categories,
             "excluded_categories": excluded_categories,
+            "sectors": sectors,
             "status_message": status_message,
             "update_interval_seconds": 300,
             "process_memory": memory_usage(),
