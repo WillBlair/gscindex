@@ -43,3 +43,19 @@ def test_configured_key_keeps_authenticated_api(monkeypatch):
     assert fred.fetch_fred_series("TEST").tolist() == [12]
     assert get.call_args.args[0] == fred._BASE_URL
     assert get.call_args.kwargs["params"]["api_key"] == "test-key"
+
+
+def test_cache_key_includes_the_lookback_window(monkeypatch):
+    """A short-window fetch must never be served to a provider that asked for a longer one."""
+    monkeypatch.setenv("FRED_API_KEY", "test-key")
+    keys = []
+    monkeypatch.setattr(fred, "get_cached", lambda key, ttl=0: keys.append(key))
+    saved = Mock()
+    monkeypatch.setattr(fred, "set_cached", saved)
+    response = Mock()
+    response.json.return_value = {"observations": [{"date": "2026-09-15", "value": "12"}]}
+    monkeypatch.setattr(fred.requests, "get", Mock(return_value=response))
+    fred.fetch_fred_series("TEST", lookback_days=100)
+    fred.fetch_fred_series("TEST", lookback_days=2000)
+    assert keys == ["fred_TEST_100d", "fred_TEST_2000d"]
+    assert [c.args[0] for c in saved.call_args_list] == keys

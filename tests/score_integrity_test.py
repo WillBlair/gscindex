@@ -164,32 +164,6 @@ class AiFailureTests(unittest.TestCase):
 
 
 class NoInventedHistoryTests(unittest.TestCase):
-    def test_tariff_history_is_eputrade_only(self):
-        from data.providers import tariffs
-
-        raw = pd.Series(
-            [100.0, 120.0, 140.0] * 8,
-            index=pd.date_range("2024-08-01", periods=24, freq="MS"),
-        )
-        with mock.patch.object(tariffs, "fetch_fred_series", return_value=raw), \
-             mock.patch.object(tariffs, "fetch_tariff_news_score", return_value=(0.0, 5, "x")) as news:
-            hist = tariffs.TariffsProvider().fetch_history(30)
-        news.assert_not_called()
-        self.assertFalse(hist.empty)
-
-    def test_quiet_tariff_news_does_not_boost_score(self):
-        from data.providers import tariffs
-
-        raw = pd.Series(
-            [100.0, 120.0, 140.0] * 8,
-            index=pd.date_range("2024-08-01", periods=24, freq="MS"),
-        )
-        with mock.patch.object(tariffs, "fetch_fred_series", return_value=raw), \
-             mock.patch.object(tariffs, "fetch_tariff_news_score", return_value=(100.0, 3, "x")):
-            score, _ = tariffs.TariffsProvider().fetch_current()
-        eputrade_only = float(tariffs.normalize_series_inverse(raw).iloc[-1])
-        self.assertEqual(score, eputrade_only)
-
     def test_weather_total_failure_is_flagged_not_75(self):
         from data.providers import weather
 

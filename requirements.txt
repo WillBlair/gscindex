@@ -17,3 +17,4 @@ feedparser==6.0.12
 Markdown==3.10.2
 MarkupSafe==3.0.3
 psycopg2-binary==2.9.11
+openpyxl==3.1.5

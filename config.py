@@ -64,16 +64,14 @@ GSCPI_SCORE_SCALE: float = float(os.environ.get("GSCPI_SCORE_SCALE", "12.5"))
 # ---------------------------------------------------------------------------
 # Daily proxy blend weights (Fix 2: supplement frozen monthly series)
 # ---------------------------------------------------------------------------
-# GSCPI (supply_chain) and EPUTRADE (tariffs) are monthly FRED/NY-Fed series —
-# they can sit flat for weeks. Blend in a genuinely daily proxy for each so
-# the composite actually moves day to day instead of only on print days.
+# GSCPI (supply_chain) is a monthly NY Fed series that can sit flat for weeks.
+# Blend in a genuinely daily proxy so the composite moves day to day instead
+# of only on print days.
 #   supply_chain = (1 - SUPPLY_CHAIN_PROXY_WEIGHT) * GSCPI + SUPPLY_CHAIN_PROXY_WEIGHT * BDRY_proxy
-#   tariffs      = (1 - TARIFFS_PROXY_WEIGHT) * EPUTRADE + TARIFFS_PROXY_WEIGHT * tariff_news_nowcast
 # Kept as a minority blend (25-30%) so the well-vetted monthly print still
 # anchors the score; the proxy just adds daily texture between prints.
 # If the proxy fetch fails, providers fall back to 100% monthly (no crash).
 SUPPLY_CHAIN_PROXY_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_PROXY_WEIGHT", "0.30"))
-TARIFFS_PROXY_WEIGHT: float = float(os.environ.get("TARIFFS_PROXY_WEIGHT", "0.30"))
 
 # TSIFRGHT (BTS Freight Transportation Services Index) is monthly with a
 # 1-2 month publication lag -- the longest lag of any category. Blend in a
@@ -466,3 +464,13 @@ TTF_LIVE_MAX_AGE_DAYS = 5
 # Runtime FRED window for the energy legs and CPI: enough for the current value, the 91-day
 # reference, the CPI deflator and the history tail, never the full history.
 ENERGY_FRED_LOOKBACK_DAYS = 3 * 365
+
+# Trade & Tariffs: customs duties as a share of goods imports (Treasury DTS / BOPGIMP) and
+# the daily Trade Policy Uncertainty index (Caldara et al.). Keys are the canonical input keys.
+TARIFF_WEIGHTS: dict[str, float] = {"tariff_burden": 0.6, "tpu": 0.4}
+TARIFF_BURDEN_MONTHS = 3         # trailing months summed on both sides of the burden ratio
+TPU_MEAN_DAYS = 30               # trailing days averaged in the daily TPU index
+TPU_MIN_PERIODS = 20             # fewest observations a 30-day mean may rest on
+# Runtime FRED window for BOPGIMP and EPUTRADE: the burden's 3-month sums, the history tail
+# and the publication lag, never the full history.
+TARIFFS_FRED_LOOKBACK_DAYS = 3 * 365

@@ -75,7 +75,9 @@ def fetch_fred_series(
     requests.HTTPError
         If the FRED API returns a non-200 status code.
     """
-    cache_key = f"fred_{series_id}"
+    # The window is part of the key: providers asking for different lookbacks must not
+    # share (and be served) each other's truncated series.
+    cache_key = f"fred_{series_id}_{lookback_days}d"
     cached = get_cached(cache_key, ttl=cache_ttl)
     if cached is not None:
         # Rebuild Series from cached dict
