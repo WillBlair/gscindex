@@ -2,6 +2,7 @@
 Compute the frozen 0-100 score anchors (methodology v2) and write data/score_anchors.json.
 
     DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/compute_anchors.py
+    DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/compute_anchors.py --sectors-only
 
 Each input is put on the scale its provider scores (log, CPI-real log, YoY %, z-score) and
 averaged by calendar month. Then, on that transformed monthly series:
@@ -13,6 +14,10 @@ averaged by calendar month. Then, on that transformed monthly series:
 The script also writes the chokepoint tonnage weights and monthly baselines, the regional Fed
 prices-paid stats, port throughput shares and the waterway record lows.
 
+``--sectors-only`` fetches and fits only the Semis and Aero sector inputs (Bank of Japan, FRED)
+and merges them into the existing JSON: every other key and value stays byte-identical, so
+``git diff`` shows additions only (or, on a re-run, changes to sector keys only).
+
 It downloads public data only (FRED, NY Fed, Caldara-Iacoviello, Treasury, USDA AgTransport,
 IMF PortWatch, USGS) through the app's own fetchers, so every anchor is
 fitted on exactly the quantity the provider scores. It writes the JSON and nothing else (no
@@ -21,6 +26,7 @@ is a deliberate, versioned change. Review the printed table and commit the JSON.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
@@ -36,7 +42,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config  # noqa: E402
-from scoring.anchors import anchored_score  # noqa: E402
+from scoring.anchors import anchored_score, transform_value  # noqa: E402
 
 OUT = ROOT / "data" / "score_anchors.json"
 METHOD_VERSION = 2
@@ -105,7 +111,42 @@ SOURCES = {
     "rail_volume": ("anchors: FRED RAILFRTCARLOADSD11 + RAILFRTINTERMODALD11 (BTS); scored: STB EP 724 "
                     "weekly carloads via USDA AgTransport, https://agtransport.usda.gov/resource/tb7q-kn5i.json"),
     "prices_paid": "FRED PPCDFSA066MSFRBPHI, PPCDISA066MSFRBNY, PRMSAMFRBDAL",
+    "boj_memory": ("Bank of Japan Time-Series Data Search API, PR01 PRCG20_2500850005 (CGPI import price "
+                   "index, MOS memory ICs, contract-currency basis), YoY %"),
+    "boj_logic": ("Bank of Japan Time-Series Data Search API, PR01 PRCG20_2500850004 (CGPI import price "
+                  "index, MOS logic ICs, contract-currency basis), YoY %"),
+    "fab_util_3344": "FRED CAPUTLG3344S (Fed G.17 capacity utilization, NAICS 3344), %",
+    "aero_caputl": "FRED CAPUTLG3364T9S (Fed G.17 capacity utilization, NAICS 3364-9), %",
+    "aero_inv_ship": ("FRED ANAPTI / 3-month mean of FRED ANAPVS (Census M3 nondefense aircraft and parts "
+                      "inventories over shipments), months"),
+    "ppi_ti_mill": "FRED WPU102505 (BLS PPI titanium and titanium-base alloy mill shapes), YoY %",
+    "ppi_ni_mill": "FRED WPU102504 (BLS PPI nickel and nickel-base alloy mill shapes), YoY %",
+    "ppi_ti_forge": "FRED PCU33211233211242 (BLS PPI titanium and titanium alloy forgings), YoY %",
+    "ppi_nonferrous_forge": "FRED PCU332112332112 (BLS PPI nonferrous forging), YoY %",
+    "ppi_steel_invest_cast": "FRED PCU3315123315120 (BLS PPI steel investment castings), YoY %",
 }
+
+# Sector inputs: key -> (transform, direction, pre-2020 baseline). Baselines follow the research
+# (docs/superpowers/research/2026-10-23-industry-artifacts: semis/candidate_anchors.json,
+# memory-alt, aero/compute_proposed.py): BOJ YoY from 2001 (the series starts 2000-01), and the
+# research's pre-2020 windows for the FRED series. Worst = worst month through 2025, no override.
+SECTOR_INPUTS: dict[str, tuple[str, str, tuple[str, str]]] = {
+    "boj_memory": ("identity", "lower_better", ("2001-01-01", "2019-12-31")),
+    "boj_logic": ("identity", "lower_better", ("2001-01-01", "2019-12-31")),
+    "fab_util_3344": ("identity", "lower_better", ("1972-01-01", "2019-12-31")),
+    "aero_caputl": ("identity", "higher_better", ("1972-01-01", "2019-12-31")),
+    "aero_inv_ship": ("log", "lower_better", ("1992-01-01", "2019-12-31")),
+    "ppi_ti_mill": ("identity", "lower_better", ("1972-01-01", "2019-12-31")),
+    "ppi_ni_mill": ("identity", "lower_better", ("1972-01-01", "2019-12-31")),
+    "ppi_ti_forge": ("identity", "lower_better", ("1985-01-01", "2019-12-31")),
+    "ppi_nonferrous_forge": ("identity", "lower_better", ("1985-01-01", "2019-12-31")),
+    "ppi_steel_invest_cast": ("identity", "lower_better", ("1985-01-01", "2019-12-31")),
+}
+SECTOR_INPUT_KEYS = tuple(SECTOR_INPUTS)
+# Where the record (baseline and worst) starts when the series goes back further. G.17 aerospace
+# utilization starts in 1948; the research counts it from 1972, like the semiconductor series,
+# so 2020-04 (46.8%) is the worst month rather than 1950-03 (31.8%).
+SECTOR_RECORD_START = {"aero_caputl": "1972-01-01"}
 
 
 # ------------------------------------------------------------------------------ core
@@ -393,6 +434,70 @@ def build_prices_paid() -> tuple[dict, dict]:
     return anchor, stats
 
 
+# ------------------------------------------------------------------------------ sectors
+
+
+def _sector_measures() -> dict[str, pd.Series]:
+    """Each sector input's monthly measure from its provider's own code (BOJ YoY, G.17 level,
+    M3 inventories over the 3-month shipment mean, PPI YoY), over the full history."""
+    from data.providers import aero, semis
+    with _full_fred_window("SEMIS_FRED_LOOKBACK_DAYS", "AERO_FRED_LOOKBACK_DAYS"):
+        measures = {cls.input_key: cls()._monthly() for cls in (
+            semis.MemoryPricesProvider, semis.LogicPricesProvider, semis.FabUtilizationProvider)}
+        for cls in (aero.ThroughputProvider, aero.FlowProvider, aero.MillPricesProvider, aero.ForgeCastProvider):
+            measures.update({spec.key: spec.monthly() for spec in cls.inputs})
+    missing = set(SECTOR_INPUT_KEYS) - set(measures)
+    if missing:
+        raise RuntimeError(f"no provider measure for {sorted(missing)}")
+    return measures
+
+
+def build_sectors() -> dict[str, dict]:
+    out = {}
+    for key, series in _sector_measures().items():
+        transform, direction, baseline = SECTOR_INPUTS[key]
+        # Latest month as the provider reads it (an unmeasurable latest month stays NaN).
+        value = float(series.iloc[-1])
+        measurable = math.isfinite(value) and (transform == "identity" or value > 0)
+        x = transform_value(value, transform) if measurable else float("nan")
+        fmt = {"aero_inv_ship": "{:.2f} months", "fab_util_3344": "{:.1f}%", "aero_caputl": "{:.1f}%"}
+        TODAY[key] = (x, series.index[-1].date(), fmt.get(key, "{:+.1f}% YoY").format(value))
+        start = SECTOR_RECORD_START.get(key)
+        record = series[series.index >= pd.Timestamp(start)] if start else series
+        out[key] = compute_input_anchor(record, transform, direction, baseline)
+        if start:
+            out[key]["worst_basis"] += f"; record counted from {start[:7]}, as in the research"
+        out[key]["source"] = SOURCES[key]
+    return out
+
+
+def _dump(anchors: dict) -> str:
+    return json.dumps(anchors, indent=2) + "\n"
+
+
+def merge_sector_anchors(path: Path, sector_inputs: dict[str, dict]) -> None:
+    """Write the sector anchors into the anchors JSON at ``path`` and change nothing else.
+
+    New sector keys go at the top of ``inputs`` so every existing line, including the last
+    entry's closing brace, is untouched; a sector key already present is replaced in place.
+    Raises ValueError for a key that is not a sector input, or a file that would not be
+    rewritten byte for byte.
+    """
+    unknown = set(sector_inputs) - set(SECTOR_INPUT_KEYS)
+    if unknown:
+        raise ValueError(f"not sector inputs: {sorted(unknown)}")
+    text = path.read_text(encoding="utf-8")
+    anchors = json.loads(text)
+    if _dump(anchors) != text:
+        raise ValueError(f"{path} is not in this script's JSON format; refusing to rewrite it")
+    current = anchors["inputs"]
+    inputs = {key: sector_inputs[key] for key in SECTOR_INPUT_KEYS if key in sector_inputs and key not in current}
+    for key, value in current.items():
+        inputs[key] = sector_inputs.get(key, value)
+    anchors["inputs"] = inputs
+    path.write_text(_dump(anchors), encoding="utf-8")
+
+
 # ------------------------------------------------------------------------------ PortWatch
 
 
@@ -475,17 +580,17 @@ def _raw_anchor(value: float, transform: str) -> str:
 
 
 def print_inputs(anchors: dict) -> None:
-    print(f"\n{'input':<17}{'transform':<10}{'best':>12}{'normal':>12}{'worst':>12}  "
+    print(f"\n{'input':<23}{'transform':<10}{'best':>12}{'normal':>12}{'worst':>12}  "
           f"{'latest':<26}{'as of':<12}{'score':>6}")
     for key, a in anchors["inputs"].items():
         raw = " ".join(_raw_anchor(a[k], a["transform"]) for k in ("best", "normal", "worst"))
         cells = "".join(f"{a[k]:>12.4f}" for k in ("best", "normal", "worst"))
         x, day, text = TODAY.get(key, (float("nan"), None, "-"))
         score = anchored_score(x, a) if math.isfinite(x) else float("nan")
-        print(f"{key:<17}{a['transform']:<10}{cells}  {text:<26}{str(day):<12}{score:>6.1f}")
+        print(f"{key:<23}{a['transform']:<10}{cells}  {text:<26}{str(day):<12}{score:>6.1f}")
         if a["transform"] != "identity":
             unit = " (2025-12 $)" if a["transform"] == "log_real" else ""
-            print(f"{'':<27}raw: {raw}{unit}")
+            print(f"{'':<33}raw: {raw}{unit}")
 
 
 EXPECTED = {"supply_chain": "~50", "chokepoints": "~36", "energy": "20-35", "tariffs": "30-55",
@@ -516,7 +621,50 @@ def print_categories(anchors: dict) -> None:
             print(f"{cls.category:<14}{'ERROR':>7}  {EXPECTED[cls.category]:<18}{type(exc).__name__}: {exc}")
 
 
-def main() -> int:
+SECTOR_EXPECTED = {"semis_memory_prices": "~0", "semis_logic_prices": "63-66", "semis_fab_utilization": "~85",
+                   "aero_throughput": "~80", "aero_flow": "~76", "aero_mill_prices": "~74",
+                   "aero_forge_cast": "~37", "semiconductor": "~50", "aerospace": "~64"}
+
+
+def print_sectors(anchors: dict) -> None:
+    """Today's score per sector category and each sector index (equal-weight mean)."""
+    from data.providers import aero, semis
+    providers = {cls.category: cls for cls in (
+        semis.MemoryPricesProvider, semis.LogicPricesProvider, semis.FabUtilizationProvider,
+        aero.ThroughputProvider, aero.FlowProvider, aero.MillPricesProvider, aero.ForgeCastProvider)}
+    config.SCORE_ANCHORS = anchors
+    print(f"\n{'sector category':<24}{'score':>7}  {'expected':<10}{'as of':<12}raw")
+    for sector, spec in config.SECTORS.items():
+        scores = []
+        for category in spec["weights"]:
+            try:
+                score, meta = providers[category]().fetch_current()
+                scores.append(score)
+                print(f"{category:<24}{score:>7.1f}  {SECTOR_EXPECTED[category]:<10}{meta['as_of']:<12}"
+                      f"{meta['raw_value']}")
+            except Exception as exc:
+                print(f"{category:<24}{'ERROR':>7}  {SECTOR_EXPECTED[category]:<10}{type(exc).__name__}: {exc}")
+        index = sum(scores) / len(scores) if scores else float("nan")
+        print(f"{spec['label'] + ' index':<24}{index:>7.1f}  {SECTOR_EXPECTED[sector]:<10}"
+              f"({len(scores)} of {len(spec['weights'])} categories, equal weight)\n")
+
+
+def sectors_main() -> int:
+    sector = build_sectors()
+    merge_sector_anchors(OUT, sector)
+    print(f"Merged {len(sector)} sector inputs into {OUT.relative_to(ROOT)}")
+    anchors = json.loads(OUT.read_text(encoding="utf-8"))
+    print_inputs({"inputs": sector})
+    print_sectors(anchors)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Compute the frozen score anchors.")
+    parser.add_argument("--sectors-only", action="store_true",
+                        help="fit only the sector inputs and merge them into the existing JSON")
+    if parser.parse_args(argv).sectors_only:
+        return sectors_main()
     from data.providers.fred_client import fetch_fred_full
     cpi = fetch_fred_full(CPI_SERIES)
     inputs: dict[str, dict] = {"gscpi": build_gscpi()}
@@ -529,6 +677,7 @@ def main() -> int:
     inputs["prices_paid"], pp_stats = build_prices_paid()
     for key, anchor in inputs.items():
         anchor["source"] = SOURCES[key.replace("_monthly", "")]
+    inputs.update(build_sectors())
     weights, baseline = build_chokepoints()
     shares, not_found = build_port_shares()
 
@@ -548,7 +697,7 @@ def main() -> int:
                                   f"{PORT_SHARE_WINDOW[0]}..{PORT_SHARE_WINDOW[1]}"),
         "waterways": build_waterways(),
     }
-    OUT.write_text(json.dumps(anchors, indent=2) + "\n", encoding="utf-8")
+    OUT.write_text(_dump(anchors), encoding="utf-8")
     print(f"Wrote {OUT.relative_to(ROOT)}")
 
     print_inputs(anchors)
@@ -567,6 +716,7 @@ def main() -> int:
     print(f"Waterways: Mississippi record low {w['mississippi_record_low']} ft ({w['mississippi_record_low_date']}), "
           f"threshold (p10) {w['mississippi_threshold']} ft")
     print_categories(anchors)
+    print_sectors(anchors)
     return 0
 
 

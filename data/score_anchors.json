@@ -7,6 +7,116 @@
     "value": 326.031
   },
   "inputs": {
+    "boj_memory": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -36.26854,
+      "normal": -11.777035,
+      "worst": 57.417894,
+      "baseline": "2001-01 to 2019-12 (228 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2025-12",
+      "generated": "2026-10-23",
+      "source": "Bank of Japan Time-Series Data Search API, PR01 PRCG20_2500850005 (CGPI import price index, MOS memory ICs, contract-currency basis), YoY %"
+    },
+    "boj_logic": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -14.852003,
+      "normal": -2.794618,
+      "worst": 29.359823,
+      "baseline": "2001-01 to 2019-12 (228 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2022-02",
+      "generated": "2026-10-23",
+      "source": "Bank of Japan Time-Series Data Search API, PR01 PRCG20_2500850004 (CGPI import price index, MOS logic ICs, contract-currency basis), YoY %"
+    },
+    "fab_util_3344": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": 64.752125,
+      "normal": 80.0655,
+      "worst": 93.1827,
+      "baseline": "1972-01 to 2019-12 (576 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2000-07",
+      "generated": "2026-10-23",
+      "source": "FRED CAPUTLG3344S (Fed G.17 capacity utilization, NAICS 3344), %"
+    },
+    "aero_caputl": {
+      "transform": "identity",
+      "direction": "higher_better",
+      "best": 85.845,
+      "normal": 73.8275,
+      "worst": 46.7548,
+      "baseline": "1972-01 to 2019-12 (576 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2020-04; record counted from 1972-01, as in the research",
+      "generated": "2026-10-23",
+      "source": "FRED CAPUTLG3364T9S (Fed G.17 capacity utilization, NAICS 3364-9), %"
+    },
+    "aero_inv_ship": {
+      "transform": "log",
+      "direction": "lower_better",
+      "best": 1.246982,
+      "normal": 1.554665,
+      "worst": 2.7655,
+      "baseline": "1992-03 to 2019-12 (334 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2020-07",
+      "generated": "2026-10-23",
+      "source": "FRED ANAPTI / 3-month mean of FRED ANAPVS (Census M3 nondefense aircraft and parts inventories over shipments), months"
+    },
+    "ppi_ti_mill": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -14.105496,
+      "normal": 0.369467,
+      "worst": 98.737374,
+      "baseline": "1972-01 to 2019-12 (576 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2006-04",
+      "generated": "2026-10-23",
+      "source": "FRED WPU102505 (BLS PPI titanium and titanium-base alloy mill shapes), YoY %"
+    },
+    "ppi_ni_mill": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -16.376802,
+      "normal": 0.903226,
+      "worst": 70.588235,
+      "baseline": "1972-01 to 2019-12 (551 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 1988-09",
+      "generated": "2026-10-23",
+      "source": "FRED WPU102504 (BLS PPI nickel and nickel-base alloy mill shapes), YoY %"
+    },
+    "ppi_ti_forge": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -6.472619,
+      "normal": 0.036684,
+      "worst": 24.708146,
+      "baseline": "1985-01 to 2019-12 (388 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2023-05",
+      "generated": "2026-10-23",
+      "source": "FRED PCU33211233211242 (BLS PPI titanium and titanium alloy forgings), YoY %"
+    },
+    "ppi_nonferrous_forge": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -2.836451,
+      "normal": 0.545889,
+      "worst": 10.248486,
+      "baseline": "1985-01 to 2019-12 (420 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2022-08",
+      "generated": "2026-10-23",
+      "source": "FRED PCU332112332112 (BLS PPI nonferrous forging), YoY %"
+    },
+    "ppi_steel_invest_cast": {
+      "transform": "identity",
+      "direction": "lower_better",
+      "best": -1.4573,
+      "normal": 1.14166,
+      "worst": 21.88781,
+      "baseline": "1985-01 to 2019-12 (420 months)",
+      "worst_basis": "worst monthly mean through 2025-12: 2022-07",
+      "generated": "2026-10-23",
+      "source": "FRED PCU3315123315120 (BLS PPI steel investment castings), YoY %"
+    },
     "gscpi": {
       "transform": "identity",
       "direction": "lower_better",

@@ -109,3 +109,51 @@ def test_common_months_needs_every_survey():
     months = common_months(surveys)
     assert months[0] == pd.Timestamp("2004-06-01")
     assert months[-1] == min(s.index[-1] for s in surveys.values())
+
+
+def test_sectors_only_merge_keeps_global_keys_identical(tmp_path):
+    import difflib
+    import json
+
+    from scripts.compute_anchors import SECTOR_INPUT_KEYS, merge_sector_anchors
+
+    original = {
+        "method_version": 2,
+        "generated": "2026-10-20",
+        "inputs": {
+            "gscpi": {"transform": "identity", "direction": "lower_better", "best": -1.234567,
+                      "normal": -0.1, "worst": 4.321, "baseline": "1998-01 to 2019-12 (264 months)"},
+            "brent": {"transform": "log_real", "direction": "lower_better", "best": 3.9,
+                      "normal": 4.2, "worst": 5.0123456789, "source": "FRED DCOILBRENTEU"},
+        },
+        "chokepoint_weights": {"Suez": 0.12345678},
+        "waterways": {"mississippi_record_low": -10.7},
+    }
+    path = tmp_path / "score_anchors.json"
+    before = json.dumps(original, indent=2) + "\n"
+    path.write_text(before, encoding="utf-8")
+    sector = {key: {"transform": "identity", "direction": "lower_better", "best": 1.0, "normal": 2.0,
+                    "worst": 3.0, "source": f"dummy {key}"} for key in SECTOR_INPUT_KEYS}
+
+    merge_sector_anchors(path, sector)
+
+    after = path.read_text(encoding="utf-8")
+    removed = [line for line in difflib.ndiff(before.splitlines(), after.splitlines()) if line.startswith("- ")]
+    assert removed == []                                   # additions only, like `git diff`
+    merged = json.loads(after)
+    assert set(merged["inputs"]) == set(original["inputs"]) | set(SECTOR_INPUT_KEYS)
+    for key, value in original["inputs"].items():
+        assert json.dumps(merged["inputs"][key], indent=2) == json.dumps(value, indent=2)
+    assert {k: v for k, v in merged.items() if k != "inputs"} == {k: v for k, v in original.items() if k != "inputs"}
+    assert merged["inputs"]["boj_memory"]["source"] == "dummy boj_memory"
+    assert set(SECTOR_INPUT_KEYS) == {
+        "boj_memory", "boj_logic", "fab_util_3344", "aero_caputl", "aero_inv_ship", "ppi_ti_mill",
+        "ppi_ni_mill", "ppi_ti_forge", "ppi_nonferrous_forge", "ppi_steel_invest_cast"}
+
+    merge_sector_anchors(path, {**sector, "boj_memory": {**sector["boj_memory"], "worst": 9.0}})
+    rerun = json.loads(path.read_text(encoding="utf-8"))   # a re-run replaces sector keys only
+    assert rerun["inputs"]["boj_memory"]["worst"] == 9.0
+    assert rerun["inputs"]["gscpi"] == original["inputs"]["gscpi"]
+
+    with pytest.raises(ValueError):                        # a global key is never written
+        merge_sector_anchors(path, {"gscpi": sector["boj_memory"]})
