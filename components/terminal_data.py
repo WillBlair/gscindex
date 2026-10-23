@@ -27,6 +27,8 @@ TIER_COLORS: dict[str, str] = {
 }
 
 ROW_HISTORY_DAYS = 30
+# Sector inputs publish monthly, so a 30-day row trend is mostly flat; show 90 days.
+SECTOR_ROW_HISTORY_DAYS = 90
 
 
 def tier_for(score: float) -> dict:
@@ -43,6 +45,11 @@ def _finite(value) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value) if math.isfinite(value) else None
+
+
+def row_history_days(key) -> int:
+    """Days of trend shown per category row: 30 on Global, 90 on the monthly sector tabs."""
+    return ROW_HISTORY_DAYS if tab_key(key) == DEFAULT_TAB else SECTOR_ROW_HISTORY_DAYS
 
 
 def tab_key(key) -> str:
@@ -129,7 +136,7 @@ def category_rows(data: dict, profile_key: str) -> list[dict]:
     if key != DEFAULT_TAB:
         fallbacks |= {c for c in weights if (metadata.get(c) or {}).get("is_fallback")}
         excluded |= {c for c in weights if _finite(scores.get(c)) is None}
-    window = _window(today_date, ROW_HISTORY_DAYS)
+    window = _window(today_date, row_history_days(key))
 
     rows = []
     for cat, weight in weights.items():

@@ -9,7 +9,8 @@ from components.terminal import (
     build_briefing, build_category_table, build_headlines,
     build_quotes, build_readout, updated_label,
 )
-from components.terminal_data import tab_key
+from components.terminal_data import SECTOR_ROW_HISTORY_DAYS as SECTOR_TREND_DAYS, tab_key
+from config import DEFAULT_TAB
 from components.workspace import select_news, snapshot_csv
 
 
@@ -20,9 +21,12 @@ def register_workspace_callbacks(app, get_snapshot):
             raise dash.exceptions.PreventUpdate
         return data, fresh
 
-    @app.callback(Output("profile-store", "data"), Input("profile-switch", "value"))
+    @app.callback(Output("profile-store", "data"), Output("trend-range", "value"),
+                  Input("profile-switch", "value"))
     def profile_changed(key):
-        return tab_key(key)
+        # Sector inputs publish monthly, so their tabs open on the 90-day trend.
+        key = tab_key(key)
+        return key, DEFAULT_TREND_DAYS if key == DEFAULT_TAB else SECTOR_TREND_DAYS
 
     @app.callback(
         Output("readout", "children"), Output("category-table", "children"),

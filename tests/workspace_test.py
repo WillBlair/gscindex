@@ -208,9 +208,9 @@ def test_workspace_callbacks_render_all_profiles_and_export(terminal_app):
     app = terminal_app.app
     snapshot = terminal_app._DATA_CACHE
     yesterday = {c: v[0] for c, v in snapshot["daily_history"]["scores"].items()}
-    assert _callback(app, "profile-store.data")("semiconductor") == "semiconductor"
+    assert _callback(app, "profile-store.data")("semiconductor") == ("semiconductor", 90)
     # A value persisted in the browser before the tabs were renamed falls back to Global.
-    assert _callback(app, "profile-store.data")("global") == "global"
+    assert _callback(app, "profile-store.data")("global") == ("global", 30)
     overview = _callback(app, "category-table.children")
     seen = set()
     for key in TABS:
@@ -392,3 +392,19 @@ def test_csv_sector_status_reads_sector_flags(snapshot):
     rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "aerospace")))}
     assert rows["Delivery Flow"]["status"] == "excluded" and rows["Delivery Flow"]["score"] == ""
     assert rows["Mill Prices"]["status"] == "fallback"
+
+
+def test_tab_switch_sets_the_trend_range(terminal_app):
+    app = terminal_app.app
+    switch = _callback(app, "profile-store.data")
+    assert switch("semiconductor") == ("semiconductor", 90)
+    assert switch("aerospace") == ("aerospace", 90)
+    assert switch("global") == ("global", 30)
+    assert switch("baseline") == ("global", 30)
+
+
+def test_sector_table_header_says_90_days(terminal_app):
+    snapshot = terminal_app._DATA_CACHE
+    from components.terminal import build_category_table
+    assert "90 days" in _text(build_category_table(snapshot, "aerospace"))
+    assert "30 days" in _text(build_category_table(snapshot, "global"))

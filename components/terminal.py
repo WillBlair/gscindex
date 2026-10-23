@@ -18,7 +18,7 @@ from dash import dcc, html
 import config
 from components.feed import _format_time_ago
 from components.terminal_data import (
-    TIER_COLORS, category_rows, index_history, index_summary, tab_key, tier_for,
+    TIER_COLORS, category_rows, index_history, index_summary, row_history_days, tab_key, tier_for,
 )
 from components.workspace import plain_text, safe_url, select_news
 from config import CATEGORY_LABELS, DEFAULT_TAB, INPUT_LABELS, SECTORS, TABS
@@ -439,7 +439,7 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
     head = html.Thead(html.Tr([
         html.Th("Category"), html.Th("Wt", className="r hide-s"), html.Th("Score", className="score-col"),
         html.Th("Today", className="r"), html.Th("Yest.", className="r hide-s"), html.Th("Chg", className="r"),
-        html.Th("Effect", className="r"), html.Th("30 days", className="hide-s"),
+        html.Th("Effect", className="r"), html.Th(f"{row_history_days(profile_key)} days", className="hide-s"),
     ]))
 
     body = []
@@ -473,7 +473,7 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
         html.Td(fmt(summary["yday"]), className="r hide-s dim num"),
         html.Td(signed(summary["change"]), className=f"r num {change_class(summary['change'])}"),
         html.Td(signed(summary["change"], 2), className=f"r num {change_class(summary['change'])}"),
-        html.Td(sparkline(index_history(data, profile_key, 30), 110, 18, index_color), className="hide-s"),
+        html.Td(sparkline(index_history(data, profile_key, row_history_days(profile_key)), 110, 18, index_color), className="hide-s"),
     ], className="index-row")
 
     return html.Table([head, html.Tbody(body), html.Tfoot(index_row)], className="categories")

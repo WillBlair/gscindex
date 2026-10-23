@@ -497,3 +497,13 @@ def global_tab_output(key):
 
 def test_global_tab_unchanged():
     assert global_tab_output("global") == json.loads(GOLDEN.read_text())
+
+
+def test_sector_rows_show_90_days_global_rows_30():
+    # Sector inputs publish monthly, so their row trend covers 90 days.
+    snap = _sector_snapshot()
+    assert td.row_history_days("global") == 30
+    assert td.row_history_days("semiconductor") == 90
+    assert td.row_history_days("aerospace") == 90
+    assert all(len(r["history"]) == 90 for r in td.category_rows(snap, "semiconductor"))
+    assert all(len(r["history"]) == 30 for r in td.category_rows(snap, "global"))
