@@ -365,3 +365,23 @@ def test_backtest_refuses_to_run_against_postgres(monkeypatch):
     monkeypatch.setattr(database, "_resolve_db_config", lambda: ("postgres", "postgresql://x/y"))
     monkeypatch.setattr(bt, "default_providers", lambda: pytest.fail("must not build providers"))
     assert bt.main(["--no-save"]) == 2
+
+
+@pytest.mark.parametrize("history", [
+    pd.Series(dtype=float),                                                  # nothing at all
+    pd.Series([60.0], index=pd.DatetimeIndex([pd.Timestamp(TODAY - timedelta(days=30))])),  # only before the window
+    pd.Series([np.nan, np.inf], index=pd.date_range(end=pd.Timestamp(TODAY - timedelta(days=1)), periods=2)),
+])
+def test_empty_history_in_window_counts_as_failed(history, sqlite_db, tmp_path, monkeypatch):
+    providers = _providers()
+    providers["freight"].fetch_history = lambda days: history
+    calls = _spy_upserts(monkeypatch)
+    backups = tmp_path / "backups"
+
+    with pytest.raises(rebuild.WriteRefused, match="freight"):
+        rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups, now=NOW1)
+    assert calls == []
+
+    result = rebuild.run(days=3, providers=providers, today=TODAY, backup_dir=backups, now=NOW1)
+    assert "no finite values" in result.failed_categories["freight"]
+    assert result.new["freight"].isna().all()

@@ -129,7 +129,11 @@ def _history_on(series: pd.Series, dates: list[date]) -> pd.Series:
 
 
 def build_new_scores(providers: dict, days: int, today: date) -> tuple[dict[str, pd.Series], dict[str, str]]:
-    """Each weighted category's rebuilt scores on the window, and why any category failed."""
+    """Each weighted category's rebuilt scores on the window, and why any category failed.
+
+    A history with no finite value inside the window counts as failed, the same as a raise:
+    writing the other categories alone would leave mixed-method rows.
+    """
     dates = _window(days, today)
     new: dict[str, pd.Series] = {}
     failed: dict[str, str] = {}
@@ -137,6 +141,8 @@ def build_new_scores(providers: dict, days: int, today: date) -> tuple[dict[str,
         try:
             history = providers[cat].fetch_history(days + EXTRA_FETCH_DAYS)
             new[cat] = _history_on(history, dates)
+            if not new[cat].notna().any():
+                failed[cat] = f"no finite values in the rebuild window ({dates[0]} to {dates[-1]})"
         except Exception as exc:
             logger.warning("%s history unavailable: %s", cat, exc)
             failed[cat] = f"{type(exc).__name__}: {exc}"
@@ -196,9 +202,9 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
     new, failed = build_new_scores(providers, days, today)
     if write and failed and not allow_partial:
         raise WriteRefused(
-            f"Refusing --write: {', '.join(sorted(failed))} failed to fetch, so the rebuild would "
-            "be partial and leave mixed-method rows. Fix the source, or pass --allow-partial to "
-            "write the categories that did load.")
+            f"Refusing --write: {', '.join(sorted(failed))} failed to fetch or returned no values in "
+            "the window, so the rebuild would be partial and leave mixed-method rows. Fix the source, "
+            "or pass --allow-partial to write the categories that did load.")
     composite = compute_composites(new, dates)
 
     if write and database.get_db_type() == "sqlite":
