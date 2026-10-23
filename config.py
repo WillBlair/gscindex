@@ -450,3 +450,15 @@ CATEGORY_DROP_AFTER_DAYS: dict[str, int] = {
 # severity factor, so a closed Hormuz alone takes the category to about 63.
 CHOKEPOINT_DEADBAND = 0.90
 CHOKEPOINT_SEVERITY = 3.0
+
+# Energy: leg weights (renormalized over the legs that are available) and the spike
+# penalty. The penalty takes `max_points` off a leg whose real price rose `full` or more
+# over `ENERGY_SPIKE_LOOKBACK_DAYS`, nothing below `start`, linear in between. Each leg's
+# penalty is weighted like the leg and subtracted from the blended score.
+ENERGY_LEG_WEIGHTS: dict[str, float] = {"brent": 0.35, "ulsd": 0.40, "ttf": 0.25}
+ENERGY_SPIKE: dict[str, float] = {"start": 0.20, "full": 0.82, "max_points": 15.0}
+ENERGY_SPIKE_LOOKBACK_DAYS = 91
+
+# Live TTF: EUR/MWh x EURUSD / this = USD/MMBtu. The quote must be at most this many days old.
+MWH_PER_MMBTU = 3.412
+TTF_LIVE_MAX_AGE_DAYS = 5
