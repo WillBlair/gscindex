@@ -73,13 +73,6 @@ GSCPI_SCORE_SCALE: float = float(os.environ.get("GSCPI_SCORE_SCALE", "12.5"))
 # If the proxy fetch fails, providers fall back to 100% monthly (no crash).
 SUPPLY_CHAIN_PROXY_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_PROXY_WEIGHT", "0.30"))
 
-# TSIFRGHT (BTS Freight Transportation Services Index) is monthly with a
-# 1-2 month publication lag -- the longest lag of any category. Blend in a
-# daily transportation-sector equity proxy (IYT) the same way GSCPI and
-# EPUTRADE are blended above. Same 30% minority weight, same fail-safe
-# fallback to 100% TSIFRGHT if the proxy fetch fails.
-FREIGHT_PROXY_WEIGHT: float = float(os.environ.get("FREIGHT_PROXY_WEIGHT", "0.30"))
-
 # ---------------------------------------------------------------------------
 # Port disruption blend weight (aggregate port_analyst signal -> geopolitical)
 # ---------------------------------------------------------------------------
@@ -97,18 +90,6 @@ PORT_DISRUPTION_WEIGHT: float = float(os.environ.get("PORT_DISRUPTION_WEIGHT", "
 # Semiconductor and other industry-specific data is slow-moving (quarterly
 # or monthly updates). A 24-hour cache prevents unnecessary API calls.
 INDUSTRY_PROVIDER_CACHE_TTL: int = int(os.environ.get("INDUSTRY_PROVIDER_CACHE_TTL", "86400"))
-
-# ---------------------------------------------------------------------------
-# Freight Flow score calibration (BTS Freight Transportation Services Index)
-# ---------------------------------------------------------------------------
-# Physical freight throughput is scored from its year-over-year growth:
-#   score = FREIGHT_YOY_BASELINE + yoy_pct * FREIGHT_YOY_SLOPE   (clipped 0-100)
-# A freight *contraction* (negative YoY) signals real disruption / demand
-# destruction and pulls the score down; steady or growing volume reads healthy.
-# Baseline 72 puts flat YoY (0%) at "Stable"; slope 6.5 puts a -6% freight
-# recession near "Critical" (33) and +4% growth near "Healthy" (98).
-FREIGHT_YOY_BASELINE: float = float(os.environ.get("FREIGHT_YOY_BASELINE", "72.0"))
-FREIGHT_YOY_SLOPE: float = float(os.environ.get("FREIGHT_YOY_SLOPE", "6.5"))
 
 # ---------------------------------------------------------------------------
 # Category Definitions
@@ -149,7 +130,7 @@ DEFAULT_FALLBACK_SCORES: dict[str, float] = {
 CATEGORY_LABELS: dict[str, str] = {
     "weather":             "Weather",  # Shortened to fit on one line
     "supply_chain":        "Supply Chain", # Shortened to fit on one line
-    "freight":             "Freight Flow",
+    "freight":             "Freight Volume",
     "energy":              "Energy & Fuel",
     "tariffs":             "Trade & Tariffs",
     "geopolitical":        "Geopolitical Risk",
@@ -464,6 +445,16 @@ TTF_LIVE_MAX_AGE_DAYS = 5
 # Runtime FRED window for the energy legs and CPI: enough for the current value, the 91-day
 # reference, the CPI deflator and the history tail, never the full history.
 ENERGY_FRED_LOOKBACK_DAYS = 3 * 365
+
+# Freight Volume: year-over-year growth of the BTS Freight TSI (monthly) and of weekly STB rail
+# carloads plus intermodal units, equally weighted (renormalized over the inputs available).
+# Keys are the canonical input keys. IYT is not an input.
+FREIGHT_WEIGHTS: dict[str, float] = {"tsifrght": 0.5, "rail_volume": 0.5}
+TSIFRGHT_YOY_MONTHS = 12         # months back the TSIFRGHT year-over-year compares with
+RAIL_MEAN_WEEKS = 4              # trailing weeks averaged before the rail year-over-year
+RAIL_YOY_LAG_WEEKS = 52          # weeks back the rail year-over-year compares with
+# Runtime FRED window for TSIFRGHT: the 12-month base, the history tail and the publication lag.
+FREIGHT_FRED_LOOKBACK_DAYS = 3 * 365
 
 # Trade & Tariffs: customs duties as a share of goods imports (Treasury DTS / BOPGIMP) and
 # the daily Trade Policy Uncertainty index (Caldara et al.). Keys are the canonical input keys.

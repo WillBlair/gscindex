@@ -1,153 +1,223 @@
 """
-Freight Flow Provider
-======================
-Scores physical freight THROUGHPUT — whether goods are actually moving —
-from the U.S. Bureau of Transportation Statistics Freight Transportation
-Services Index (FRED ``TSIFRGHT``).
+Freight Volume Provider
+========================
+How much freight is physically moving, from two year-over-year inputs (weights in
+``config.FREIGHT_WEIGHTS``, renormalized over the inputs available):
 
-The Freight TSI tracks the volume of for-hire freight moved across trucking,
-rail (including rail-based intermodal), inland waterways, pipelines, and air
-freight. It is published monthly with a ~1-2 month lag.
+    1. BTS Freight Transportation Services Index (50%) - FRED ``TSIFRGHT``, the monthly volume
+       of for-hire freight across trucking, rail, inland waterways, pipelines and air.
+    2. Weekly rail volume (50%) - STB originated carloads plus intermodal units, the 4-week
+       mean against the 4-week mean 52 weeks earlier.
 
-Score Logic
------------
-This is a DISRUPTION gauge, not a cost gauge. It complements the GSCPI
-supply-chain category: GSCPI measures pressure/congestion (delivery times,
-backlogs), while this measures raw throughput. The two can diverge — e.g.
-2021 saw high throughput *and* high congestion.
+Each growth rate is mapped through its anchors (healthiest 5% of pre-2020 history = 100,
+pre-2020 median = 80, worst on record = 0). This is a demand gauge: a contraction is bad.
+It is not a congestion or cost gauge; the Supply Chain category covers delivery pressure.
 
-The signal is year-over-year growth of the index:
-
-    score = FREIGHT_YOY_BASELINE + yoy_pct * FREIGHT_YOY_SLOPE   (clipped 0-100)
-
-A freight *contraction* (negative YoY) signals demand destruction or a
-logistics breakdown and pulls the score down; steady or growing volume reads
-as a healthy, functioning freight network. YoY is used (rather than a level
-percentile) because it naturally de-seasonalizes and has a defensible sign:
-goods physically moving is good, a freight recession is bad.
+TSIFRGHT is published about 80 days after its month ends, so the weekly rail data (about five
+days after the week ends) carries the category between prints. In history each reading is
+dated by its publication lag and carried forward until it is older than its drop window.
 """
 
 from __future__ import annotations
 
 import logging
+import math
+from datetime import date, datetime, timedelta, timezone
 
+import numpy as np
 import pandas as pd
 
-from config import FREIGHT_PROXY_WEIGHT, FREIGHT_YOY_BASELINE, FREIGHT_YOY_SLOPE, HISTORY_DAYS
+import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
-from data.providers.transport_equity_proxy import (
-    fetch_transport_equity_score,
-    fetch_transport_equity_score_history,
-)
+from data.providers.readings import (
+    InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+from data.sources import rail
+from scoring.anchors import get_anchor, score_raw
 
 logger = logging.getLogger(__name__)
 
-# Months between observations used for the year-over-year comparison.
-_YOY_LAG_MONTHS = 12
+_TSI, _RAIL = "tsifrght", "rail_volume"
+_TSI_SERIES = "TSIFRGHT"
+_SOURCES = {
+    _TSI: "BTS Freight Transportation Services Index (FRED TSIFRGHT)",
+    _RAIL: "STB weekly rail carloads plus intermodal units (USDA AgTransport)",
+}
 
 
-def _yoy_to_score(yoy_pct: float) -> float:
-    """Map year-over-year freight growth (%) to a 0–100 health score."""
-    score = FREIGHT_YOY_BASELINE + yoy_pct * FREIGHT_YOY_SLOPE
-    return round(float(max(0.0, min(100.0, score))), 1)
+def _today() -> date:
+    return datetime.now(timezone.utc).date()
 
 
-def _score_series(raw: pd.Series) -> pd.Series:
-    """Convert the raw monthly index into a YoY-based health score series."""
-    raw = raw.sort_index()
-    yoy = raw.pct_change(_YOY_LAG_MONTHS) * 100.0
-    return yoy.dropna().apply(_yoy_to_score)
+def _anchors() -> dict[str, dict]:
+    """Both anchors; a missing one is a RuntimeError, not a KeyError."""
+    return {key: get_anchor(key) for key in config.FREIGHT_WEIGHTS}
+
+
+def _missing(name: str) -> InputReading:
+    return InputReading(name, None, None, _SOURCES[name], status="missing")
+
+
+def _finite(series: pd.Series) -> pd.Series:
+    return series.replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def _tsifrght_yoy() -> pd.Series:
+    """TSIFRGHT year-over-year in %, indexed by observation month (first of month on FRED).
+
+    Each month is compared with the same month a year earlier by date, not by position, so a
+    missing month cannot shift the comparison.
+    """
+    raw = fetch_fred_series(_TSI_SERIES, lookback_days=config.FREIGHT_FRED_LOOKBACK_DAYS)
+    raw = _finite(raw).sort_index()
+    base = raw.reindex(raw.index - pd.DateOffset(months=config.TSIFRGHT_YOY_MONTHS))
+    yoy = _finite((raw / base.to_numpy() - 1.0) * 100.0)
+    if yoy.empty:
+        raise ValueError("TSIFRGHT has no month with a year-earlier value")
+    return yoy
+
+
+def _rail_series() -> tuple[pd.Series, pd.Series]:
+    """``(weekly totals, year-over-year %)``; the YoY has at least one measurable week."""
+    weekly = rail.fetch_rail_weekly()
+    yoy = _finite(rail.rail_yoy(weekly))
+    if yoy.empty:
+        raise ValueError("rail history too short for a year-over-year read")
+    return weekly, yoy
+
+
+def _safe_score(value: float, anchor: dict) -> float:
+    return score_raw(value, anchor) if math.isfinite(value) else float("nan")
+
+
+def _carry(yoy: pd.Series, anchor: dict, key: str, as_of_of, today: date) -> pd.Series:
+    """Daily scores of one input: each reading public ``PUBLICATION_LAG_DAYS[key]`` days after
+    its period ends, carried forward, and dropped once older than the freshness drop window."""
+    lag = timedelta(days=config.PUBLICATION_LAG_DAYS[key])
+    rows = []
+    for stamp, value in yoy.items():
+        as_of = as_of_of(stamp.date())
+        rows.append((pd.Timestamp(as_of + lag), pd.Timestamp(as_of), _safe_score(float(value), anchor)))
+    frame = pd.DataFrame(rows, columns=["available", "as_of", "score"]).dropna()
+    frame = frame.drop_duplicates("available", keep="last").set_index("available")
+    full = pd.date_range(frame.index.min().normalize(), pd.Timestamp(today), freq="D")
+    daily = frame.reindex(full).ffill()
+    age = (daily.index.to_series() - daily["as_of"]).dt.days
+    return daily["score"].where(age <= config.FRESHNESS[key][1])
 
 
 class FreightProvider(BaseProvider):
-    """Freight Flow — physical throughput from the BTS Freight TSI (monthly,
-    1-2 month lag), blended with a daily transportation-sector equity proxy
-    (IYT) so the category moves between BTS prints instead of sitting flat
-    for 8-12 weeks at a time."""
+    """Freight Volume - BTS Freight TSI and weekly STB rail volume, year over year."""
 
     category = "freight"
-    _SERIES_ID = "TSIFRGHT"
+
+    # ------------------------------------------------------------------ current
+
+    def _tsifrght_reading(self, today: date, anchor: dict) -> tuple[InputReading, float | None]:
+        try:
+            yoy = _tsifrght_yoy()
+            value = float(yoy.iloc[-1])
+            as_of = period_end(yoy.index[-1].date(), "M")
+            reading = InputReading(
+                _TSI, score_raw(value, anchor), as_of, _SOURCES[_TSI],
+                f"{value:+.1f}% YoY ({as_of:%b %Y})", freshness_status(as_of, today, _TSI))
+            return reading, value
+        except Exception as exc:
+            logger.warning("TSIFRGHT unavailable: %s", exc)
+            return _missing(_TSI), None
+
+    def _rail_reading(self, today: date, anchor: dict) -> tuple[InputReading, float | None]:
+        try:
+            weekly, yoy = _rail_series()
+            value = float(yoy.iloc[-1])
+            as_of = yoy.index[-1].date()
+            units = float(weekly.loc[yoy.index[-1]])
+            reading = InputReading(
+                _RAIL, score_raw(value, anchor), as_of, _SOURCES[_RAIL],
+                f"{value:+.1f}% YoY (4 weeks to {as_of:%b %d}; {units:,.0f} carloads and intermodal "
+                "units that week)", freshness_status(as_of, today, _RAIL))
+            return reading, value
+        except Exception as exc:
+            logger.warning("Rail volume unavailable: %s", exc)
+            return _missing(_RAIL), None
 
     def fetch_current(self) -> tuple[float, dict]:
-        raw = fetch_fred_series(self._SERIES_ID).sort_index()
-        if len(raw) <= _YOY_LAG_MONTHS:
-            raise ValueError("TSIFRGHT history too short for a year-over-year read")
+        today = _today()
+        anchors = _anchors()
+        tsi, tsi_value = self._tsifrght_reading(today, anchors[_TSI])
+        rail_reading, rail_value = self._rail_reading(today, anchors[_RAIL])
+        readings = [tsi, rail_reading]
 
-        current = float(raw.iloc[-1])
-        year_ago = float(raw.iloc[-(_YOY_LAG_MONTHS + 1)])
-        yoy_pct = (current / year_ago - 1.0) * 100.0 if year_ago else 0.0
-        tsifrght_score = _yoy_to_score(yoy_pct)
-        obs_date = raw.index[-1].date()
+        score, status = blend_inputs(readings, config.FREIGHT_WEIGHTS)
+        if score is None:
+            raise RuntimeError("no freight input available: " + "; ".join(r.source for r in readings))
 
-        if yoy_pct <= -4.0:
-            condition = "freight volumes are contracting sharply (recessionary)"
-        elif yoy_pct < -0.5:
-            condition = "freight volumes are softening"
-        elif yoy_pct <= 1.5:
-            condition = "freight volumes are roughly flat (steady flow)"
-        else:
-            condition = "freight volumes are expanding (healthy demand)"
-
-        # Daily proxy: transportation-sector equities (IYT). Best-effort —
-        # if this fails, we fall back to 100% TSIFRGHT rather than crash.
-        proxy_note = ""
-        blend_weight = 0.0
-        score = tsifrght_score
-        try:
-            proxy_score, proxy_price, proxy_date = fetch_transport_equity_score()
-            blend_weight = FREIGHT_PROXY_WEIGHT
-            score = (1 - blend_weight) * tsifrght_score + blend_weight * proxy_score
-            proxy_note = (
-                f" Blended with a daily transportation-sector equity proxy (IYT @ "
-                f"${proxy_price:.2f}, {proxy_date}) at {blend_weight:.0%} weight so "
-                "this category moves between monthly BTS prints (which carry a "
-                "1-2 month publication lag)."
-            )
-        except Exception as exc:
-            logger.warning("Transport-equity proxy fetch failed (using 100%% TSIFRGHT): %s", exc)
-
-        return score, {
-            "source": "FRED TSIFRGHT (BTS) + IYT daily proxy" if blend_weight else "FRED Series TSIFRGHT (BTS)",
-            "raw_value": f"{yoy_pct:+.1f}% YoY",
-            "raw_label": "Freight Throughput Growth",
-            "description": (
-                f"The Freight Transportation Services Index is at {current:.1f} "
-                f"({yoy_pct:+.1f}% vs a year ago): {condition}. This index tracks the "
-                "physical volume of for-hire freight moved across trucking, rail, "
-                "inland waterways, pipelines, and air cargo — a measure of whether "
-                f"goods are actually moving, not what they cost.{proxy_note}"
-            ),
+        used = [r for r in readings if r.status != "missing" and r.score is not None]
+        sentences = ["This category measures goods moving, the demand side of freight: a contraction "
+                     "in volume is bad. It is not a congestion or cost gauge."]
+        if tsi in used:
+            sentences.append(
+                f"The BTS Freight Transportation Services Index, the volume of for-hire freight moved "
+                f"by trucks, rail, barges, pipelines and air, was {'up' if tsi_value >= 0 else 'down'} "
+                f"{abs(tsi_value):.1f}% in {tsi.as_of:%B %Y} from a year earlier.")
+        if rail_reading in used:
+            sentences.append(
+                f"US railroads originated {abs(rail_value):.1f}% {'more' if rail_value >= 0 else 'fewer'} "
+                f"carloads and intermodal units over the four weeks to {rail_reading.as_of:%B %d} than "
+                "in the same four weeks a year earlier.")
+        weights = ", ".join(f"{label} {config.FREIGHT_WEIGHTS[key]:.0%}" for key, label in
+                            ((_TSI, "BTS Freight TSI"), (_RAIL, "rail volume")))
+        metadata = {
+            "source": "; ".join(r.source for r in used),
+            "raw_value": " / ".join(r.raw_value for r in used),
+            "raw_label": "Freight volume growth, year over year: BTS Freight TSI; rail carloads plus "
+                         "intermodal units (4-week mean)",
+            "description": " ".join(sentences),
             "calculation": (
-                f"Score = {FREIGHT_YOY_BASELINE:g} + YoY% × {FREIGHT_YOY_SLOPE:g}, clipped 0-100. "
-                "Contracting freight volume (negative YoY) lowers the score; steady or "
-                "growing volume reads healthy. Updated monthly by the BTS (1-2 month lag)."
-                + (
-                    f" Blended {1 - blend_weight:.0%}/{blend_weight:.0%} with a daily "
-                    "IYT transportation-equity proxy scored by direct percentile."
-                    if blend_weight
-                    else ""
-                )
-            ),
-            "updated": str(obs_date) + (" + IYT daily" if blend_weight else ""),
+                "Each year-over-year growth rate is mapped through its anchors (healthiest 5% of "
+                "pre-2020 history = 100, pre-2020 median = 80, worst on record = 0). TSIFRGHT is "
+                f"compared with the same month a year earlier; rail is the {config.RAIL_MEAN_WEEKS}-week "
+                f"mean of originated carloads plus intermodal units against the same mean "
+                f"{config.RAIL_YOY_LAG_WEEKS} weeks earlier. Weights {weights}, renormalized over the "
+                "inputs available. TSIFRGHT is published about 80 days after its month ends, rail "
+                "about 5 days after its week ends."),
+            "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "as_of": oldest_as_of(readings).isoformat(),
+            "is_stale": status == "stale",
+            "inputs": inputs_metadata(readings),
         }
+        return score, metadata
 
-    def fetch_history(self, days: int = HISTORY_DAYS) -> pd.Series:
-        raw = fetch_fred_series(self._SERIES_ID)
-        scores = _score_series(raw)
-        if scores.empty:
-            return pd.Series(dtype=float, name="freight")
-        daily = scores.resample("D").ffill().tail(days)
+    # ------------------------------------------------------------------ history
 
-        try:
-            proxy_daily = fetch_transport_equity_score_history(days)
-            blended = daily.copy()
-            common_idx = blended.index.intersection(proxy_daily.index)
-            blended.loc[common_idx] = (
-                (1 - FREIGHT_PROXY_WEIGHT) * blended.loc[common_idx]
-                + FREIGHT_PROXY_WEIGHT * proxy_daily.loc[common_idx]
-            )
-            return blended.rename("freight")
-        except Exception as exc:
-            logger.warning("Transport-equity proxy history fetch failed (using 100%% TSIFRGHT): %s", exc)
-            return daily.rename("freight")
+    @staticmethod
+    def _tsifrght_history(today: date, anchor: dict) -> pd.Series:
+        return _carry(_tsifrght_yoy(), anchor, _TSI, lambda d: period_end(d, "M"), today)
+
+    @staticmethod
+    def _rail_history(today: date, anchor: dict) -> pd.Series:
+        return _carry(_rail_series()[1], anchor, _RAIL, lambda d: d, today)
+
+    def fetch_history(self, days: int) -> pd.Series:
+        today = _today()
+        anchors = _anchors()
+        builders = {_TSI: self._tsifrght_history, _RAIL: self._rail_history}
+        scores = {}
+        for key, build in builders.items():
+            try:
+                scores[key] = build(today, anchors[key])
+            except Exception as exc:
+                logger.warning("Freight %s history unavailable: %s", key, exc)
+        if not scores:
+            raise RuntimeError("no freight history available")
+
+        window = pd.date_range(pd.Timestamp(today - timedelta(days=days)) + pd.Timedelta(days=1),
+                               pd.Timestamp(today), freq="D")
+        frame = pd.DataFrame({k: v.reindex(window) for k, v in scores.items()})
+        w = pd.Series({k: config.FREIGHT_WEIGHTS[k] for k in frame.columns})
+        weight_sum = frame.notna().mul(w, axis=1).sum(axis=1)
+        blend = frame.mul(w, axis=1).sum(axis=1, skipna=True) / weight_sum
+        out = blend.where(weight_sum > 0).clip(0.0, 100.0).round(1)
+        if out.isna().all():
+            raise RuntimeError("no freight history available")
+        return out.rename("freight")
