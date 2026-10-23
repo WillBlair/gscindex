@@ -40,3 +40,9 @@ def test_anchor_file_missing_or_invalid_loads_empty(tmp_path):
     assert config._load_score_anchors(str(tmp_path / "absent.json")) == {}
     assert config._load_score_anchors(str(bad)) == {}
     assert config._load_score_anchors(str(notdict)) == {}
+
+def test_non_finite_x_raises():
+    anchor = {"direction": "lower_better", "best": 0, "normal": 5, "worst": 20}
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            anchored_score(bad, anchor)

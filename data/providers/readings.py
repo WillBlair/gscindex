@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import calendar
+import math
 from dataclasses import dataclass
 from datetime import date
 
@@ -41,7 +42,8 @@ def freshness_status(as_of: date | None, today: date, key: str) -> str:
 
 
 def _used(readings: list[InputReading]) -> list[InputReading]:
-    return [r for r in readings if r.status != "missing" and r.score is not None]
+    return [r for r in readings
+            if r.status != "missing" and r.score is not None and math.isfinite(r.score)]
 
 
 def blend_inputs(readings: list[InputReading], weights: dict[str, float]) -> tuple[float | None, str]:

@@ -415,6 +415,10 @@ FRESHNESS: dict[str, tuple[int, int]] = {
     "mississippi":      (3, 9),
 }
 
+# Live Yahoo scaling (data/sources/markets.py): the move since the official date must stay
+# inside these bounds, otherwise it is a unit change or bad tick and the official value is used.
+LIVE_SCALE_RATIO_BOUNDS: tuple[float, float] = (0.5, 2.0)
+
 # Days between a period ending and the source publishing it; history is dated by this lag.
 PUBLICATION_LAG_DAYS: dict[str, int] = {
     "gscpi":           5,

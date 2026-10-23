@@ -125,6 +125,47 @@ def fetch_fred_series(
     return series
 
 
+_FULL_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+
+
+def fetch_fred_full(series_id: str, cache_ttl: int = 86400) -> pd.Series:
+    """Fetch a FRED series' complete history from the public CSV download (no key).
+
+    Used by the anchors script and the long-history providers. ``"."`` placeholders
+    are dropped; the result is a float series sorted by date, cached under
+    ``fred_full_<ID>_v1``.
+
+    Raises ``ValueError`` when the download is empty or reshaped (nothing is cached),
+    and ``requests.HTTPError`` on a non-200 response.
+    """
+    cache_key = f"fred_full_{series_id}_v1"
+    cached = get_cached(cache_key, ttl=cache_ttl)
+    if cached is not None:
+        series = pd.Series(cached["values"], name=series_id)
+        series.index = pd.DatetimeIndex(cached["dates"])
+        return series
+
+    logger.info("Fetching full FRED history for %s", series_id)
+    resp = requests.get(_FULL_CSV_URL, params={"id": series_id}, timeout=30)
+    resp.raise_for_status()
+    if not resp.text.strip():
+        raise ValueError(f"Empty FRED download for {series_id}")
+    frame = pd.read_csv(io.StringIO(resp.text))
+    date_column = "observation_date" if "observation_date" in frame else "DATE"
+    if date_column not in frame or series_id not in frame:
+        raise ValueError(f"Unexpected FRED download for {series_id}")
+    series = pd.Series(pd.to_numeric(frame[series_id], errors="coerce").to_numpy(),
+                       index=pd.to_datetime(frame[date_column], errors="coerce"), name=series_id)
+    series = series[series.index.notna()].dropna().sort_index()
+    series = series[~series.index.duplicated(keep="last")]
+    if series.empty:
+        raise ValueError(f"No observations returned for FRED series {series_id}")
+
+    set_cached(cache_key, {"dates": series.index.strftime("%Y-%m-%d").tolist(),
+                           "values": series.tolist()})
+    return series
+
+
 def _score_window(series: pd.Series, lookback_days: int | None = None) -> pd.Series:
     """Return the trailing slice used for min/max scoring bounds."""
     if series.empty:

@@ -29,6 +29,8 @@ def transform_value(raw: float, transform: str, cpi_ratio: float | None = None) 
 
 def anchored_score(x: float, anchor: dict) -> float:
     """Map a transformed value to 0-100 through the anchor's best/normal/worst."""
+    if not math.isfinite(x):
+        raise ValueError(f"cannot score non-finite value {x!r}")
     direction = anchor["direction"]
     best, normal, worst = anchor["best"], anchor["normal"], anchor["worst"]
     if direction == "lower_better":

@@ -20,3 +20,11 @@ def test_blend_renormalizes_and_propagates_stale():
     b = InputReading("b", 100.0, date(2026, 9, 1), "y", status="stale")
     assert blend_inputs([a, b], w) == (70.0, "stale")
     assert blend_inputs([InputReading("a", None, None, "x", status="missing")], w) == (None, "missing")
+
+def test_non_finite_score_counts_as_missing():
+    w = {"a": 1.0, "b": 1.0}
+    nan = InputReading("a", float("nan"), date(2026, 10, 1), "x")
+    assert blend_inputs([nan], {"a": 1.0}) == (None, "missing")
+    inf = InputReading("a", float("inf"), date(2026, 10, 1), "x")
+    ok = InputReading("b", 60.0, date(2026, 10, 1), "y")
+    assert blend_inputs([inf, ok], w) == (60.0, "live")
