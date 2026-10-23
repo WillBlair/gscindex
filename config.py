@@ -479,10 +479,12 @@ REGISTER_SCORE_FACTOR = 0.3      # points per unit of severity x trade share %
 PHYSICAL_WEIGHTS: dict[str, float] = {"hazards": 0.5, "gatun": 0.25, "mississippi": 0.25}
 
 # GDACS hazard penalty = HAZARD_SCALE x sum over affected ports of (port throughput share x
-# level points). Calibrated so one Red event over a port holding a 5% share costs 50 points
-# (1000 x 0.05 x 1.0). TODO(Task 12): check against the real SCORE_ANCHORS["port_throughput_share"]
-# values and adjust HAZARD_SCALE so a Red event over a top-10 port reads about 50.
-HAZARD_SCALE: float = 1000.0
+# level points). Shares are each port's share of all PortWatch port calls in 2022-2023
+# (SCORE_ANCHORS["port_throughput_share"]); the top 10 of the 37 ports hold 0.51% (Tokyo) to
+# 2.37% (Singapore), median 0.99%. Calibrated so one Red event over the median top-10 port
+# costs about 50 points (5000 x 0.0099 x 1.0): Tokyo 26, Hong Kong 43, Shanghai or Singapore
+# the whole 100.
+HAZARD_SCALE: float = 5000.0
 HAZARD_LEVEL_POINTS: dict[str, float] = {"Orange": 0.5, "Red": 1.0}
 # A port is affected by an event whose centre lies within this many km. Rough footprints of
 # a damaging event of each GDACS type (ours, not GDACS's): tropical cyclone wind field 300 km,

@@ -27,6 +27,12 @@ WATERWAY_ANCHORS = {"gatun_record_low": 78.0, "mississippi_record_low": -6.0,
 ANCHORS = {"port_throughput_share": SHARES, "waterways": WATERWAY_ANCHORS}
 
 
+@pytest.fixture(autouse=True)
+def hazard_scale(monkeypatch):
+    """The fixtures' shares and expected scores are worked out at a hazard scale of 1000."""
+    monkeypatch.setattr(config, "HAZARD_SCALE", 1000.0)
+
+
 def _event(kind="TC", alert="Red", lat=29.76, lon=-95.37, start="2026-10-20", end="2026-10-24", eid=1):
     return {"id": eid, "type": kind, "alert": alert, "lat": lat, "lon": lon,
             "name": f"{kind} {eid}", "from": start, "to": end}
@@ -628,13 +634,14 @@ def test_physical_port_missing_from_shares_counts_zero(anchors, monkeypatch):
     assert score == 100.0
 
 
-def test_physical_category_constants():
+def test_physical_category_constants(monkeypatch):
+    monkeypatch.undo()
     assert PhysicalProvider.category == "physical"
     assert config.CATEGORY_LABELS["physical"] == "Physical Disruption"
     assert config.PHYSICAL_WEIGHTS == {"hazards": 0.5, "gatun": 0.25, "mississippi": 0.25}
     assert config.GATUN_FULL_DRAFT_FT == 85.0
     assert config.HAZARD_RADIUS_KM == {"TC": 300, "FL": 100, "EQ": 150, "VO": 50}
-    assert config.HAZARD_LEVEL_POINTS == {"Orange": 0.5, "Red": 1.0} and config.HAZARD_SCALE == 1000.0
+    assert config.HAZARD_LEVEL_POINTS == {"Orange": 0.5, "Red": 1.0} and config.HAZARD_SCALE == 5000.0
     colors = list(config.CATEGORY_COLORS.values())
     assert config.CATEGORY_COLORS["physical"] and len(colors) == len(set(colors))
 

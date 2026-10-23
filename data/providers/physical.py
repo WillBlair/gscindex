@@ -166,7 +166,7 @@ class PhysicalProvider(BaseProvider):
                 f"{len(active)} Orange or Red natural-hazard alert{' is' if len(active) == 1 else 's are'} "
                 f"active worldwide today; {len(near)} {'is' if len(near) == 1 else 'are'} close enough to "
                 "affect a major port (cyclones within 300 km, floods 100 km, earthquakes 150 km, "
-                "volcanoes 50 km), weighted by the port's share of world container throughput.")
+                "volcanoes 50 km), weighted by the port's share of world port calls.")
         if gatun in used:
             sentences.append(
                 f"Gatun Lake is {gatun.raw_value}; the Panama Canal allows the full 50 ft draft only at "
@@ -183,7 +183,7 @@ class PhysicalProvider(BaseProvider):
             "raw_label": "; ".join(_RAW_LABELS[r.name] for r in used),
             "description": " ".join(sentences),
             "calculation": (
-                "Hazards: 100 minus 1000 x the sum, over affected ports, of throughput share x level "
+                f"Hazards: 100 minus {config.HAZARD_SCALE:g} x the sum, over affected ports, of port-call share x level "
                 "points (Orange 0.5, Red 1.0), clipped to 0-100. Gatun Lake: 100 at or above "
                 f"{config.GATUN_FULL_DRAFT_FT:.0f} ft, 0 at the record low, linear between. Mississippi: "
                 "100 at or above the low-water stage (the gauge's 10th-percentile stage), 0 at its record "
