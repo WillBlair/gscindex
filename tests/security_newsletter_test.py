@@ -107,6 +107,34 @@ class NewsletterEmailTests(unittest.TestCase):
 
         self.assertEqual(_mask_email("william@example.com"), "wi***@example.com")
 
+    def test_dashboard_fetch_sends_token_in_header_only(self):
+        import json
+        import scripts.send_newsletter as newsletter
+
+        seen = []
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return json.dumps({"current_scores": {"supply_chain": 52.5}, "briefing": "",
+                                   "composite_index": 47.3}).encode()
+
+        def fake_urlopen(request, timeout):
+            seen.append(request)
+            return _Response()
+
+        with mock.patch.object(newsletter, "urlopen", fake_urlopen):
+            data = newsletter._fetch_dashboard_data("https://x", "tok")
+
+        self.assertEqual(data["composite_index"], 47.3)
+        self.assertEqual(seen[0].full_url, "https://x/api/v1/newsletter-data")
+        self.assertEqual(seen[0].get_header("Authorization"), "Bearer tok")
+
 
 if __name__ == "__main__":
     unittest.main()

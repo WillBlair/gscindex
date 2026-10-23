@@ -176,7 +176,8 @@ def generate_briefing(articles: list[dict]) -> str:
 def _newsletter_no_fresh_articles_fallback(score: float, tier_label: str) -> str:
     return (
         "• No fresh public-source supply chain articles cleared the relevance filter this morning; "
-        f"the index is {score:.1f}/100 ({tier_label}) based on current market, weather, freight, and policy signals."
+        f"the index is {score:.1f}/100 ({tier_label}), based on published data for supply chain pressure, "
+        "chokepoint traffic, energy prices, tariffs, freight volume and input costs."
     )
 
 

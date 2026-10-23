@@ -1,6 +1,9 @@
+import os
+import sys
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
+from urllib.error import URLError
 
 from data.ai_analyst import generate_newsletter_briefing
 import scripts.send_newsletter as newsletter
@@ -18,7 +21,7 @@ class NewsletterDigestTests(unittest.TestCase):
 
         with patch.object(newsletter, "get_cached", lambda key, ttl: cached):
             result = newsletter._build_daily_newsletter_briefing(
-                current_scores={"weather": 80},
+                current_scores={"supply_chain": 80},
                 score=72.4,
                 tier={"label": "Stable"},
                 fallback_briefing="fallback",
@@ -53,7 +56,7 @@ class NewsletterDigestTests(unittest.TestCase):
             ),
         ):
             result = newsletter._build_daily_newsletter_briefing(
-                current_scores={"weather": 80},
+                current_scores={"supply_chain": 80},
                 score=72.4,
                 tier={"label": "Stable"},
                 fallback_briefing="fallback",
@@ -84,6 +87,70 @@ class NewsletterDigestTests(unittest.TestCase):
 
         self.assertIn("&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;", html)
         self.assertNotIn("<script>alert", html)
+
+    # A snapshot whose Physical category was excluded: the composite is the stored one
+    # (weights renormalized over the seven present categories), never recomputed.
+    EXCLUDED_SNAPSHOT = {
+        "current_scores": {"supply_chain": 52.5, "chokepoints": 36.1, "energy": 23.3, "tariffs": 46.2,
+                           "geopolitical": 49.3, "freight": 77.2, "inputs": 41.9},
+        "composite": 45.5,
+        "excluded_categories": ["physical"],
+        "degraded": True,
+        "briefing": "• Hormuz transits remain low",
+    }
+
+    def test_local_fallback_uses_stored_composite_with_an_excluded_category(self):
+        def offline(*args, **kwargs):
+            raise URLError("offline")
+
+        with (
+            patch.object(newsletter, "urlopen", offline),
+            patch("data.cache.get_cached_dashboard", lambda: dict(self.EXCLUDED_SNAPSHOT)),
+        ):
+            data = newsletter._fetch_dashboard_data("https://gscindex.com", "tok")
+
+        self.assertEqual(data["composite_index"], 45.5)
+        self.assertNotIn("physical", data["current_scores"])
+
+    def _run_main(self, data):
+        sent = []
+        env = {"WEBSITE_URL": "https://gscindex.com", "RECIPIENT_EMAIL": "", "NEWSLETTER_POSTAL_ADDRESS": "1 Main St"}
+        with (
+            patch.object(sys, "argv", ["send_newsletter.py", "--dry-run"]),
+            patch.dict(os.environ, env),
+            patch.object(newsletter, "load_environment", lambda: None),
+            patch("data.database.init_db", lambda: None),
+            patch.object(newsletter, "_fetch_dashboard_data", lambda url, token: data),
+            patch.object(newsletter, "_build_daily_newsletter_briefing",
+                         lambda **kwargs: kwargs["fallback_briefing"]),
+            patch("data.database.get_active_subscribers", lambda: ["a@example.com"]),
+            patch("data.database.get_db_type", lambda: "sqlite"),
+            patch("data.database.get_sent_today", lambda day: set()),
+            patch.object(newsletter, "generate_text_email",
+                         lambda score, tier, *a, **k: sent.append((score, tier["label"])) or ""),
+            patch.object(newsletter, "generate_html_email", lambda *a, **k: ""),
+            patch("builtins.print", lambda *a, **k: None),
+        ):
+            newsletter.main()
+        return sent
+
+    def test_main_sends_the_stored_composite_with_an_excluded_category(self):
+        data = {
+            "current_scores": self.EXCLUDED_SNAPSHOT["current_scores"],
+            "briefing": "• Hormuz transits remain low",
+            "composite_index": 45.5,
+        }
+        self.assertEqual(self._run_main(data), [(45.5, "Stressed")])
+
+    def test_main_skips_without_a_composite(self):
+        data = {
+            "current_scores": self.EXCLUDED_SNAPSHOT["current_scores"],
+            "briefing": "• Hormuz transits remain low",
+            "composite_index": None,
+        }
+        with self.assertLogs("Newsletter", level="ERROR") as logs:
+            self.assertEqual(self._run_main(data), [])
+        self.assertIn("No composite available", "\n".join(logs.output))
 
 
 if __name__ == "__main__":

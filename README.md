@@ -1,41 +1,43 @@
 # Global Supply Chain Index
 
-A real-time supply chain health dashboard that aggregates data from six provider categories, computes a weighted composite index (0–100), and serves both interactive visualizations and a public JSON API.
+A real-time supply chain health dashboard. It scores eight categories from published data, combines them into a weighted composite index (0 to 100), and serves interactive views and a public JSON API.
 
 Live site: [gscindex.com](https://gscindex.com)
 
 ## Terminal dashboard
 
 The dashboard is a dense dark grid of panes, built to be read at a glance. It
-works on desktop, tablet and phone. The provider calculations and profile
-weights are unchanged.
+works on desktop, tablet and phone.
 
 - **Index readout:** the weighted index, its health tier, the change versus
   yesterday, a sparkline with a 7D / 30D / 90D selector, and each category's
   score and change.
 - **Profiles:** switch between Global, Semis and Aero in the header. Weights and
   scores follow the selected profile.
-- **Port map:** hover or tap a marker for its score, regional pressures and
-  disruption summary. On desktop, drag to pan and scroll to zoom. On phones and
-  touch screens, drag and scroll zoom are off so swipes scroll the page.
-- **Markets:** oil, natural gas, copper, gold and VIX quotes.
+- **Port map:** hover or tap a marker for its score, the composite and local
+  weather behind it, and its disruption summary. On desktop, drag to pan and
+  scroll to zoom. On phones and touch screens, drag and scroll zoom are off so
+  swipes scroll the page.
+- **Markets and chokepoints:** energy, shipping, metals and macro quotes, and
+  transits through the main maritime chokepoints as a share of normal (Sources:
+  UN Global Platform; IMF PortWatch).
 - **Headlines:** sorted HIGH, then MED, then LOW, newest first within each.
   Search by text and filter by severity and topic. Filters, the trend range and
   the profile are remembered for the browser session.
 - **Briefing:** the AI summary, with a link to the full report.
 - **Category table:** weight, today's score as a bar with a tick for yesterday,
   change, effect on the index, a 30-day sparkline and the source. Hover a
-  category name, or tap it on a phone, for the source, raw value, update time
-  and calculation.
+  category name, or tap it on a phone, for each input with its as-of date and
+  status, the raw values and the calculation.
 - **Header actions:** Methodology (`/docs`), API (a modal), CSV (the selected
-  profile's scores, weights, contributions and fallback status) and Subscribe
+  profile's scores, nominal weights, contributions, status and as-of dates) and Subscribe
   (a small popover for the daily briefing email).
 - **Refresh:** panes update in place every 5 minutes (every 20 seconds while
   warming up) and keep your filters and scroll position. Refreshing reads the
   latest cache; it does not trigger provider API calls.
 - **Data quality:** "yesterday" is exactly the previous UTC date from stored daily
   scores. If that day is missing, the value shows a dash instead of a guess.
-  Fallback categories are marked in the table.
+  Fallback and stale categories are marked in the table.
 
 For local use, install `requirements.txt` and run `python app.py` at
 `http://127.0.0.1:8050`. FRED data uses the authenticated API when a key is configured, otherwise its
@@ -49,35 +51,41 @@ database; unset it to use SQLite.
 
 ## What It Does
 
-The dashboard fetches economic, weather, and news data on a background thread (every 5 minutes), caches results in memory and on disk, and renders instantly from cache on each page load. A single **Supply Chain Health Index** score summarizes overall stability, with six category breakdowns, a 37-port world map, a 7/30/90-day trend, news headlines, and an optional AI briefing.
+The dashboard fetches economic, shipping, hazard and news data on a background thread (every 5 minutes), caches results in memory and on disk, and renders from cache on each page load. A single **Supply Chain Health Index** summarizes overall conditions, with eight category scores, a 37-port world map, a 7/30/90-day trend, news headlines and an AI briefing.
 
 ### Composite Score
 
-The index is a weighted average of six category scores (0–100, where **100 = healthiest**):
+The index is a weighted average of eight category scores (0 to 100, where **100 = healthiest**). The full methodology is at [`/docs`](https://gscindex.com/docs).
 
-| Category | Weight | Data Source |
+| Category | Weight | Data source |
 |----------|--------|-------------|
-| Weather Disruptions | 10% | [Open-Meteo](https://open-meteo.com/) at 37 major ports (no API key) |
-| Supply Chain | 25% | NY Fed GSCPI (monthly), supplemented by a minority daily BDRY proxy |
-| Energy & Fuel | 20% | Crude and diesel cost pressure, relative to trailing 2-year ranges |
-| Trade & Tariffs | 15% | Trade Policy Uncertainty categorical index (`EPUTRADE`) via [FRED](https://fred.stlouisfed.org/), monthly, plus a daily tariff news nowcast that can only lower the score |
-| Freight Flow | 10% | BTS freight throughput growth, supplemented by a minority daily transportation proxy |
-| Geopolitical Risk | 20% | 17 RSS feeds scored by Claude, or VADER without it, blended 85/15 with an AI port-disruption signal |
+| Supply Chain | 20% | NY Fed Global Supply Chain Pressure Index (GSCPI), monthly |
+| Chokepoints | 15% | IMF PortWatch daily ship transits through eight corridors (Malacca, Taiwan Strait, Gibraltar, Hormuz, Dover, Red Sea, Bosporus, Panama) |
+| Energy & Fuel | 15% | Real Brent, New York Harbor diesel and TTF gas prices (EIA and IMF via FRED), moved by live futures, with a penalty for fast price spikes |
+| Trade & Tariffs | 15% | 60% tariff burden (Treasury customs deposits / Census goods imports) and 40% daily Trade Policy Uncertainty (Caldara et al.) |
+| Geopolitical Risk | 10% | Caldara-Iacoviello daily Geopolitical Risk index, 30-day mean |
+| Freight Volume | 10% | Year-over-year growth of the BTS Freight TSI and of weekly STB rail carloads plus intermodal units |
+| Input Costs | 10% | Philadelphia, New York and Dallas Fed prices-paid surveys, real copper and aluminum prices |
+| Physical Disruption | 5% | GDACS hazard alerts near the 37 ports, Panama Canal Gatun Lake level, Mississippi River stage at St. Louis |
 
-Energy & Fuel is a cost-pressure gauge; Freight Flow measures throughput growth. Geopolitical history accumulates from real stored daily scores. There is no proxy backfill. If a provider fails, its category serves a neutral fallback and is flagged in `fallback_categories` (a "fallback" suffix in the category table, `/api/v1/latest`, and `/health`).
+**Scale.** Most inputs are mapped through three fixed anchors from their own history: 100 = the healthiest 5% of months before 2020, 80 = the pre-2020 median ("normal"), 0 = the worst monthly average on record through 2025. Prices are inflation-adjusted and logged; volumes use year-over-year growth. Chokepoints and Physical Disruption are event scores where a normal day reads about 100. The anchors live in `data/score_anchors.json` and change only with a new methodology version.
 
-Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–59), **Critical** (0–39).
+**Fallbacks.** Each input has a stale limit and a drop limit, measured from the end of the period it covers. A category with some inputs missing uses the rest. A category with no inputs shows its last stored score, flagged stale and fallback, until that score passes the category's limit; then it is excluded and the composite renormalizes the remaining weights. The weights shown in the table, CSV and API stay nominal, so on those days they do not add up to the composite. History is recomputed from real source data only; gaps stay gaps.
+
+**Claude** (Anthropic) scores headline severity, writes the briefing, the daily report and the port summaries, and keeps a disruption register. None of these feed a category score. The register is stored daily at 0% weight in Geopolitical Risk (shadow mode).
+
+Health tiers: **Healthy** (80 to 100), **Stable** (60 to 79), **Stressed** (40 to 59), **Critical** (0 to 39).
 
 ### Dashboard Features
 
 - **Index readout**: score, health tier, same-profile change versus yesterday, and a 7, 30 or 90 day trend
-- **Category table**: weight, score bar with yesterday's tick, change, effect on the index, 30-day sparkline, source, and a hover or tap detail per category
-- **World map**: 37 ports scored by the index composite (60%) + local weather (40%), minus one news or AI disruption penalty, with port conditions on hover
-- **Headlines**: supply-chain articles scored by Claude severity (VADER when Claude is unavailable), sorted by severity then recency, with search and filters
-- **AI briefing**: Claude-generated summary (optional; cached ~24h)
-- **Market indicators**: crude oil, natural gas, copper, gold, VIX via yfinance
+- **Category table**: weight, score bar with yesterday's tick, change, effect on the index, 30-day sparkline, source with a stale or fallback suffix, and a hover or tap detail per category
+- **World map**: 37 ports scored by the index composite (60%) + local weather from Open-Meteo (40%), minus one news or AI disruption penalty, with port conditions on hover
+- **Headlines**: supply-chain articles with Claude severity (unscored without an API key), sorted by severity then recency, with search and filters
+- **AI briefing**: Claude-generated summary (optional; refreshed daily)
+- **Market indicators**: energy, shipping, metals and macro quotes via yfinance
 - **Profiles**: Global, Semis and Aero views
-- **CSV export**: the selected profile's scores and weights
+- **CSV export**: the selected profile's scores, weights, status and as-of dates
 - **Newsletter signup**: email collection stored in PostgreSQL (prod) or SQLite (dev)
 - **Auto-refresh**: panes update in place every 5 min, or every 20s while warming up
 
@@ -97,9 +105,10 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 - **Visualizations:** Plotly
 - **Data:** Pandas, NumPy
 - **Production server:** Gunicorn (1 worker, 4 gthreads)
-- **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback): subscribers, daily score history, latest dashboard snapshot
-- **External APIs:** FRED, NY Fed GSCPI, Open-Meteo (free, no key), yfinance, Silicon Analysts, Anthropic API (default model `claude-sonnet-5-5`)
-- **Sentiment:** VADER (local, no API)
+- **Database:** PostgreSQL (prod via Neon) / SQLite (dev fallback): subscribers, daily score history, latest dashboard snapshot, disruption register, river gauge readings
+- **Data sources:** FRED, NY Fed GSCPI, IMF PortWatch, U.S. Treasury Fiscal Data, Caldara-Iacoviello GPR and TPU files, USDA AgTransport (STB rail), GDACS, Panama Canal Authority, USGS, Open-Meteo, yfinance, Silicon Analysts. All free; only FRED and Silicon Analysts take an optional key
+- **AI:** Anthropic API (default model `claude-sonnet-5-5`), optional
+- **Spreadsheets:** openpyxl reads the TPU workbook
 - **Caching:** File-based with atomic writes (1-hour default TTL)
 - **Rate limiting:** Flask-Limiter on `/api/v1/*`: 500/hour and 2000/day per visitor IP
 - **Python:** 3.13.1 (`.python-version`)
@@ -148,10 +157,11 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `FRED_API_KEY` | Recommended | Uses the authenticated FRED API; public CSV downloads support keyless previews |
-| `ANTHROPIC_API_KEY` | No | Claude news scoring, briefing, daily report, port summaries, score explanation |
+| `ANTHROPIC_API_KEY` | No | Claude headline severity, briefing, daily report, port summaries, disruption register |
 | `ANTHROPIC_MODEL` | No | Claude model (default `claude-sonnet-5-5`) |
 | `ANTHROPIC_EFFORT` | No | Claude effort level (default `medium`) |
-| `AI_CACHE_TTL_SECONDS` | No | How long each Claude result is reused (default `86400`) |
+| `AI_CACHE_TTL_SECONDS` | No | How long each daily Claude result is reused (default `86400`) |
+| `NEWS_AI_REFRESH_SECONDS` | No | How often Claude scores new headlines (default `21600`) |
 | `SILICON_ANALYSTS_API_KEY` | No | Raises the Silicon Analysts request cap (semiconductor profile) |
 | `DATABASE_URL` | No | PostgreSQL for subscribers, score history, and the cold-start snapshot (omit for SQLite fallback) |
 | `ADMIN_TOKEN` | No | `Authorization: Bearer` token for `/api/v1/newsletter-data` and `/api/v1/admin/*` |
@@ -162,55 +172,64 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 | `GSC_DISABLE_BACKGROUND` | No | Set to `1` to skip the background updater on import |
 | `PORT` | No | Gunicorn port (default `10000`); `python app.py` always uses `8050` |
 
-Weather data uses Open-Meteo and requires no API key.
+The other sources (Open-Meteo, PortWatch, Treasury, GDACS, USGS and the rest) need no key.
 
 ## API Endpoints
 
 ```
-GET  /api/v1/latest              Public JSON: composite index, categories, fallback flags, disruptions, map markers
+GET  /api/v1/latest              Public JSON: methodology_version, composite index, per-category objects, degradation flags, disruptions, map markers
 GET  /api/v1/newsletter-data     Admin: scores + briefing (Authorization: Bearer ADMIN_TOKEN)
 GET  /api/v1/admin/subscribers   Admin: subscriber list (Authorization: Bearer ADMIN_TOKEN)
 GET  /unsubscribe?t=TOKEN        Unsubscribe confirmation page
 POST /unsubscribe?t=TOKEN        Unsubscribe (also RFC 8058 one-click)
-GET  /health                     Monitoring: state, data_age_seconds, last_fetch_status
+GET  /health                     Monitoring: state, data_age_seconds, last_fetch_status, fallback/stale/excluded categories
 GET  /healthz                    Alias for /health
 ```
 
-All `/api/v1/*` routes are limited to 500 requests per hour and 2000 per day per visitor IP. `/api/v1/latest` returns a simplified snapshot suitable for embedding in other projects. Admin routes accept the token only in the `Authorization` header.
+All `/api/v1/*` routes are limited to 500 requests per hour and 2000 per day per visitor IP. Admin routes accept the token only in the `Authorization` header.
+
+`/api/v1/latest` returns `methodology_version` (2), `timestamp`, `composite_index` (the stored composite, renormalized under an exclusion), `categories` (per category: `score`, nominal `weight`, `as_of`, `source`, `is_stale`, `is_fallback`, `stored_on`, `inputs`), `degraded`, `fallback_categories`, `excluded_categories`, `stale_categories`, `disruptions` and `map_markers`. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch".
 
 ## Project Structure
 
 ```
 gscindex/
 ├── app.py                      # Entry point, background thread, Dash callbacks, health endpoint
-├── config.py                   # Weights, tiers, colors, regions, tunable constants
+├── config.py                   # Weights, freshness limits, tiers, colors, tunable constants
 ├── gunicorn.conf.py            # Production server config (Render)
 ├── .python-version             # Python 3.13.1
 ├── assets/                     # terminal.css (styles), terminal.js (touch and keyboard helpers)
 ├── components/                 # Dash UI (layout, terminal panes, terminal math, workspace helpers, map, skeleton)
 ├── data/
-│   ├── aggregator.py           # Orchestrates providers via ThreadPoolExecutor
+│   ├── aggregator.py           # Runs the providers, fallbacks and exclusions, stored composite
+│   ├── score_anchors.json      # Frozen anchors (generated by scripts/compute_anchors.py)
 │   ├── cache.py                # Atomic file-based TTL cache
-│   ├── database.py             # PostgreSQL/SQLite abstraction (subscribers, score history, snapshot)
+│   ├── database.py             # PostgreSQL/SQLite abstraction (subscribers, score history, snapshot, register, gauges)
 │   ├── gscpi_client.py         # NY Fed GSCPI loader
+│   ├── portwatch.py            # IMF PortWatch chokepoint transits
+│   ├── news_alerts.py          # Headlines (display only), incremental Claude scoring
+│   ├── register.py             # Claude disruption register (shadow mode)
 │   ├── rss_fetcher.py          # Shared RSS snapshot
 │   ├── news_sources.py         # 17 RSS feeds
-│   ├── ai_analyst.py           # Claude news analysis and briefing
+│   ├── ai_analyst.py           # Claude headline scoring, briefing, report
 │   ├── port_analyst.py         # Claude per-port summaries + disruption penalties
 │   ├── llm.py                  # Shared Anthropic client (model, effort, fallbacks)
 │   ├── ports_data.py           # 37 major port definitions
-│   └── providers/              # weather, supply_chain, freight, energy, tariffs, geopolitical,
-│                               # BDRY/IYT/tariff-news proxies, silicon_analysts, aerospace
+│   ├── sources/                # Treasury DTS, TPU, GPR, STB rail, Fed surveys, GDACS, waterways, Yahoo helpers
+│   └── providers/              # supply_chain, chokepoints, energy, tariffs, geopolitical, freight,
+│                               # inputs, physical, weather (map only), silicon_analysts, aerospace
 ├── scoring/
-│   └── engine.py               # Weighted composite index calculation
+│   ├── anchors.py              # Anchored 0-100 mapping
+│   └── engine.py               # Weighted composite and weight renormalization
 ├── api/
 │   ├── routes.py               # Public and newsletter API, rate limiter
 │   ├── report.py               # /report page
-│   ├── docs.py                 # /docs page
+│   ├── docs.py                 # /docs methodology page
 │   ├── briefing.py             # On-demand briefing
 │   ├── newsletter.py           # /unsubscribe
 │   └── admin.py                # Admin routes
 ├── scripts/
+│   ├── compute_anchors.py      # Rebuilds data/score_anchors.json (a deliberate, versioned change)
 │   ├── send_newsletter.py      # Cron job for email delivery
 │   └── refresh_fallback_snapshot.py  # Refreshes the committed cold-start snapshot
 └── requirements.txt
@@ -220,12 +239,14 @@ gscindex/
 
 ```
 Background daemon thread (every 5 min)
-  → 3-worker pool fetches 8 providers (6 baseline + 2 industry) + news + market data + port summaries
-  → scoring/engine.py computes composite
+  → 3-worker pool runs 10 providers (8 categories + 2 industry adapters) + news + market data
+    + port summaries + chokepoint traffic + the disruption register
+  → failed categories: last stored score while recent, else excluded (weights renormalized)
+  → scoring/engine.py computes the composite, stored in the snapshot
   → Writes to in-memory cache + disk (atomic)
 
 Main thread (serves requests)
-  → Reads from cache — never blocks on API calls
+  → Reads from cache and never blocks on API calls
   → Dash callbacks render from cached snapshot
 ```
 
@@ -233,13 +254,14 @@ Main thread (serves requests)
 
 ## Customization
 
-- **Category weights:** Edit `CATEGORY_WEIGHTS` and the matching `INDUSTRY_PROFILES` weights in `config.py` (each set must sum to 1.0).
+- **Category weights:** Edit `CATEGORY_WEIGHTS` in `config.py` (must sum to 1.0). The industry profiles take the baseline weights × `INDUSTRY_BASELINE_SHARE` plus their own industry weights.
+- **Anchors:** `scripts/compute_anchors.py` rewrites `data/score_anchors.json`. Anchors are frozen; regenerating them is a methodology change.
 - **Health tiers and colors:** `HEALTH_TIERS` and `COLORS` in `config.py`.
-- **New data provider:** Create a module in `data/providers/` inheriting from `BaseProvider`, register it in `data/aggregator.py`, and add a weight in `config.py`.
+- **New data provider:** Create a module in `data/providers/` inheriting from `BaseProvider`, register it in `data/aggregator.py`, and add its weight, freshness limits and drop limit in `config.py`.
 
 ## Deployment
 
-**Render (primary):** Build with `pip install -r requirements.txt`, start with `env -u GUNICORN_CMD_ARGS gunicorn app:server -c gunicorn.conf.py --access-logfile -`, health check at `/health`. Use exactly **1 Gunicorn worker** — the in-memory cache is worker-local. Clear Render's inherited preload option so the updater starts in the worker; see [memory operations](docs/render-memory.md).
+**Render (primary):** Build with `pip install -r requirements.txt`, start with `env -u GUNICORN_CMD_ARGS gunicorn app:server -c gunicorn.conf.py --access-logfile -`, health check at `/health`. Use exactly **1 Gunicorn worker**, because the in-memory cache is worker-local. Clear Render's inherited preload option so the updater starts in the worker; see [memory operations](docs/render-memory.md).
 
 ## License
 

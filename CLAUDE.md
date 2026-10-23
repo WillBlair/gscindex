@@ -2,17 +2,18 @@
 
 ## Project Overview
 
-Real-time supply chain health dashboard built with Python/Dash. Aggregates data from 6 baseline categories (plus optional semiconductor and aerospace industry profiles), computes a weighted composite index (0–100), and serves both interactive visualizations and a public JSON API.
+Real-time supply chain health dashboard built with Python/Dash. Scores 8 baseline categories from published data (plus optional semiconductor and aerospace industry profiles), computes a weighted composite index (0–100), and serves both interactive visualizations and a public JSON API. Methodology version 2 (`config.METHODOLOGY_VERSION`); the design is `docs/superpowers/specs/2026-10-22-score-rebuild-design.md`, but where it and the code disagree, the code (and this file) win.
 
 ## Tech Stack
 
 - **Framework:** Dash 4.4 (wraps Flask), Dash Bootstrap Components (versions pinned in `requirements.txt`)
 - **Visualizations:** Plotly
-- **Data:** Pandas, NumPy
+- **Data:** Pandas, NumPy, openpyxl (reads the TPU workbook)
 - **Production server:** Gunicorn (1 worker, 4 gthreads, 120s timeout)
-- **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback). Subscribers, daily score history, latest dashboard snapshot, newsletter send log
-- **External APIs:** FRED, NY Fed GSCPI CSV, Open-Meteo (free, no key), yfinance, Silicon Analysts, Anthropic API (Claude, default model `claude-sonnet-5-5`)
-- **Sentiment:** VADER (local, no API)
+- **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback). Subscribers, daily score history, latest dashboard snapshot, newsletter send log, disruption register, river gauge readings
+- **Data sources (all free):** FRED, NY Fed GSCPI CSV, IMF PortWatch (ArcGIS), U.S. Treasury Fiscal Data (DTS), Caldara-Iacoviello GPR (.dta) and TPU (.xlsx) files, USDA AgTransport Socrata (STB rail), GDACS, Panama Canal Authority CSV, USGS water services, PEGELONLINE (Kaub, stored only), Open-Meteo (map weather), yfinance, Silicon Analysts
+- **AI:** Anthropic API (Claude, default model `claude-sonnet-5-5`). Display only: no category score depends on it
+- **Sentiment:** none. VADER and `vaderSentiment` were removed in methodology v2
 - **Caching:** File-based with atomic writes, 1-hour default TTL
 - **Rate limiting:** Flask-Limiter on `/api/v1/*` only: 500/hour and 2000/day per visitor IP
 - **Python:** 3.13.1 (`.python-version`)
@@ -21,13 +22,15 @@ Real-time supply chain health dashboard built with Python/Dash. Aggregates data 
 ## Running the App
 
 ```bash
-python app.py                                    # Dev: http://127.0.0.1:8050
+DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/gunicorn app:server -c gunicorn.conf.py   # Local preview (SQLite, no fetch loop)
+python app.py                                    # Dev: http://127.0.0.1:8050 (writes whatever DATABASE_URL points at)
 gunicorn app:server -c gunicorn.conf.py          # Prod
-python -m pytest tests/                          # Tests (pytest is not in requirements.txt)
+DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python -m pytest tests/   # Tests (pytest is not in requirements.txt)
 RUN_LIVE_CLAUDE=1 python -m pytest tests/test_claude_integration.py   # Paid: real Claude calls
+DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/compute_anchors.py   # Regenerates data/score_anchors.json (methodology change; see below)
 ```
 
-`GSC_DISABLE_BACKGROUND=1` stops the background updater when the app is imported (tests, local previews).
+`GSC_DISABLE_BACKGROUND=1` stops the background updater when the app is imported (tests, local previews). Plain `python` may not be on PATH; use `venv/bin/python`.
 
 ## Environment Variables
 
@@ -35,11 +38,13 @@ RUN_LIVE_CLAUDE=1 python -m pytest tests/test_claude_integration.py   # Paid: re
 FRED_API_KEY              # Recommended. Without it FRED series come from the public CSV download
 DATABASE_URL              # PostgreSQL (omit for SQLite fallback)
 ADMIN_TOKEN               # Bearer token for /api/v1/newsletter-data and /api/v1/admin/*
-ANTHROPIC_API_KEY         # Optional. AI news scoring, briefing, report, port summaries, score explanation
+ANTHROPIC_API_KEY         # Optional. Headline severity, briefing, report, port summaries, disruption register
 ANTHROPIC_MODEL           # Default claude-sonnet-5-5
 ANTHROPIC_EFFORT          # Default medium
-AI_CACHE_TTL_SECONDS      # Default 86400 (one Claude run per component per day)
+AI_WEB_SEARCH             # Set to 0 to turn off Claude web search
+AI_CACHE_TTL_SECONDS      # Default 86400 (daily Claude runs: briefing, report, ports, register, web search)
 AI_FAILURE_RETRY_SECONDS  # Default 3600
+NEWS_AI_REFRESH_SECONDS   # Default 21600 (incremental headline scoring every 6 h)
 SILICON_ANALYSTS_API_KEY  # Optional. Raises the Silicon Analysts daily request cap
 NEWSLETTER_SECRET         # Signs unsubscribe links (falls back to ADMIN_TOKEN)
 NEWSLETTER_POSTAL_ADDRESS # Footer address for the newsletter (CAN-SPAM)
@@ -48,49 +53,65 @@ RUN_LIVE_CLAUDE           # Set to 1 to run the paid Claude integration tests
 PORT                      # Server port (default 10000)
 ```
 
-Other tunables read from the environment in `config.py`: `NEWS_RSS_REFRESH_SECONDS`, `FRED_SCORE_LOOKBACK_DAYS`, `GSCPI_SCORE_SCALE`, `SUPPLY_CHAIN_PROXY_WEIGHT`, `TARIFFS_PROXY_WEIGHT`, `FREIGHT_PROXY_WEIGHT`, `PORT_DISRUPTION_WEIGHT`, `INDUSTRY_PROVIDER_CACHE_TTL`, `FREIGHT_YOY_BASELINE`, `FREIGHT_YOY_SLOPE`.
+Other tunables read from the environment in `config.py`: `NEWS_WEB_SEARCH_MAX_USES` (8), `PORT_WEB_SEARCH_MAX_USES` (25), `REGISTER_WEB_SEARCH_MAX_USES` (8), `INDUSTRY_PROVIDER_CACHE_TTL`, `FRED_SCORE_LOOKBACK_DAYS` (730; used only by the aerospace adapter and the old percentile helpers in `fred_client.py`).
 
 ## Project Structure
 
 ```
 app.py                    # Entry point, startup layers, background thread, Dash callbacks, /health, security headers
-config.py                 # ALL tunable constants: weights, profiles, tiers, colors, AI/cache settings
+config.py                 # ALL tunable constants: weights, freshness, lags, input weights, radii, tiers, colors, AI settings
 gunicorn.conf.py          # 1 worker, 4 threads, gthread
 assets/terminal.css       # Terminal stylesheet: tokens, grid, panes, tablet and phone rules
 assets/terminal.js        # Tap-to-focus tooltips, Escape closes Subscribe, map drag/zoom off on touch
 data/
-  aggregator.py           # Orchestrates providers via RefreshTasks(max_workers=3)
+  score_anchors.json      # Frozen anchors (generated by scripts/compute_anchors.py; loaded as config.SCORE_ANCHORS)
+  aggregator.py           # Runs providers via RefreshTasks(max_workers=3), fallbacks/exclusions, stored composite
   cache.py                # Atomic file-based TTL cache
   database.py             # PostgreSQL/SQLite lazy-resolved abstraction
   status.py               # Loading status messaging
   runtime.py              # RefreshTasks executor, @serialized, memory usage
   llm.py                  # Shared Anthropic client used by every AI call
-  ai_analyst.py           # Claude news scoring + briefing, full report, score explanation, newsletter briefing
-  port_analyst.py         # Claude per-port summaries + disruption penalties, aggregate port score
+  ai_analyst.py           # Claude headline scoring, briefing, full report, newsletter briefing
+  news_alerts.py          # Headlines (display only): incremental Claude scoring, topic tags, briefing/report runs
+  web_news.py             # Daily Claude web search for news (merged ahead of RSS)
+  register.py             # Claude disruption register (shadow mode, stored as geo_register)
+  port_analyst.py         # Claude per-port summaries + disruption penalties (map only)
+  portwatch.py            # IMF PortWatch chokepoint transits: corridor ratios, chokepoint_score, traffic pane
   gscpi_client.py         # NY Fed GSCPI CSV loader (6h cache, 60-day stale fallback)
   rss_fetcher.py          # Shared 5-minute RSS snapshot (4 feeds at a time)
   news_sources.py         # 17 RSS feeds
   news_selection.py       # Low-signal filtering, dedupe, newsletter article selection
-  ports_data.py           # 37 major ports (name, lat, lon, keywords)
+  ports_data.py           # 37 major ports (name, lat, lon, keywords; word-boundary matching)
   unsubscribe.py          # HMAC-signed unsubscribe tokens
+  sources/
+    markets.py            # Guarded Yahoo helpers: last_quote, close_on, scale_live
+    treasury.py           # DTS customs deposits and the tariff burden series
+    tpu.py                # Caldara et al. TPU workbook (daily + monthly)
+    gpr.py                # Caldara-Iacoviello GPR files (daily + monthly)
+    rail.py               # STB EP 724 weekly carloads via USDA AgTransport
+    fed_surveys.py        # Philadelphia, Empire, Dallas prices paid (FRED); delivery times (context)
+    gdacs.py              # GDACS Orange/Red events, hazard_score
+    waterways.py          # Gatun Lake (ACP CSV), Mississippi at St. Louis (USGS), Kaub (stored only)
   providers/
     base.py               # Abstract BaseProvider interface
-    weather.py            # Open-Meteo: all 37 ports, linear deductions
-    supply_chain.py       # NY Fed GSCPI + daily BDRY proxy; WEI fetched for context only
-    freight_rate_proxy.py # BDRY dry-bulk ETF, inverse percentile (supply_chain proxy)
-    freight.py            # BTS Freight TSI (TSIFRGHT) YoY + daily IYT proxy
-    transport_equity_proxy.py  # IYT transportation ETF, direct percentile (freight proxy)
-    energy.py             # WTI crude (CL=F live, DCOILWTICO history) + DOE diesel (GASDESW)
-    tariffs.py            # EPUTRADE (monthly) + tariff news nowcast that can only lower the score
-    tariff_news_nowcast.py # VADER score of tariff-tagged RSS articles
-    geopolitical.py       # RSS + Claude/VADER severity, port-disruption blend
+    readings.py           # InputReading, period_end, freshness_status, blend_inputs, inputs_metadata
+    prices.py             # Shared price cleaning and CPI deflation helpers
+    supply_chain.py       # GSCPI, anchored. BDRY and WEI are hover context only
+    chokepoints.py        # PortWatch transits through 8 corridors
+    energy.py             # Brent, ULSD, TTF: anchored log real prices, live Yahoo scaling, spike penalty
+    tariffs.py            # Tariff burden (DTS / BOPGIMP) + daily TPU. EPUTRADE is hover context only
+    geopolitical.py       # Daily GPR, anchored; register hook at GEO_REGISTER_WEIGHT (0)
+    freight.py            # TSIFRGHT YoY + weekly STB rail YoY, anchored
+    inputs.py             # Fed prices-paid composite + real copper and aluminum
+    physical.py           # GDACS hazards near ports + Gatun Lake + Mississippi
+    weather.py            # Open-Meteo, all 37 ports: MAP ONLY, not a composite category
+    fred_client.py        # Shared FRED wrapper (public CSV when no key), fetch_fred_full for anchors
     silicon_analysts.py   # Semiconductor profile: 4 chip categories
     aerospace.py          # Aerospace profile: 4 aero categories
-    fred_client.py        # Shared FRED API wrapper (public CSV when no key)
   fallback_snapshot_safe.json  # Committed cold-start fallback (only cache file in git)
 components/
   layout.py               # Terminal grid assembly and the API modal
-  terminal.py             # Pane builders: header, readout, quotes, headlines, briefing, category table
+  terminal.py             # Pane builders: header, readout, quotes, chokepoints, headlines, briefing, category table
   terminal_data.py        # Pure math: TIER_COLORS, tier_for, category_rows, index_summary, index_history
   workspace.py            # Snapshot helpers: safe text and links, news selection, CSV export
   workspace_callbacks.py  # Profile switch, in-place refresh, news filters, trend range, CSV
@@ -98,16 +119,17 @@ components/
   feed.py                 # Relative-time formatting for headline ages
   skeleton.py             # Loading skeleton grid
 scoring/
-  engine.py               # Weighted composite with validation
-  explanation.py          # Score explanation helpers
+  anchors.py              # transform_value, anchored_score, score_raw, get_anchor
+  engine.py               # Weighted composite, renormalized_weights, snapshot_composite, tiers
 api/
   routes.py               # /api/v1/latest (public), /api/v1/newsletter-data (admin), limiter setup
   admin.py                # /api/v1/admin/subscribers, verify_admin()
   newsletter.py           # /unsubscribe (GET confirm page, POST unsubscribe)
   briefing.py             # On-demand AI briefing helper (no button in the Terminal UI)
   report.py               # /report page (Terminal look)
-  docs.py                 # /docs page (Terminal look)
+  docs.py                 # /docs methodology page (Terminal look; numbers read from config at request time)
 scripts/
+  compute_anchors.py      # Downloads full histories, writes data/score_anchors.json (offline, no DB)
   send_newsletter.py      # Cron job for email delivery
   refresh_fallback_snapshot.py  # Rewrites data/fallback_snapshot_safe.json from DB/disk
 ```
@@ -120,9 +142,12 @@ scripts/
 
 ```
 Background daemon thread (every 5 min)
-  → RefreshTasks pool (3 workers) runs 8 providers (6 baseline + 2 industry) + news + market + port summaries
-  → Geopolitical score taken from the fresh news result, blended with the port-disruption signal
-  → scoring/engine.py computes composite
+  → RefreshTasks pool (3 workers) runs 10 providers (8 baseline + 2 industry adapters)
+    + news + market + port summaries + chokepoint traffic + disruption register
+  → each provider has its own deadline (45 s; 150 s for freight and physical)
+  → failed/timed-out category: last stored score while younger than CATEGORY_DROP_AFTER_DAYS
+    (flagged fallback + stale), otherwise excluded
+  → composite over present weighted categories, weights renormalized explicitly
   → Writes to _DATA_CACHE (memory, protected by _LOCK) + disk (atomic)
   → Writes daily scores and the dashboard snapshot to the database (each at most hourly)
 
@@ -136,11 +161,11 @@ Main thread (serves requests)
 
 1. In-memory `_DATA_CACHE` (current session)
 2. Disk cache via `get_cached_dashboard()` (< 24h TTL)
-3. Database snapshot via `load_dashboard_snapshot()` (`dashboard_snapshot` table, saved at most hourly and only when no baseline category is on a fallback)
+3. Database snapshot via `load_dashboard_snapshot()` (`dashboard_snapshot` table, saved at most hourly and only when no weighted category is excluded or on a fallback)
 4. `data/fallback_snapshot_safe.json` (committed), only if younger than `FALLBACK_SNAPSHOT_MAX_AGE_DAYS` (14). Alerts, briefing, report, and disruptions are cleared on load
 5. `build_skeleton_layout()` (polls every 1s and reloads the page once data is ready)
 
-Startup data older than 2 hours is marked provisional (`_DATA_IS_FRESH = False`).
+Startup data older than 2 hours is marked provisional (`_DATA_IS_FRESH = False`). A stored snapshot counts as current when every weighted category is in `current_scores` or `excluded_categories` (`_has_current_categories`).
 
 ### Threading Model
 
@@ -174,32 +199,45 @@ All global state reads/writes MUST use `with _LOCK:`. The background thread runs
 
 ```python
 CATEGORY_WEIGHTS = {
-    "weather":       0.10,
-    "supply_chain":  0.25,
-    "freight":       0.10,
-    "energy":        0.20,
-    "tariffs":       0.15,
-    "geopolitical":  0.20,
+    "supply_chain":  0.20,  # NY Fed GSCPI, anchored
+    "chokepoints":   0.15,  # IMF PortWatch transits through eight corridors
+    "energy":        0.15,  # Brent, NY Harbor ULSD, TTF: real prices plus spike penalty
+    "tariffs":       0.15,  # tariff burden + trade policy uncertainty
+    "geopolitical":  0.10,  # Caldara-Iacoviello daily GPR (register in shadow)
+    "freight":       0.10,  # TSIFRGHT YoY + weekly STB rail YoY
+    "inputs":        0.10,  # Fed prices paid + real copper and aluminum
+    "physical":      0.05,  # GDACS hazards near ports + Gatun Lake + Mississippi
 }
 ```
 
-The engine validates `sum(weights) ≈ 1.0` (atol=0.01) and raises `ValueError` if not. It does NOT auto-normalize.
+`weather` is NOT a weighted category (map only). Old `weather` rows in the DB are left alone.
 
-`INDUSTRY_PROFILES` holds per-profile weights (each must sum to 1.0) and `card_categories` (not used by the Terminal UI):
+The engine validates `sum(weights) ≈ 1.0` (atol=0.01) and raises `ValueError` if not. It does NOT auto-normalize. When a category is excluded, the aggregator calls `scoring.engine.renormalized_weights(CATEGORY_WEIGHTS, present)` explicitly and passes the result in. The weights shown in the category table, CSV and `/api/v1/latest` stay nominal, so under an exclusion they do not sum to the composite; `/docs` says so.
+
+`INDUSTRY_PROFILES` (temporary until the industry views are rebuilt): baseline weights × `INDUSTRY_BASELINE_SHARE` (0.60), plus the industry categories at their existing weights (sum 0.40):
 - `baseline`: same weights as `CATEGORY_WEIGHTS`
-- `semiconductor`: weather 0.05, supply_chain 0.15, freight 0.05, energy 0.10, tariffs 0.10, geopolitical 0.15, chip_fab_util 0.20, chip_memory_prices 0.10, chip_lead_times 0.05, chip_wafer_prices 0.05
-- `aerospace`: weather 0.05, supply_chain 0.10, freight 0.10, energy 0.10, tariffs 0.10, geopolitical 0.15, aero_metals 0.15, aero_orders 0.10, aero_production 0.10, aero_ppi 0.05
+- `semiconductor`: baseline × 0.60 (supply_chain .12, chokepoints .09, energy .09, tariffs .09, geopolitical .06, freight .06, inputs .06, physical .03) + chip_fab_util 0.20, chip_memory_prices 0.10, chip_lead_times 0.05, chip_wafer_prices 0.05
+- `aerospace`: baseline × 0.60 + aero_metals 0.15, aero_orders 0.10, aero_production 0.10, aero_ppi 0.05
 
-### Daily Proxy Blends
+`config.py` raises at import if any profile's weights do not sum to 1.0.
 
-| Category | Monthly anchor | Daily proxy | Proxy weight |
-|----------|----------------|-------------|--------------|
-| supply_chain | NY Fed GSCPI | BDRY (inverse percentile) | `SUPPLY_CHAIN_PROXY_WEIGHT` 0.30 |
-| freight | TSIFRGHT YoY | IYT (direct percentile) | `FREIGHT_PROXY_WEIGHT` 0.30 |
-| tariffs | EPUTRADE | Tariff news nowcast, only when it is below the EPUTRADE score | `TARIFFS_PROXY_WEIGHT` 0.30 |
-| geopolitical | News severity score | Aggregate AI port-disruption score | `PORT_DISRUPTION_WEIGHT` 0.15 |
+### Anchored scale (scoring/anchors.py)
 
-If a proxy fails, the category uses its anchor alone.
+Every "level" input is transformed (`identity`, `log`, or `log_real` = log of the CPI-deflated price, CPIAUCSL to the reference month in `SCORE_ANCHORS["cpi_reference"]`, currently 2025-12), then mapped piecewise-linearly:
+
+- **100** = healthiest 5% of pre-2020 history (5th or 95th percentile by direction)
+- **80** = pre-2020 median ("normal")
+- **0** = worst monthly mean on record through 2025, or a cited reference (tariff burden: 19.8%, USITC 1933)
+
+Clipped to 0–100. `anchored_score` raises `ValueError` on non-finite input or non-monotone anchors; `get_anchor(key)` raises `RuntimeError("no anchor for <key>")` at fetch time. Anchors are FROZEN in `data/score_anchors.json` (per input: transform, direction, best/normal/worst, baseline, worst_basis, source). The file also holds `chokepoint_weights`, `chokepoint_baseline`, `prices_paid_stats`, `port_throughput_share`, `waterways`. Chokepoints and physical are event scores (normal ≈ 100), so with every input normal the composite is about 84.
+
+### Freshness (config.FRESHNESS, data/providers/readings.py)
+
+- Age is measured from the period END (`period_end`: month end for monthly, week-ending date for weekly, the day for daily). FRED dates monthly data on the 1st, so always convert.
+- Each input has `(stale_after_days, drop_after_days)`. Past stale → `status="stale"`; past drop → `"missing"`.
+- `blend_inputs` drops missing inputs and renormalizes the category's input weights; the category is stale if any used input is stale. All inputs missing → the provider raises `RuntimeError`.
+- `CATEGORY_DROP_AFTER_DAYS`: how long a failed category may show its last stored score before exclusion (supply_chain 150, chokepoints 42, energy 30, tariffs 150, geopolitical 42, freight 200, inputs 150, physical 9).
+- `PUBLICATION_LAG_DAYS` dates history by when the site could have known a value (gscpi 5, tsifrght 80, prices_paid 0, imf_monthly 35, dts 1, bopgimp 35, gpr 7, tpu 7, rail_volume 5, chokepoint_flow 4). GPR history uses the file's own dates (no shift).
 
 ### Health Tiers (higher score = healthier)
 
@@ -217,9 +255,11 @@ The map uses separate high-contrast colors (`MAP_HEALTH_COLORS`, `MAP_RISK_SCALE
 ### Composite Calculation (scoring/engine.py)
 
 ```python
-composite = sum(weights[cat] * scores[cat] for cat in weights)
+composite = sum(weights[cat] * scores[cat] for cat in weights)   # weights renormalized by the caller on exclusion
 return float(np.clip(composite, 0.0, 100.0))
 ```
+
+The composite is stored in the snapshot as `composite`. Every reader (`index_summary`, `/api/v1/latest`, `/api/v1/newsletter-data`, newsletter, CSV) uses `snapshot_composite(data)`, which returns the stored value and only recomputes for an old snapshot with no `composite` key (None when a weighted category is missing).
 
 ---
 
@@ -233,12 +273,14 @@ class BaseProvider(ABC):
 
     @abstractmethod
     def fetch_current(self) -> tuple[float, dict]:
-        """Return (score: 0–100 where 100=healthiest, metadata: dict)"""
+        """Return (score: 0–100 where 100=healthiest, metadata: dict). Raise RuntimeError if no input is usable."""
 
     @abstractmethod
     def fetch_history(self, days: int) -> pd.Series:
-        """Return scores indexed by pd.DatetimeIndex"""
+        """Return real recomputed scores indexed by pd.DatetimeIndex, dated by publication lag"""
 ```
+
+A provider whose inputs are all missing raises `RuntimeError`. It NEVER returns a neutral constant; the aggregator decides the fallback. Non-finite input values count as missing (`InputReading` turns a NaN score into `status="missing"`). An HTTP 200 with an empty or reshaped payload must raise, never score 0 or 100.
 
 The industry adapters (`ChipFabUtilProvider`, `AeroMetalsProvider`) return one primary category and pack the other three under `metadata["additional_scores"]` / `metadata["additional_history"]`; the aggregator pops and unpacks them.
 
@@ -251,72 +293,63 @@ The industry adapters (`ChipFabUtilProvider`, `AeroMetalsProvider`) return one p
     "raw_label": "What raw_value represents",
     "description": "Why this affects supply chains...",
     "calculation": "Score = formula...",
-    "updated": "2026-03-10 15:30:00",
+    "updated": "2026-10-22 15:30:00",      # wall clock of the fetch
+    "as_of": "2026-09-30",                 # ISO date of the OLDEST input used
+    "is_stale": False,
+    "inputs": [                            # inputs_metadata(readings)
+        {"name": "gscpi", "score": 52.5, "as_of": "2026-09-30", "status": "live",
+         "source": "...", "raw_value": "..."},
+    ],
 }
 ```
 
+The aggregator adds `score`, `tier`, and for failures `is_fallback`, `stored_on`, `error`. A category served from its last stored score has `as_of: None`, `stored_on: <date>`, `is_stale: True`, `is_fallback: True`.
+
 ### Provider-Specific Patterns
 
-**Weather**: continuous linear deductions (not binary thresholds), averaged across all 37 ports:
+Input keys are canonical across config, anchors, readings and metadata: `gscpi`, `chokepoint_flow`, `brent`, `ulsd`, `ttf`, `ttf_monthly`, `tariff_burden`, `tpu`, `gpr`, `geo_register`, `tsifrght`, `rail_volume`, `prices_paid`, `copper`, `aluminum`, `copper_monthly`, `aluminum_monthly`, `hazards`, `gatun`, `mississippi`.
+
+**Supply chain**: latest GSCPI month, anchored (lower better; baseline 1998–2019; worst 2021-12). BDRY (double-counts the Baltic Dry Index inside GSCPI) and WEI are hover context only.
+
+**Chokepoints**: PortWatch `Daily_Chokepoints_Data`. Per corridor, ratio = 7-day mean of daily transits / mean for the same calendar month over 2022-01..2023-10 (`SCORE_ANCHORS["chokepoint_baseline"]`). Red Sea = the worse of Bab el-Mandeb and Suez. Cape of Good Hope is context only. `Score = 100 − CHOKEPOINT_SEVERITY×100 × Σ(tonnage weight × (1 − min(ratio / CHOKEPOINT_DEADBAND, 1)))`, clipped (severity 3, deadband 0.90). Weights in `SCORE_ANCHORS["chokepoint_weights"]` (Malacca .26 … Panama .03). Credit "Sources: UN Global Platform; IMF PortWatch" wherever its data appears (`chokepoints.CREDIT`).
+
+**Energy**: legs Brent (`DCOILBRENTEU`, live `BZ=F`) 35%, NY Harbor ULSD (`DDFUELNYH`, live `HO=F`) 40%, TTF 25% (live `TTF=F` × `EURUSD=X` / 3.412 → $/MMBtu, else IMF monthly `PNGASEUUSDM` as `ttf_monthly`). Brent/ULSD live value = official spot × (Yahoo last / Yahoo close on the spot date) via `markets.scale_live`; skipped (official used, metadata says so) if the quote predates the spot date or the ratio is outside `LIVE_SCALE_RATIO_BOUNDS` (0.5–2.0). Each leg: log real price, anchored (1990–2019; TTF 1992–2019). Spike penalty per leg: 0 at a +20% real 91-day rise, 15 points at +82%, weighted like the leg, subtracted after blending. Cost gauge, not demand. WTI, Brent–WTI spread and ULSD crack are context.
+
+**Tariffs**: 0.6 burden + 0.4 TPU. Burden = 3-month sum of DTS customs deposits for months m+1 / 3-month sum of `BOPGIMP` imports for months m (deposits lag imports about a month). Gross of IEEPA refunds. Anchors: normal = pre-2018 median (≈1.84%), zero = 19.8% (USITC, 1933). TPU = 30-day mean of the daily Caldara et al. index (min 20 obs), log, anchored on monthly TPU 1985–2019. `EPUTRADE` is hover context only.
+
+**Geopolitical**: 30-day mean of the daily GPR (min 20 obs), log, anchored on monthly GPR 1985–2019 (zero = record month 2001-10). Optional blend with the stored register score at `GEO_REGISTER_WEIGHT` (0.0). Headlines feed nothing. History is the GPR series at the file's own dates.
+
+**Freight**: 0.5 TSIFRGHT YoY (12 months) + 0.5 rail YoY (STB EP 724 originated carloads + intermodal Containers/Trailers, 4-week mean vs the 4-week mean 52 weeks earlier). Rail anchors are fitted on FRED `RAILFRTCARLOADSD11 + RAILFRTINTERMODALD11` monthly YoY 2001–2019 (the weekly STB history starts 2017); the live reading is the weekly STB YoY. Demand gauge: contraction is bad.
+
+**Inputs**: 0.5 prices paid + 0.25 copper + 0.25 aluminum. Prices paid = mean of per-survey z-scores (each against its own 2004–2019 mean/sd in `SCORE_ANCHORS["prices_paid_stats"]`) for Philadelphia `PPCDFSA066MSFRBPHI`, Empire `PPCDISA066MSFRBNY`, Dallas `PRMSAMFRBDAL`. Kansas City is omitted (no stable file or FRED series; would need HTML scraping). Metals: IMF `PCOPPUSDM` / `PALUMUSDM`, live `HG=F` (×2204.62 $/lb→$/mt) and `ALI=F`, log real, anchored 1992–2019; the monthly value is used as `*_monthly` when live fails. Delivery times are context.
+
+**Physical**: 0.5 hazards + 0.25 Gatun + 0.25 Mississippi. Hazards: GDACS Orange/Red TC, FL, EQ, VO events active today; an event within `HAZARD_RADIUS_KM` (TC 450 km, a judgment; FL 100, EQ 150, VO 50) of a port costs `HAZARD_SCALE` (5000) × port throughput share × level points (Orange 0.5, Red 1.0); score = 100 − total, clipped. Gatun: 100 at ≥ 85 ft, linear to 0 at the record low (78.31 ft). Mississippi at St. Louis (USGS 07010000): 100 at ≥ the gauge's historical 10th percentile (0.535 ft), linear to 0 at the record low (−5.32 ft). Kaub is stored in `gauge_readings`, never scored. Gatun stays an input pending Will's decision on the ACP redistribution notice.
+
+**Weather (map only)**: continuous linear deductions averaged per port, not part of the composite:
 ```python
 score = 100.0
 score -= _wmo_deduction(wmo_code)      # Up to -30 (thunderstorm)
-score -= _wind_deduction(wind_kmh)     # Linear ramp 10–80 km/h, max -30
-score -= _precip_deduction(precip_mm)  # Linear ramp 0–50 mm, max -25
+score -= _wind_deduction(gust_kmh)     # Linear ramp 10–80 km/h on GUSTS, max -30
+score -= _precip_deduction(precip_mm)  # DAILY total, linear ramp 0–50 mm, max -25
 score -= _temp_deduction(temp_c)       # Extremes both ends, max -15
 return max(0.0, min(100.0, score))
-# Max total deduction: 30+30+25+15 = 100
 ```
 
-**Supply chain**: `50 - GSCPI × GSCPI_SCORE_SCALE` (12.5), clipped 0–100, blended 70/30 with BDRY. WEI is shown in metadata only.
-
-**Freight**: `FREIGHT_YOY_BASELINE + YoY% × FREIGHT_YOY_SLOPE` (72 + YoY% × 6.5), clipped 0–100, blended 70/30 with IYT.
-
-**Tariffs**: inverse percentile of EPUTRADE in the trailing `FRED_SCORE_LOOKBACK_DAYS` (730). The nowcast (100 + sum of the 5 most negative VADER severities of tariff-tagged articles, floored at 50; neutral 85 with no matches) is blended at 30% only when articles matched and it is below the EPUTRADE score. `fetch_history()` returns EPUTRADE scores only.
-
-**Geopolitical**: three-tier fallback on the provider path, negative-only, volume-invariant scoring:
-```
-Tier 1: Cached news payload (NEWS_BRIEFING_CACHE_KEY, usable up to 7 days)
-Tier 2: Live RSS + VADER (no AI)
-Tier 3: Neutral baseline 85.0, flagged is_fallback
-
-Score = 100 + sum(10 most severe negative severities)   # dedup by title,
-# total deduction floored at -60. Only negative news reduces the score.
-# Claude severities are clamped to ±AI_SEVERITY_MAX (10).
-```
-The aggregator overrides the provider score each cycle with the fresh news result and blends it 85/15 with the aggregate port-disruption score (`100 - 2 × mean port penalty`) via `blend_port_disruption()`.
-History comes from `daily_category_scores` in the database — real stored
-measurements only, no proxy series.
-News relevance: consumer-goods terms (`_CONSUMER_GOODS_TERMS` in `geopolitical.py`) are dropped unless the story also contains a supply chain anchor word (`_SUPPLY_CHAIN_ANCHORS`). Matching uses word boundaries, so "toy" does not flag "Toyota".
-
-**Energy**: cost-pressure gauge (NOT a demand gauge). Average of two inverse
-percentiles (WTI crude and DOE diesel, each within its trailing 2-year range).
-A price collapse from demand destruction reads as low cost pressure; demand
-health is not measured.
-
-**FRED-based providers** (energy, tariffs, aerospace) use the shared `fred_client.py` and `normalize_series_inverse()`:
-```python
-def normalize_series_inverse(series):
-    """Lower raw value → Higher score (0–100), rolling percentile rank."""
-    pct = series.rolling(f"{days}D", min_periods=12).rank(pct=True)
-    return ((1 - pct) * 100).round(1).clip(0.0, 100.0)
-```
+**FRED access**: `fetch_fred_series(id, lookback_days)` (cache key includes the window: `fred_<ID>_<days>d`) for runtime with trimmed windows (`*_FRED_LOOKBACK_DAYS` = 3 years); `fetch_fred_full(id)` only for `compute_anchors.py`. Runtime never downloads decades of history.
 
 ### Error Handling
 
-Provider failures never crash the app:
+Provider failures never crash the app, and never produce a made-up score:
 ```python
-try:
-    score, metadata = provider.fetch_current()
-except Exception as exc:
-    logger.error("Provider %s failed: %s", cat, exc)
-    score = 50.0  # Neutral fallback
-    metadata = _fallback_metadata(str(exc))  # is_fallback=True, full key shape
+# data/aggregator.py
+stored = _recent_stored_score(cat, today)       # last daily_category_scores row younger than CATEGORY_DROP_AFTER_DAYS
+if stored:
+    current_scores[cat] = stored_score          # metadata: is_fallback, is_stale, stored_on
+else:
+    excluded_categories.append(cat)             # composite renormalizes the rest
 ```
 
-Fallback categories are flagged: `metadata["is_fallback"]`, snapshot keys
-`degraded` / `fallback_categories`, a "fallback" suffix in the category table's source column (plus a "Live source unavailable" line in the row's hover detail), `/api/v1/latest`, and
-`/health`. Fallback scores are never written to the daily score history.
+Flags: `metadata["is_fallback"]` / `is_stale`, snapshot keys `degraded`, `fallback_categories`, `excluded_categories`, `stale_categories`, a "fallback" or "stale" tag in the category table, `/api/v1/latest`, `/health`, and the CSV status column. Fallback scores are never written to the daily score history.
 
 ---
 
@@ -335,25 +368,32 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 
 ### TTL Defaults
 
-| Data | TTL |
-|------|-----|
-| RSS article snapshot | 5 min |
-| Weather (port batch) | 4 hours |
-| FRED series | 1 hour |
-| BDRY / IYT / market data | 1 hour |
-| NY Fed GSCPI | 6 hours (stale copy reused up to 60 days if the CSV fetch fails) |
-| Silicon Analysts | `INDUSTRY_PROVIDER_CACHE_TTL` (24 hours; 1 hour after a failed fetch) |
-| Aerospace | 1 hour |
-| Claude news analysis | `AI_CACHE_TTL_SECONDS` (24 hours), tracked by `ai_generated_at` inside the payload |
-| News alerts re-score (RSS + VADER, no API cost) | `NEWS_RSS_REFRESH_SECONDS` (1 hour) |
-| News payload as fallback | `NEWS_CACHE_MAX_AGE_SECONDS` (7 days) |
-| Port summaries, score explanation, on-demand briefing | `AI_CACHE_TTL_SECONDS` (24 hours) |
-| Failed Claude call | retried after `AI_FAILURE_RETRY_SECONDS` (1 hour) |
-| Dashboard snapshot | 24 hours |
+| Data | Key | TTL |
+|------|-----|-----|
+| RSS article snapshot | `rss_articles_bounded_v1` | 5 min |
+| FRED series | `fred_<ID>_<days>d` / `fred_full_<ID>_v1` | 1 hour |
+| NY Fed GSCPI | `nyfed_gscpi_monthly_v3` | 6 hours (stale copy reused up to 60 days if the CSV fetch fails) |
+| PortWatch daily chokepoints | `portwatch_daily_v1` | 6 hours |
+| PortWatch traffic pane | `portwatch_chokepoints_v1` | 6 hours (stale copy up to 3 days) |
+| DTS customs deposits | `dts_customs_v1` | 12 hours |
+| TPU workbook | `tpu_v1` | 12 hours |
+| GPR daily / monthly | `gpr_daily_v1` / `gpr_monthly_v1` | 12 hours |
+| STB rail weekly | `stb_rail_weekly_v1` | 12 hours |
+| GDACS events | `gdacs_events_v1_<year>H<n>` | 6 hours for the current half-year chunk, 30 days for settled chunks |
+| Gatun Lake / St. Louis gauge | `gatun_levels_v1` / per-window key | 6 hours |
+| Weather (port batch, map) | `weather_batch_ports_v3` | 4 hours |
+| Market data pane | `raw_market_data_v2` | 1 hour |
+| Silicon Analysts | | `INDUSTRY_PROVIDER_CACHE_TTL` (24 hours; 1 hour after a failed fetch) |
+| Aerospace | | 1 hour |
+| News payload (alerts, briefing, report) | `NEWS_BRIEFING_CACHE_KEY` (`newsapi_briefing_v19`) | usable up to `NEWS_CACHE_MAX_AGE_SECONDS` (7 days); incremental scoring every `NEWS_AI_REFRESH_SECONDS` (6 h), full run (web search, briefing, report) every `AI_CACHE_TTL_SECONDS` (24 h), tracked inside the payload |
+| Port summaries | `ai_port_summaries_v6` | `AI_CACHE_TTL_SECONDS` (24 hours) |
+| Disruption register score | `disruption_register_v1` | `AI_CACHE_TTL_SECONDS` (24 hours) |
+| Failed Claude call | `*_failed_v1` | retried after `AI_FAILURE_RETRY_SECONDS` (1 hour) |
+| Dashboard snapshot | | 24 hours |
 
 ### Critical Rules
 
-- Cache keys are versioned (e.g., `weather_batch_ports_v2`, `newsapi_briefing_v18`, `ai_port_summaries_v5`). Bump the version to bust stale cache on schema changes
+- Cache keys are versioned. Bump the version to bust stale cache on schema changes; new keys end in `_v1`
 - Always use `set_cached()` / `_write_text_atomic()`, never write cache files directly
 - Cache dir: `data/.cache/`
 - Only `fallback_snapshot_safe.json` is committed to git. The app never rewrites it; refresh it with `python scripts/refresh_fallback_snapshot.py` and commit
@@ -366,8 +406,12 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 
 ```python
 RefreshTasks(max_workers=3)   # data/runtime.py; one outstanding job per task key, reused across cycles
-# Timeouts: providers=45s, news AI=120s, market=30s, port summaries=120s
+# Provider deadlines counted from cycle start: PROVIDER_TIMEOUT_SECONDS 45, overrides physical 150, freight 150
+# news 240 s, market 30 s, chokepoint traffic 30 s, port summaries 240 s
+# The register is collected only if already finished (never delays the composite)
 ```
+
+Freight and physical run last in `_PROVIDERS` so the fast providers finish inside their 45 s first.
 
 ### Series Alignment (critical for sparklines)
 
@@ -379,20 +423,19 @@ aligned.iloc[-1] = current_score  # Force last point = today's live score
 
 This prevents sparklines from showing yesterday's stale value as today.
 Dates BEFORE the first real observation stay NaN — never backfill them with
-the current score; charts must render unmeasured history as a gap.
+the current score; charts must render unmeasured history as a gap. A failed
+category gets an all-NaN history.
 
 ### Map Markers
 
-Per port: 0.6 x the index composite + 0.4 x the local weather score (composite alone if weather is missing; weather alone if there is no composite; no marker if both are missing), minus `max(news penalty, AI penalty)`. No region profiles and no structural vulnerability penalty (chokepoint risk is already in the composite). The news penalty is the largest matched-article penalty (high 30, medium 15, low 5) plus 20% of the rest, capped at 50; the AI penalty is Claude's per-port `disruption_penalty`, clamped 0–50. 37 ports total. Generated in `_derive_map_markers()`.
+Per port: 0.6 × the index composite + 0.4 × the local weather score (composite alone if weather is missing; weather alone if there is no composite; no marker if both are missing), minus `max(news penalty, AI penalty)`. The news penalty is the largest matched-article penalty (high 30, medium 15, low 5) plus 20% of the rest, capped at 50; the AI penalty is Claude's per-port `disruption_penalty`, clamped 0–50. Port keywords match on word boundaries. 37 ports total. Generated in `_derive_map_markers()`. There is no regional profile and no structural vulnerability penalty.
 
 ### Post-Processing
 
-- Fresh news score (blended with the port-disruption signal) overwrites the geopolitical score and history's last point
-- Claude score explanation, stored as `score_explanation` (cached 24h, reused only while the tier is unchanged); the Terminal UI does not display it
 - `daily_history` loaded from `get_daily_category_scores(91)`: the last 91 days plus today (92 dates) (see Snapshot Structure)
-- Disruptions generated from measured (non-fallback) categories scoring < `DISRUPTION_SCORE_THRESHOLD` (70), plus high-severity news alerts
-- Measured (non-fallback) daily scores persisted via `record_daily_scores()` (at most hourly)
-- Dashboard snapshot saved to the database via `save_dashboard_snapshot()` (at most hourly, skipped when a baseline category is on a fallback)
+- Disruptions on one 0–100 impact scale: measured (non-fallback) categories scoring < `DISRUPTION_SCORE_THRESHOLD` (70) with impact = 100 − score, plus high-severity headlines with impact = |severity| × 10
+- Measured (non-fallback) daily scores persisted via `record_daily_scores()` (at most hourly), plus `geo_register` when the register produced a score. The composite goes to `daily_scores` only when no weighted category is excluded (stale is fine)
+- Dashboard snapshot saved to the database via `save_dashboard_snapshot()` (at most hourly, skipped when a weighted category is excluded or on a fallback)
 
 ---
 
@@ -402,22 +445,26 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 
 ```python
 {
-    "last_updated_utc": "2026-03-10T15:30:00Z",
+    "last_updated_utc": "2026-10-22T15:30:00Z",
     "dates": pd.DatetimeIndex,                       # 90 daily dates
     "daily_history": dict,                           # {"dates": ["YYYY-MM-DD", ...], "scores": {cat: [float | None, ...]}}, last 91 days plus today (92 dates), stored daily scores
-    "category_history": dict[str, pd.Series],        # 6 baseline + industry categories
-    "current_scores": dict[str, float],              # 6 baseline + chip_* and aero_* when available
-    "category_metadata": dict[str, dict],            # one per category
+    "category_history": dict[str, pd.Series],        # 8 baseline + industry categories (all-NaN for a failed one)
+    "current_scores": dict[str, float],              # present categories only; an excluded one is ABSENT
+    "composite": float | None,                       # stored composite, weights renormalized over present weighted categories
+    "category_metadata": dict[str, dict],            # one per category (see Required Metadata Keys)
     "map_markers": list[dict],                       # 37 ports: name, lat, lon, score, description
-    "alerts": list[dict],                            # timestamp, severity, title, body, category, sentiment, url, source
+    "alerts": list[dict],                            # timestamp, severity (None when unscored), title, body, category, sentiment, url, source
+    "news_scoring": str,                             # "Claude", "Claude (stale)", "Unscored" or "" (news failed)
     "briefing": str,                                 # AI-generated bullet points
     "full_report": str,                              # Markdown report
     "disruptions": list[dict],                       # event, region, impact_score, categories, started, status
-    "provider_errors": dict[str, str | None],        # None = OK, str = error message
-    "market_data": dict,                             # Crude Oil, Natural Gas, Copper, Gold, VIX: price, prev, symbol, change_pct
-    "score_explanation": str,                        # Claude score explanation (may be empty; not shown in the Terminal UI)
-    "degraded": bool,                                # True if any category is serving a fallback
-    "fallback_categories": list[str],                # categories with is_fallback metadata
+    "provider_errors": dict[str, str],               # category -> error message
+    "market_data": dict,                             # 13 quotes (energy, shipping, materials, macro): price, prev, symbol, group, change_pct
+    "chokepoints": dict | None,                      # PortWatch traffic pane data
+    "degraded": bool,                                # True if any category is on a fallback or excluded
+    "fallback_categories": list[str],                # categories showing their last stored score
+    "excluded_categories": list[str],                # weighted categories left out of the composite
+    "stale_categories": list[str],                   # present categories with is_stale metadata
 }
 ```
 
@@ -439,9 +486,9 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 
 - Header: brand, profile switch (Global / Semis / Aero), updated label, Methodology link, API button, CSV button, Subscribe button
 - Readout: index value and tier, change vs yesterday, sparkline with a 7D / 30D / 90D range selector, per-category list
-- Map pane, Markets pane (oil, gas, copper, gold, VIX), Briefing pane with a "Read full report" link
-- Headlines: sorted HIGH, then MED, then LOW, newest first within each. Search, severity and topic filters
-- Category table: weight, score bar (today) with a tick (yesterday), today, yesterday, change, effect on the index (change x weight), 30-day sparkline, source. Hover or focus a category name, or tap it on a phone, for source, raw value, update time, description and calculation
+- Map pane, Markets pane, chokepoint traffic (with the PortWatch credit), Briefing pane with a "Read full report" link
+- Headlines: sorted HIGH, then MED, then LOW, newest first within each; unscored headlines show no severity. Search, severity and topic filters
+- Category table: weight, score bar (today) with a tick (yesterday), today, yesterday, change, effect on the index (change x weight), 30-day sparkline, source with an excluded / fallback / stale tag. Hover or focus a category name, or tap it on a phone, for each input with its as-of date and status, raw value, description and calculation. A stored fallback shows its storage date, never as the data date
 - Subscribe is a small popover (Escape closes it). API info is a modal
 - Filters, trend range and profile persist for the browser session (`persistence_type="session"`)
 
@@ -449,14 +496,15 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 
 - All dates are UTC. "Today" is the UTC date of `last_updated_utc`; "yesterday" is exactly the previous UTC date in `daily_history`. If that date is missing, the value shows "–" (no nearest-day guess)
 - Today's value always comes from `current_scores`, since the stored history is read before today's hourly write
-- Index values and their history are weighted with the selected profile's weights. A past day is blank unless every category has a stored score for it
+- `index_summary` leaves out a category with no current score and renormalizes, like the composite; yesterday uses the same categories and weights
+- A past day in `index_history` is blank unless every category has a stored score for it
 - Missing history stays a gap. Never fill it
 
 ### Callbacks (app.py, components/workspace_callbacks.py)
 
 - `profile-switch` writes `profile-store`; the readout and category table rebuild from `profile-store`, the refresh interval, and `trend-range`
 - The refresh interval also updates the map, quotes, briefing, updated label and the interval itself (`prevent_initial_call=True`, because `serve_layout` already rendered those panes)
-- News callback filters by search text, severity and topic; CSV callback downloads the selected profile
+- News callback filters by search text, severity and topic; CSV callback downloads the selected profile (score, nominal weight, weighted points, status, as_of, source)
 - `app.py` holds the API modal toggle and the Subscribe handler (validates the email, calls `add_subscriber()`)
 - All callbacks read from `_DATA_CACHE` — never trigger fetches
 - Use `dash.no_update` to skip outputs that shouldn't change
@@ -466,23 +514,45 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 ## API Endpoints
 
 ```
-GET  /api/v1/latest              # Public: composite, categories, degraded, fallback_categories, disruptions, map_markers
-GET  /api/v1/newsletter-data     # Admin: Authorization: Bearer ADMIN_TOKEN
+GET  /api/v1/latest              # Public, methodology_version 2 (shape below)
+GET  /api/v1/newsletter-data     # Admin: current_scores, briefing, composite_index (stored composite)
 GET  /api/v1/admin/subscribers   # Admin: Authorization: Bearer ADMIN_TOKEN
 GET  /unsubscribe?t=TOKEN        # Confirmation page (does not unsubscribe; mail scanners prefetch)
 POST /unsubscribe?t=TOKEN        # Unsubscribes; also serves RFC 8058 one-click
 GET  /docs, /report              # Public pages
-GET  /health                     # Monitoring: state, data_age_seconds, last_fetch_status, fallback_categories
+GET  /health                     # Monitoring (fields below)
 GET  /healthz                    # Alias for /health
 ```
+
+`/api/v1/latest`:
+
+```python
+{
+    "methodology_version": 2,
+    "timestamp": "2026-10-22T15:30:00Z",
+    "composite_index": 47.3,              # snapshot_composite(): the stored one (renormalized under exclusion)
+    "categories": {                       # weighted categories first (excluded → score None), then industry ones (weight None)
+        "supply_chain": {"score": 52.5, "weight": 0.2, "as_of": "2026-09-30", "stored_on": None,
+                         "source": "...", "is_stale": False, "is_fallback": False, "inputs": [...]},
+    },
+    "degraded": False,
+    "fallback_categories": [], "excluded_categories": [], "stale_categories": [],
+    "disruptions": [...], "map_markers": [...],
+    "meta": {"source": "Global Supply Chain Index", "license": "CC-BY-4.0", "documentation": "https://gscindex.com/docs"},
+}
+```
+
+`weight` is nominal. Under an exclusion the listed weights times scores do not equal `composite_index`.
 
 Admin auth accepts only the `Authorization: Bearer` header (no query-string token), compared in constant time.
 
 Rate limits (`API_RATE_LIMIT = "500 per hour;2000 per day"`) apply to the `/api/v1/*` blueprints only, keyed on `CF-Connecting-IP` (falls back to the socket address), in-memory storage. Dash pages, callbacks, `/health`, and `/unsubscribe` are not limited.
 
-Health: HTTP 200 `warming_up` (no successful fetch since boot and the current fetch has run ≤10 min), HTTP 200 `healthy`, HTTP 503 `degraded` (no data, data > 30 min old, or a fetch running > 10 min). `last_fetch_error` exposes only the exception class name.
+Health: fields `state`, `now_utc`, `is_fresh`, `has_data`, `last_updated_utc`, `data_age_seconds`, `last_fetch_status`, `last_fetch_error` (exception class name only), `last_fetch_duration_seconds`, `fallback_categories`, `stale_categories`, `excluded_categories`, `status_message`, `update_interval_seconds`, `process_memory`. HTTP 200 `warming_up` (no successful fetch since boot and the current fetch has run ≤10 min), HTTP 200 `healthy`, HTTP 503 `degraded` (no data, data > 30 min old, or a fetch running > 10 min).
 
 Security headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+
+The newsletter (`scripts/send_newsletter.py`) uses `composite_index` from `/api/v1/newsletter-data` (or `snapshot_composite` of the local disk cache) and sends nothing when there is no composite.
 
 ---
 
@@ -492,24 +562,33 @@ Lazy dual-backend: resolves PostgreSQL vs SQLite at connection time, not import 
 
 Tables:
 - `subscribers` (email, subscribed_at, is_active, unsubscribed_at). Unsubscribed addresses cannot be re-added from the form
-- `daily_scores` (date, score)
-- `daily_category_scores` (date, category, score). The real measurement history behind trend charts, written at most hourly via `record_daily_scores()`, fallback values excluded)
+- `daily_scores` (date, score). The composite, written only on days with no excluded weighted category
+- `daily_category_scores` (date, category, score). The real measurement history behind trend charts and the stored-score fallback, written at most hourly via `record_daily_scores()`, fallback values excluded. Also holds the shadow `geo_register` key
 - `dashboard_snapshot` (id=1, payload, updated_at). Cold-start layer, written at most hourly
 - `newsletter_sends` (send_date, email). Stops a retried cron run from emailing someone twice
+- `disruption_events` (id, title, region, corridors, severity, trade_share_pct, trade_share_basis, opened, updated, closed, evidence, rationale). The Claude register
+- `gauge_readings` (date, gauge, value). Kaub (Rhine) levels collected for later study
+
+### History rebuild (forthcoming)
+
+`scripts/rebuild_category_history.py` (Task 18, not written yet) will recompute the last 92 days of new-method category scores, and the composite where every weighted category has a value, from the real source series. It is dry-run by default (CSV + diff against stored rows; `--write` to upsert, never delete, after exporting the touched rows to `data/backups/`); writing to production needs Will's approval in chat after he has seen the dry-run CSV. Then refresh `data/fallback_snapshot_safe.json`.
 
 ---
 
-## AI (data/llm.py, data/ai_analyst.py, data/port_analyst.py)
+## AI (data/llm.py, data/ai_analyst.py, data/news_alerts.py, data/register.py, data/port_analyst.py)
 
-All Claude calls go through `data/llm.py`: model `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`), effort `ANTHROPIC_EFFORT` (default `medium`), 90s timeout, no retries, server-side fallback beta. `complete_json` uses a JSON schema output format. Every caller has a deterministic fallback when the key is missing or the call fails.
+All Claude calls go through `data/llm.py`: model `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`), effort `ANTHROPIC_EFFORT` (default `medium`), 90s timeout, no retries, server-side fallback beta. `complete_json` uses a JSON schema output format; `research_json` adds the web search tool (`AI_WEB_SEARCH=0` turns it off). Every caller has a deterministic path when the key is missing or the call fails. Claude output never feeds a category score.
 
 Call types:
-- `analyze_news_batch()`: severity + summary for up to 25 articles and the 3-bullet briefing, in one call
-- `generate_full_report()`: Markdown report for `/report` (up to 50 articles)
-- `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles plus up to 25 Claude web searches (PORT_WEB_SEARCH_MAX_USES)
-- `generate_score_explanation()`: stored as `score_explanation` in the snapshot
-- `generate_briefing()`: on-demand briefing helper, only when the cached payload has no briefing (no UI button calls it)
+- `analyze_news_batch()`: severity + summary for headlines Claude has not judged yet (up to `NEWS_AI_MAX_ARTICLES` 35 per run), every `NEWS_AI_REFRESH_SECONDS` (6 h). Earlier severities are kept; a failure keeps the cached alerts flagged stale (up to 7 days). No key → headlines unscored
+- `search_supply_chain_news()` (`data/web_news.py`): daily web search, up to `NEWS_WEB_SEARCH_MAX_USES` (8)
+- `generate_briefing()`: daily 3-bullet briefing from the top `NEWS_BRIEFING_MAX_ALERTS` (15) merged alerts; also the on-demand helper in `api/briefing.py`
+- `generate_full_report()`: daily Markdown report for `/report` (up to 50 articles). Skipped after a failed scoring call
+- `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles plus up to 25 web searches (`PORT_WEB_SEARCH_MAX_USES`). Map only
+- `run_register_cycle()`: daily disruption register with web search (`REGISTER_WEB_SEARCH_MAX_USES` 8). Score = 100 − min(100, 0.3 × Σ(severity × trade share %)) over open events, stored as `geo_register`, weight `GEO_REGISTER_WEIGHT` = 0 (shadow) until Will turns it on. No key → the stored open events are rescored, never changed
 - `generate_newsletter_briefing()`: newsletter cron
+
+The daily score explanation (`generate_score_explanation`, `score_explanation`) was removed.
 
 ---
 
@@ -517,14 +596,14 @@ Call types:
 
 ### Adding a New Provider
 
-1. Create `data/providers/my_provider.py` inheriting `BaseProvider`
+1. Create `data/providers/my_provider.py` inheriting `BaseProvider`; put fetch/parse code for a new source in `data/sources/`
 2. Set `category = "my_category"` matching a key in `CATEGORY_WEIGHTS`
-3. Implement `fetch_current()` → `tuple[float, dict]` with required metadata keys
-4. Implement `fetch_history(days)` → `pd.Series` with `DatetimeIndex`
-5. Register in `data/aggregator.py`'s `_PROVIDERS` list
-6. Add weight in `config.py` `CATEGORY_WEIGHTS` and every `INDUSTRY_PROFILES` weight set (adjust others so each sums to 1.0; `card_categories` is a config key the Terminal UI does not use)
-7. Add to `CATEGORY_LABELS`, `CATEGORY_COLORS` in `config.py`
-8. Check the category table (`components/terminal.py`) and the readout render it
+3. Implement `fetch_current()` → `tuple[float, dict]` with the required metadata keys (including `as_of`, `is_stale`, `inputs`), built from `InputReading`s and `blend_inputs`. Raise `RuntimeError` when every input is missing
+4. Implement `fetch_history(days)` → real recomputed `pd.Series` dated by publication lag
+5. Add anchors to `scripts/compute_anchors.py` and regenerate `data/score_anchors.json` (a versioned methodology change)
+6. Register in `data/aggregator.py`'s `_PROVIDERS` list
+7. In `config.py`: weight in `CATEGORY_WEIGHTS` (the industry profiles follow via `_industry_weights`), `FRESHNESS` per input, `CATEGORY_DROP_AFTER_DAYS`, `PUBLICATION_LAG_DAYS`, `CATEGORY_LABELS`, `CATEGORY_COLORS`, `INPUT_LABELS`
+8. Update `/docs` (`api/docs.py` category card and summary row), README and this file; check the category table and readout render it
 
 ### Modifying the UI
 
@@ -536,7 +615,7 @@ Call types:
 
 ### Editing Scores and Thresholds
 
-All tunable values live in `config.py`. Never put magic numbers in provider or component code.
+All tunable values live in `config.py`; generated anchors live in `data/score_anchors.json`. Never put magic numbers in provider or component code. `/docs` reads weights, freshness limits and anchor values from config at request time; its `WORST_MONTHS` labels are checked against the anchors file by `tests/docs_page_test.py`.
 
 ---
 
@@ -545,7 +624,7 @@ All tunable values live in `config.py`. Never put magic numbers in provider or c
 ### Render (primary)
 
 - Deploy from `main` branch
-- Build: `pip install -r requirements.txt`
+- Build: `pip install -r requirements.txt` (includes `openpyxl`; `vaderSentiment` is gone)
 - Start: `env -u GUNICORN_CMD_ARGS gunicorn app:server -c gunicorn.conf.py --access-logfile -` (clears Render's inherited `--preload`; see `docs/render-memory.md`)
 - Python version from `.python-version` (3.13.1)
 - Health check: `/health`
@@ -563,22 +642,35 @@ All tunable values live in `config.py`. Never put magic numbers in provider or c
 
 ## Things That Will Break If You're Not Careful
 
-- **Local runs write production**: the local `.env` `DATABASE_URL` points at the production Neon database. `python app.py`, scripts, and tests that call `init_db()` or `record_daily_scores()` write real rows. Unset `DATABASE_URL` to use SQLite.
+- **Local runs write production**: the local `.env` `DATABASE_URL` points at the production Neon database. `python app.py`, scripts, and tests that call `init_db()` or `record_daily_scores()` write real rows. Always run with `DATABASE_URL=` (SQLite) and preview with `GSC_DISABLE_BACKGROUND=1` gunicorn.
 - **Multiple Gunicorn workers** — `_DATA_CACHE` is worker-local. Each worker fetches independently and serves inconsistent data. Always use 1 worker.
 - **Blocking the main thread** — callbacks must read from cache only. Any API call in a callback will hang the page.
-- **Weights not summing to 1.0** — engine raises `ValueError`. No silent failure, but tests won't catch it if you forget.
+- **Weights not summing to 1.0** — engine raises `ValueError`; `config.py` raises at import for a bad profile. Renormalize explicitly on exclusion, never inside the engine.
+- **Returning a neutral constant** — a provider with no usable input must raise `RuntimeError`. The old 50/85 fallbacks and `DEFAULT_FALLBACK_SCORES` are gone; don't bring them back.
+- **Empty or reshaped 200 responses** — a renamed column, missing sheet or empty feature list must make the input missing, never score 0 or 100.
+- **Monthly dates** — FRED dates months on the 1st. Measure age from `period_end()`, or August data looks a month older than it is.
+- **Anchors are frozen** — don't rerun `compute_anchors.py` and commit casually; it changes every historical score. Re-anchoring is a deliberate, versioned methodology change.
+- **Missing anchor** — `get_anchor()` must raise `RuntimeError("no anchor for <key>")` at fetch time, never `KeyError` at import.
+- **Yahoo quotes** — live values only via `markets.scale_live` (or the guarded TTF path). A quote older than the official date or a ratio outside 0.5–2.0 must fall back to the official value.
 - **Writing cache files directly** — bypasses atomic write protection. Use `data/cache.py` helpers.
 - **Forgetting `aligned.iloc[-1] = current_score`** — sparklines will show yesterday's value as today. Always force the last point.
 - **Not bumping cache key version** — old schema data will be deserialized into new code. Bump the version suffix when changing what's cached.
-- **Geopolitical score direction**: only negative news reduces the score (from base 100). Don't add positive sentiment boosts. The same applies to the tariff nowcast, which may only lower the tariffs score.
+- **News in the score** — headlines are display only. Don't feed headline severity or sentiment into any category, and don't reintroduce VADER.
+- **Register weight** — `GEO_REGISTER_WEIGHT` stays 0 until Will decides after the shadow comparison.
 - **Provider return type** — must return `tuple[float, dict]`, not bare `float`. The aggregator handles both for legacy reasons but new providers should always use the tuple.
-- **Never fabricate history** — `fetch_history()` must return only real measurements (stored daily scores or the actual source series). No proxy series level-shifted to match the current score, no backfilling leading NaNs with today's value. Short series render as gaps; that is correct.
-- **Don't put WEI back in the supply chain score** — WEI is a GDP-growth nowcast; high growth coincides with supply chain stress (2021), so it has no defensible sign in a linear health blend. Context only.
+- **Never fabricate history** — `fetch_history()` must return only real measurements (stored daily scores or values recomputed from the actual source series). No proxy series level-shifted to match the current score, no backfilling leading NaNs with today's value. Short series render as gaps; that is correct.
+- **Composite readers** — use `snapshot_composite(data)`; never recompute from `current_scores`, which lacks excluded categories.
+- **Don't put WEI or BDRY back in the supply chain score** — WEI is a GDP-growth nowcast with no defensible sign (high growth coincided with the 2021 stress peak); BDRY double-counts the Baltic Dry Index inside GSCPI. Context only.
+- **PortWatch credit** — "Sources: UN Global Platform; IMF PortWatch" must appear wherever its data does, and the API must stay free.
 - **Paid tests**: `RUN_LIVE_CLAUDE=1` makes billed Claude calls and writes the cache.
 
 ## Known Inconsistencies
 
-- ~~Some providers use hardcoded fallback scores~~ — now configurable via `DEFAULT_FALLBACK_SCORES` in `config.py`.
-- `_KEY_MIGRATIONS` in app.py maps legacy category names ("ports"→"supply_chain", "shipping"→"trucking"). `trucking` is no longer a category, so the second mapping is dead. This should live in a migration module.
-- The `supply_chain.py` module docstring says `GSCPI * 25`; the code uses `GSCPI_SCORE_SCALE` (12.5).
-- ~~Weather provider has 14 hubs hardcoded~~ — now derived from `ports_data.MAJOR_PORTS` (37 ports).
+- `_KEY_MIGRATIONS` in app.py still maps the legacy category name "ports" → "supply_chain". This should live in a migration module.
+- The industry adapters (`ChipFabUtilProvider`, `AeroMetalsProvider`) still use percentile scoring (aerospace on a rolling 2-year window) and return their own neutral 50 on failure; they are rebuilt in project 3. `FRED_SCORE_LOOKBACK_DAYS` and the percentile helpers in `fred_client.py` survive only for them.
+- `data/port_analyst.aggregate_disruption_score()` is no longer called (the port-disruption blend into geopolitical was removed); only a test uses it.
+- `index_history` does not renormalize past days under an exclusion, so the sparkline's previous point can differ from "yesterday" in the readout on degraded days.
+- A failed category's stored-score fallback age is measured from the date the score was stored, not from its data's as-of date.
+- The St. Louis gauge threshold is statistical (10th percentile), not an official navigation stage, and the waterway record lows are not cut at 2025 like the other anchors.
+- Gatun Lake stays a scored input although the Panama Canal Authority page asks for written consent before redistribution; the site shows only the derived score and latest level. Will to decide.
+- `tests/check_fred_gpr.py` is a stale manual script, not a test.

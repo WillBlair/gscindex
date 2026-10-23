@@ -1,12 +1,22 @@
 """
-Documentation Page
-==================
-Serves the highly visual, structured documentation for the Global Supply Chain Index
-as a clean, standalone HTML page at /docs.
+Methodology Page
+================
+Serves the Global Supply Chain Index methodology (v2) as a standalone page at /docs.
+
+Weights, freshness limits and anchor values are read from ``config`` (and through it
+``data/score_anchors.json``) when the page is requested, so the page cannot drift from
+the numbers the providers use. The prose around them is fixed text.
 """
+from __future__ import annotations
+
+import math
+from datetime import date
+
 from flask import Blueprint, render_template_string
 import markdown
 from markupsafe import Markup
+
+import config
 
 docs_bp = Blueprint("docs", __name__)
 
@@ -16,7 +26,7 @@ _DOCS_TEMPLATE = """
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Platform Documentation — GSC Index</title>
+    <title>Methodology | GSC Index</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -111,7 +121,7 @@ _DOCS_TEMPLATE = """
         .prose strong { color: #F2F4F7; font-weight: 600; }
 
         /* ── Card grids: panes separated by 1px rules ─────────── */
-        .grid-3, .grid-2 {
+        .grid-3, .grid-2, .grid-1 {
             display: grid;
             gap: 1px;
             background: #1D232B;
@@ -120,6 +130,7 @@ _DOCS_TEMPLATE = """
         }
         .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .grid-1 { grid-template-columns: minmax(0, 1fr); }
 
         .p-card {
             background: #07090C;
@@ -266,10 +277,11 @@ _DOCS_TEMPLATE = """
         /* ── Phones ───────────────────────────────────────────── */
         @media (max-width: 760px) {
             .docs-container { margin: 0; border: 0; border-bottom: 1px solid #1D232B; padding: 20px 16px 28px; }
-            .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr); }
+            .grid-3, .grid-2, .grid-1 { grid-template-columns: minmax(0, 1fr); }
             .math-block code { font-size: 13px; }
             .prose table { display: block; overflow-x: auto; }
             .prose { overflow-wrap: anywhere; }
+            .prose th, .prose td { overflow-wrap: normal; min-width: 64px; }
         }
     </style>
 </head>
@@ -281,13 +293,13 @@ _DOCS_TEMPLATE = """
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
             Back to Dashboard
         </a>
-        <span class="topbar-tag">v2.0 &middot; Live</span>
+        <span class="topbar-tag">Methodology v{{ version }}</span>
     </nav>
 
     <!-- Content -->
     <main class="docs-container">
         <header class="docs-header">
-            <h1 class="docs-title">Documentation</h1>
+            <h1 class="docs-title">Methodology</h1>
         </header>
 
         <div class="prose">
@@ -304,201 +316,610 @@ _DOCS_TEMPLATE = """
 </html>
 """
 
+# ---------------------------------------------------------------------------
+# Numbers read from config at request time
+# ---------------------------------------------------------------------------
+
+# Month of each input's in-sample zero point, as recorded in data/score_anchors.json
+# ("worst_basis"). tests/docs_page_test.py checks they agree with the file. The tariff
+# burden's zero point is a cited 1933 reference, described in the text.
+WORST_MONTHS: dict[str, date] = {
+    "gscpi": date(2021, 12, 1),
+    "brent": date(2008, 6, 1),
+    "ulsd": date(2008, 6, 1),
+    "ttf": date(2022, 8, 1),
+    "copper": date(2011, 2, 1),
+    "aluminum": date(2006, 5, 1),
+    "tpu": date(2025, 4, 1),
+    "gpr": date(2001, 10, 1),
+    "tsifrght": date(2009, 4, 1),
+    "rail_volume": date(2009, 5, 1),
+    "prices_paid": date(2021, 11, 1),
+}
+
+# How each input's anchor values are shown, in the units readers know (anchors are stored
+# on the transformed scale: log real prices, log index levels, YoY %, z-scores).
+_ANCHOR_FORMATS = {
+    "gscpi": lambda v: f"{v:+.2f}",
+    "brent": lambda v: f"${math.exp(v):.0f}/bbl",
+    "ulsd": lambda v: f"${math.exp(v):.2f}/gal",
+    "ttf": lambda v: f"${math.exp(v):.2f}/MMBtu",
+    "copper": lambda v: f"${math.exp(v):,.0f}/t",
+    "aluminum": lambda v: f"${math.exp(v):,.0f}/t",
+    "tariff_burden": lambda v: f"{v:.1f}%",
+    "tpu": lambda v: f"{math.exp(v):,.0f}",
+    "gpr": lambda v: f"{math.exp(v):,.0f}",
+    "tsifrght": lambda v: f"{v:+.1f}%",
+    "rail_volume": lambda v: f"{v:+.1f}%",
+    "prices_paid": lambda v: f"z {v:+.2f}",
+}
+
+# Category table: what each category measures and its main sources.
+_CATEGORY_SUMMARY = {
+    "supply_chain": ("Global supply chain pressure", "NY Fed GSCPI"),
+    "chokepoints": ("Ship traffic through eight maritime chokepoints", "IMF PortWatch"),
+    "energy": ("Real prices of Brent crude, diesel and European gas", "EIA and IMF via FRED, live futures"),
+    "tariffs": ("Customs duties as a share of imports, and trade policy uncertainty",
+                "U.S. Treasury, Census via FRED, Caldara et al."),
+    "geopolitical": ("Newspaper coverage of geopolitical threats and acts", "Caldara-Iacoviello GPR"),
+    "freight": ("Year-over-year growth in US freight and rail volume", "BTS, STB"),
+    "inputs": ("Manufacturers' prices paid, real copper and aluminum prices",
+               "Philadelphia, New York and Dallas Feds, IMF, live futures"),
+    "physical": ("Natural hazards near major ports, Panama Canal and Mississippi River water levels",
+                 "GDACS, Panama Canal Authority, USGS"),
+}
+# Categories built from events rather than anchored levels: a normal day reads about 100.
+_EVENT_CATEGORIES = ("chokepoints", "physical")
+_CORRIDOR_NAMES = {"Taiwan": "Taiwan Strait", "RedSea": "Red Sea"}
+
+_UNAVAILABLE = "the anchor file is not loaded on this server"
+
+
+def _anchor(key: str) -> dict | None:
+    try:
+        anchor = config.SCORE_ANCHORS["inputs"][key]
+        return anchor if all(k in anchor for k in ("best", "normal", "worst", "direction")) else None
+    except (KeyError, TypeError):
+        return None
+
+
+def _anchors(key: str, label: str = "", when_note: str = "") -> str:
+    """'100 at X or lower, 80 at Y, 0 at Z (Mon YYYY)' for one input."""
+    anchor = _anchor(key)
+    prefix = f"{label} " if label else ""
+    if anchor is None:
+        return f"{prefix}anchors unavailable ({_UNAVAILABLE})"
+    fmt = _ANCHOR_FORMATS[key]
+    better = "or lower" if anchor["direction"] == "lower_better" else "or higher"
+    month = WORST_MONTHS.get(key)
+    when = f" ({when_note}{month:%b %Y})" if month else ""
+    return (f"{prefix}100 at {fmt(anchor['best'])} {better}, 80 at {fmt(anchor['normal'])}, "
+            f"0 at {fmt(anchor['worst'])}{when}")
+
+
+def _pct(weight: float) -> str:
+    return f"{round(weight * 100)}%"
+
+
+def _fresh(key: str) -> str:
+    stale, drop = config.FRESHNESS[key]
+    return f"stale after {stale} days, dropped after {drop}"
+
+
+def _category_rows() -> str:
+    rows = ["| Category | Weight | What it measures | Main sources |", "|:---|:---|:---|:---|"]
+    for cat, weight in config.CATEGORY_WEIGHTS.items():
+        measures, sources = _CATEGORY_SUMMARY.get(cat, ("", ""))
+        rows.append(f"| **{config.CATEGORY_LABELS.get(cat, cat)}** | {_pct(weight)} | {measures} | {sources} |")
+    return "\n".join(rows)
+
+
+def _cpi_dollars() -> str:
+    try:
+        ref = date.fromisoformat(str(config.SCORE_ANCHORS["cpi_reference"]["date"])[:10])
+        return f"{ref:%B %Y} dollars"
+    except (KeyError, TypeError, ValueError):
+        return "dollars of the CPI reference month"
+
+
+def _chokepoint_text() -> tuple[str, str]:
+    """Tonnage weights and the single-closure examples, from the anchors file."""
+    weights = config.SCORE_ANCHORS.get("chokepoint_weights") if isinstance(config.SCORE_ANCHORS, dict) else None
+    if not isinstance(weights, dict) or not weights:
+        return f"Tonnage weights are unavailable ({_UNAVAILABLE}).", ""
+    ordered = sorted(weights.items(), key=lambda kv: -kv[1])
+    listing = ", ".join(f"{_CORRIDOR_NAMES.get(name, name)} {_pct(w)}" for name, w in ordered)
+    severity = config.CHOKEPOINT_SEVERITY * 100
+    examples = [f"{name} alone takes the score to about {max(0.0, 100 - severity * weights[name]):.0f}"
+                for name in ("Hormuz", "Malacca") if name in weights]
+    closure = ("Closing " + ", and closing ".join(examples) + ".") if examples else ""
+    return f"Tonnage weights: {listing}.", closure
+
+
+def _waterway_text() -> tuple[str, str]:
+    waterways = config.SCORE_ANCHORS.get("waterways") if isinstance(config.SCORE_ANCHORS, dict) else None
+    full = f"{config.GATUN_FULL_DRAFT_FT:.0f} ft"
+    try:
+        gatun_low = float(waterways["gatun_record_low"])
+        gatun_day = date.fromisoformat(str(waterways["gatun_record_low_date"]))
+        river_low = float(waterways["mississippi_record_low"])
+        river_day = date.fromisoformat(str(waterways["mississippi_record_low_date"]))
+        threshold = float(waterways["mississippi_threshold"])
+    except (KeyError, TypeError, ValueError):
+        return (f"Gatun Lake: 100 at {full} or above, 0 at the record low.",
+                "Mississippi: 100 at or above the gauge's 10th-percentile stage, 0 at the record low.")
+    gatun = (f"Gatun Lake: 100 at {full} or above (the level the Panama Canal needs for the full "
+             f"50 ft draft), falling in a straight line to 0 at the record low, {gatun_low:.2f} ft "
+             f"({gatun_day:%b %Y}).")
+    river = (f"Mississippi at St. Louis: 100 at {threshold:.2f} ft or above, falling in a straight line "
+             f"to 0 at the record low, {river_low:.2f} ft ({river_day:%b %Y}). {threshold:.2f} ft is the "
+             "gauge's 10th-percentile daily stage since 1982, because no official low-water stage for "
+             "St. Louis was found.")
+    return gatun, river
+
+
+def _burden_reference() -> str:
+    anchor = _anchor("tariff_burden")
+    if anchor is None:
+        return ""
+    text = (f"0 at {anchor['worst']:.1f}%: duties as a share of imports in 1933, the peak under the "
+            "Smoot-Hawley Tariff Act (USITC). It is a historical reference because the record in this "
+            "data is the current period")
+    in_sample, month = anchor.get("in_sample_worst"), anchor.get("in_sample_worst_month")
+    if isinstance(in_sample, (int, float)) and month:
+        try:
+            text += f" (the highest reading is {in_sample:.1f}% in {date.fromisoformat(month + '-01'):%b %Y})"
+        except ValueError:
+            pass
+    return text + "."
+
+
+def _burden_anchors() -> str:
+    anchor = _anchor("tariff_burden")
+    if anchor is None:
+        return f"Burden anchors unavailable ({_UNAVAILABLE})."
+    try:
+        first, last = (date.fromisoformat(m + "-01") for m in str(anchor["baseline"]).split(" (")[0].split(" to "))
+        period = f"{first:%b %Y} to {last:%b %Y}"
+    except (KeyError, ValueError):
+        period = "the years before 2018"
+    return (f"Burden 100 at {anchor['best']:.1f}% or lower, 80 at {anchor['normal']:.1f}% "
+            f"(the median for {period}), " + _burden_reference())
+
+
+def _docs_values() -> dict[str, str]:
+    weights = config.CATEGORY_WEIGHTS
+    normal = sum(w * (100 if cat in _EVENT_CATEGORIES else 80) for cat, w in weights.items())
+    weights_text, closure_text = _chokepoint_text()
+    gatun_text, river_text = _waterway_text()
+    radius = config.HAZARD_RADIUS_KM
+    drop = config.CATEGORY_DROP_AFTER_DAYS
+    return {
+        "category_rows": _category_rows(),
+        "normal_composite": f"{normal:.0f}",
+        "cpi_dollars": _cpi_dollars(),
+        **{f"w_{cat}": _pct(w) for cat, w in weights.items()},
+        **{f"drop_{cat}": str(days) for cat, days in drop.items()},
+        **{f"fresh_{key}": _fresh(key) for key in config.FRESHNESS},
+        "lag_gscpi": str(config.PUBLICATION_LAG_DAYS["gscpi"]),
+        "lag_chokepoint": str(config.PUBLICATION_LAG_DAYS["chokepoint_flow"]),
+        "lag_tsifrght": str(config.PUBLICATION_LAG_DAYS["tsifrght"]),
+        "lag_rail": str(config.PUBLICATION_LAG_DAYS["rail_volume"]),
+        "lag_imf": str(config.PUBLICATION_LAG_DAYS["imf_monthly"]),
+        "lag_bopgimp": str(config.PUBLICATION_LAG_DAYS["bopgimp"]),
+        "a_gscpi": _anchors("gscpi"),
+        "a_brent": _anchors("brent", "Brent"),
+        "a_ulsd": _anchors("ulsd", "Diesel"),
+        "a_ttf": _anchors("ttf", "Gas"),
+        "a_burden": _burden_anchors(),
+        "a_tpu": _anchors("tpu", "Uncertainty", "30-day mean, "),
+        "a_gpr": _anchors("gpr"),
+        "a_tsifrght": _anchors("tsifrght", "Freight TSI"),
+        "a_rail": _anchors("rail_volume", "Rail"),
+        "a_prices_paid": _anchors("prices_paid", "Prices paid"),
+        "a_copper": _anchors("copper", "Copper"),
+        "a_aluminum": _anchors("aluminum", "Aluminum"),
+        "deadband": _pct(config.CHOKEPOINT_DEADBAND),
+        "deadband_ratio": f"{config.CHOKEPOINT_DEADBAND:.2f}",
+        "severity": f"{config.CHOKEPOINT_SEVERITY * 100:.0f}",
+        "corridor_weights": weights_text,
+        "closure_examples": closure_text,
+        "ew_brent": _pct(config.ENERGY_LEG_WEIGHTS["brent"]),
+        "ew_ulsd": _pct(config.ENERGY_LEG_WEIGHTS["ulsd"]),
+        "ew_ttf": _pct(config.ENERGY_LEG_WEIGHTS["ttf"]),
+        "spike_start": _pct(config.ENERGY_SPIKE["start"]),
+        "spike_full": _pct(config.ENERGY_SPIKE["full"]),
+        "spike_points": f"{config.ENERGY_SPIKE['max_points']:.0f}",
+        "ratio_low": f"{config.LIVE_SCALE_RATIO_BOUNDS[0]:g}",
+        "ratio_high": f"{config.LIVE_SCALE_RATIO_BOUNDS[1]:g}",
+        "tw_burden": _pct(config.TARIFF_WEIGHTS["tariff_burden"]),
+        "tw_tpu": _pct(config.TARIFF_WEIGHTS["tpu"]),
+        "burden_months": str(config.TARIFF_BURDEN_MONTHS),
+        "tpu_days": str(config.TPU_MEAN_DAYS),
+        "gpr_days": str(config.GPR_MEAN_DAYS),
+        "register_weight": _pct(config.GEO_REGISTER_WEIGHT),
+        "register_factor": f"{config.REGISTER_SCORE_FACTOR:g}",
+        "fw_tsi": _pct(config.FREIGHT_WEIGHTS["tsifrght"]),
+        "fw_rail": _pct(config.FREIGHT_WEIGHTS["rail_volume"]),
+        "rail_weeks": str(config.RAIL_MEAN_WEEKS),
+        "iw_pp": _pct(config.INPUT_WEIGHTS["prices_paid"]),
+        "iw_copper": _pct(config.INPUT_WEIGHTS["copper"]),
+        "iw_aluminum": _pct(config.INPUT_WEIGHTS["aluminum"]),
+        "pw_hazards": _pct(config.PHYSICAL_WEIGHTS["hazards"]),
+        "pw_gatun": _pct(config.PHYSICAL_WEIGHTS["gatun"]),
+        "pw_river": _pct(config.PHYSICAL_WEIGHTS["mississippi"]),
+        "hazard_scale": f"{config.HAZARD_SCALE:,.0f}",
+        "r_tc": f"{radius['TC']:.0f}", "r_fl": f"{radius['FL']:.0f}",
+        "r_eq": f"{radius['EQ']:.0f}", "r_vo": f"{radius['VO']:.0f}",
+        "orange_points": f"{config.HAZARD_LEVEL_POINTS['Orange']:g}",
+        "red_points": f"{config.HAZARD_LEVEL_POINTS['Red']:g}",
+        "gatun_text": gatun_text,
+        "river_text": river_text,
+        "news_hours": f"{config.NEWS_AI_REFRESH_SECONDS / 3600:g}",
+        "briefing_alerts": str(config.NEWS_BRIEFING_MAX_ALERTS),
+        "news_max_days": f"{config.NEWS_CACHE_MAX_AGE_SECONDS / 86400:g}",
+        "retry_minutes": f"{config.AI_FAILURE_RETRY_SECONDS / 60:g}",
+        "port_penalty_max": f"{config.PORT_PENALTY_MAX:g}",
+        "timeout": f"{config.PROVIDER_TIMEOUT_SECONDS:g}",
+        "timeout_long": f"{max(config.PROVIDER_TIMEOUT_OVERRIDES.values()):g}",
+    }
+
+
+def _step(num: int, label: str, text: str) -> str:
+    return (f'<div class="step-item"><div class="step-num">{num}</div><div class="step-text">'
+            f'<strong>{label}:</strong> {text}</div></div>')
+
+
+def _card(title: str, badge: str, steps: list[tuple[str, str]]) -> str:
+    body = "\n".join(_step(i, label, text) for i, (label, text) in enumerate(steps, 1))
+    return (f'<div class="p-card">\n<h3>{title} <span class="card-badge">{badge}</span></h3>\n'
+            f'<div class="step-list">\n{body}\n</div>\n</div>')
+
+
+def _category_cards(v: dict[str, str]) -> str:
+    """One card per weighted category: sources, measure, score, anchors, updates."""
+    label = lambda cat: config.CATEGORY_LABELS[cat].replace("&", "&amp;")
+    cards = {
+        "supply_chain": [
+            ("Source", "Federal Reserve Bank of New York, Global Supply Chain Pressure Index "
+                       '(<span class="code-inline">GSCPI</span>), monthly.'),
+            ("Measures", "Transport costs and supplier delivery times across major economies, combined "
+                         "into one z-score where 0 is the historical average. Higher means more pressure."),
+            ("Score", "The latest GSCPI on the anchored scale, lower is better. Baseline 1998 to 2019."),
+            ("Anchors", v["a_gscpi"] + "."),
+            ("Updates", f"Published about {v['lag_gscpi']} days after the month ends. "
+                        f"GSCPI is {v['fresh_gscpi']}."),
+        ],
+        "chokepoints": [
+            ("Source", "IMF PortWatch daily ship transits, counted from satellite AIS signals. "
+                       "Sources: UN Global Platform; IMF PortWatch."),
+            ("Measures", "Traffic through Malacca, the Taiwan Strait, Gibraltar, Hormuz, Dover, the Red Sea "
+                         "(the worse of Bab el-Mandeb and Suez), the Bosporus and Panama. Cape of Good Hope "
+                         "is shown for context only, because its traffic rises when ships reroute."),
+            ("Score", "For each corridor, the 7-day average of daily transits divided by the average for "
+                      "the same calendar month in January 2022 to October 2023. Traffic at "
+                      f"{v['deadband']} of normal or above costs nothing. Below that: "
+                      f'<span class="highlight-blue">Score = 100 &minus; {v["severity"]} &times; '
+                      f"&Sigma;(weight &times; (1 &minus; min(ratio / {v['deadband_ratio']}, 1)))</span>, "
+                      f"clipped to 0 to 100. {v['corridor_weights']}"),
+            ("Anchors", f"There is no 80 point: a normal week scores 100. {v['closure_examples']}"),
+            ("Updates", f"PortWatch publishes about {v['lag_chokepoint']} days after the date it covers. "
+                        f"Transits are {v['fresh_chokepoint_flow']}."),
+        ],
+        "energy": [
+            ("Sources", "EIA spot prices on FRED: Brent crude (<span class=\"code-inline\">DCOILBRENTEU</span>) "
+                        "and New York Harbor ultra-low-sulfur diesel (<span class=\"code-inline\">DDFUELNYH</span>). "
+                        "European TTF gas from IMF Primary Commodity Prices "
+                        "(<span class=\"code-inline\">PNGASEUUSDM</span>). Live futures through Yahoo Finance: "
+                        "Brent (BZ=F), heating oil (HO=F) and TTF (TTF=F)."),
+            ("Measures", "Fuel cost pressure. Low prices score high even when they come from weak demand."),
+            ("Score", f"Each price is adjusted to {v['cpi_dollars']}, put on a log scale and anchored. "
+                      f"Weights: Brent {v['ew_brent']}, diesel {v['ew_ulsd']}, gas {v['ew_ttf']}. A leg whose "
+                      f"real price rose more than {v['spike_start']} in 3 months loses up to "
+                      f"{v['spike_points']} points (the full {v['spike_points']} at a rise of {v['spike_full']} or more), "
+                      "weighted like the leg. Between official prints the latest official price is moved by "
+                      "the futures change since that date. If the futures quote is older than the official "
+                      f"price, or the change is outside {v['ratio_low']}x to {v['ratio_high']}x, the official "
+                      "price is used and the hover text says so."),
+            ("Anchors", f"{v['a_brent']}. {v['a_ulsd']}. {v['a_ttf']}. Baseline 1990 to 2019 (gas 1992 to 2019)."),
+            ("Updates", "EIA spot prices on FRED update weekly; futures move the score during trading hours. "
+                        f"Brent, diesel and live gas are {v['fresh_brent']}. The monthly gas price, used when "
+                        f"the live quote fails, is {v['fresh_ttf_monthly']}."),
+        ],
+        "tariffs": [
+            ("Sources", "Customs duty deposits from the U.S. Treasury Daily Treasury Statement. US goods "
+                        "imports from the Census Bureau through FRED (<span class=\"code-inline\">BOPGIMP</span>). "
+                        "The daily Trade Policy Uncertainty index by Caldara, Iacoviello, Molligo, Prestipino "
+                        "and Raffo."),
+            ("Measures", "What tariffs cost importers, and how uncertain trade policy is."),
+            ("Score", f"{v['tw_burden']} tariff burden plus {v['tw_tpu']} trade policy uncertainty. Burden = "
+                      f"customs deposits / goods imports, each summed over {v['burden_months']} months. Duties "
+                      "are mostly paid the month after the goods arrive, so deposits for month m+1 are "
+                      "paired with imports for month m. Deposits are counted before any IEEPA tariff "
+                      f"refunds. Uncertainty is the {v['tpu_days']}-day mean of the daily index on a log "
+                      "scale, anchored on the monthly index for 1985 to 2019."),
+            ("Anchors", f"{v['a_burden']} {v['a_tpu']}."),
+            ("Updates", "Treasury publishes deposits the next business day. Imports come about "
+                        f"{v['lag_bopgimp']} days after the month ends, so a month's burden is ready about five "
+                        f"weeks after it ends. The burden is {v['fresh_tariff_burden']}; uncertainty is "
+                        f"{v['fresh_tpu']}."),
+        ],
+        "geopolitical": [
+            ("Source", "Caldara-Iacoviello daily Geopolitical Risk (GPR) index."),
+            ("Measures", "The share of newspaper articles about geopolitical threats and acts: wars, "
+                         "terrorism, military buildups. 100 is the 1985 to 2019 average."),
+            ("Score", f"The {v['gpr_days']}-day mean of the daily index on a log scale, anchored on the "
+                      "monthly index for 1985 to 2019. Headlines do not affect this score."),
+            ("Anchors", v["a_gpr"] + ", the record month."),
+            ("Updates", f"The file is updated about weekly. GPR is {v['fresh_gpr']}. A disruption register "
+                        f"kept by Claude is stored daily at {v['register_weight']} weight (see below)."),
+        ],
+        "freight": [
+            ("Sources", "Bureau of Transportation Statistics Freight Transportation Services Index "
+                        "(<span class=\"code-inline\">TSIFRGHT</span>), monthly. Surface Transportation Board "
+                        "weekly rail carloads (EP 724) through USDA AgTransport."),
+            ("Measures", "How much freight is moving in the US, as year-over-year growth. A contraction "
+                         "scores low. Congestion and cost are measured elsewhere."),
+            ("Score", f"{v['fw_tsi']} TSIFRGHT growth plus {v['fw_rail']} rail growth. Rail is originated "
+                      f"carloads plus intermodal containers and trailers, the {v['rail_weeks']}-week average "
+                      "against the same weeks a year earlier. The weekly STB series starts in 2017, so the "
+                      "rail anchors come from BTS monthly rail carloads plus intermodal units on FRED "
+                      "(RAILFRTCARLOADSD11 and RAILFRTINTERMODALD11), 2001 to 2019."),
+            ("Anchors", f"{v['a_tsifrght']}. {v['a_rail']}. Baseline 2001 to 2019."),
+            ("Updates", f"TSIFRGHT comes about {v['lag_tsifrght']} days after the month ends; rail about "
+                        f"{v['lag_rail']} days after the week ends. TSIFRGHT is {v['fresh_tsifrght']}; rail is "
+                        f"{v['fresh_rail_volume']}."),
+        ],
+        "inputs": [
+            ("Sources", "Manufacturing prices-paid indexes from the Federal Reserve Banks of Philadelphia, "
+                        "New York (Empire State) and Dallas, through FRED. IMF Primary Commodity Prices for "
+                        "copper and aluminum (<span class=\"code-inline\">PCOPPUSDM</span>, "
+                        "<span class=\"code-inline\">PALUMUSDM</span>). Live copper (HG=F) and aluminum (ALI=F) "
+                        "futures through Yahoo Finance."),
+            ("Measures", "What manufacturers pay for their inputs. Low prices score high even when they come "
+                         "from weak demand."),
+            ("Score", f"{v['iw_pp']} prices paid, {v['iw_copper']} copper, {v['iw_aluminum']} aluminum. Each "
+                      "survey becomes a z-score against its own 2004 to 2019 mean and standard deviation, and "
+                      "the surveys that reported that month are averaged. Metals are adjusted to "
+                      f"{v['cpi_dollars']}, logged and anchored; live futures move the latest monthly price "
+                      "the same way as in energy. Supplier delivery times are shown for context only."),
+            ("Anchors", f"{v['a_prices_paid']}. {v['a_copper']}. {v['a_aluminum']}. Metals baseline 1992 to 2019."),
+            ("Updates", "The surveys come out during the month they cover; IMF prices about "
+                        f"{v['lag_imf']} days after the month ends. Surveys are {v['fresh_prices_paid']}. Live "
+                        f"metals are {v['fresh_copper']}; the monthly fallback is {v['fresh_copper_monthly']}."),
+        ],
+        "physical": [
+            ("Sources", "GDACS (Global Disaster Alert and Coordination System) alerts. Panama Canal Authority "
+                        "Gatun Lake level. USGS gauge 07010000, Mississippi River at St. Louis."),
+            ("Measures", "Natural events that stop ships near major ports, and low water on two waterways "
+                         "that carry bulk cargo."),
+            ("Score", f"{v['pw_hazards']} hazards, {v['pw_gatun']} Gatun Lake, {v['pw_river']} Mississippi. "
+                      "Each Orange or Red GDACS alert for a tropical cyclone, flood, earthquake or volcano "
+                      f"whose center is within {v['r_tc']}, {v['r_fl']}, {v['r_eq']} or {v['r_vo']} km of one "
+                      f"of the 37 ports costs {v['hazard_scale']} &times; the port's share of world port calls "
+                      f"&times; {v['orange_points']} (Orange) or {v['red_points']} (Red) points; the hazard score is 100 "
+                      "minus the total, floored at 0. The cyclone radius is "
+                      "our judgment, because GDACS gives only the storm's center."),
+            ("Anchors", "There is no 80 point: a quiet day scores 100. One Red alert over a median top-10 "
+                        f"port costs about 50 hazard points. {v['gatun_text']} {v['river_text']}"),
+            ("Updates", f"Daily. Each input is {v['fresh_hazards']}. The Rhine gauge at Kaub is recorded but "
+                        "not scored until it has a year of history."),
+        ],
+    }
+    return "\n".join(_card(label(cat), v[f"w_{cat}"], cards[cat]) for cat in config.CATEGORY_WEIGHTS)
+
+
 _DOCS_MARKDOWN = """
-<div class="section-heading"><span class="section-num">1.</span><h2>System Architecture</h2></div>
+<div class="section-heading"><span class="section-num">1.</span><h2>How the index is calculated</h2></div>
 <hr class="section-rule">
-<p>A daemon thread fetches data from the 6 category providers (plus 2 industry-profile providers) in parallel every 5 minutes. Anthropic's Claude API scores news severity and summarizes port conditions about once a day. Daily scores and the latest snapshot are saved to a Neon PostgreSQL database, and the snapshot is cached as JSON for instant page loads.</p>
+<p>The Global Supply Chain Index is a weighted average of eight category scores. Each category runs from 0 to 100, where <strong>100 is healthiest</strong>. The site recalculates every 5 minutes. Most sources publish daily, weekly or monthly, so a category moves only when its source does.</p>
 
-<div class="mermaid">
-flowchart LR
-    style A fill:#111827,stroke:#374151,color:#9ca3af
-    style B fill:#111827,stroke:#374151,color:#9ca3af
-    style C fill:#111827,stroke:#374151,color:#9ca3af
-    style D fill:#111827,stroke:#374151,color:#9ca3af
-    style E fill:#1a1d26,stroke:#4f46e5,stroke-width:2px,color:#e5e7eb
-    style F fill:#1a1d26,stroke:#a78bfa,stroke-width:2px,color:#e5e7eb
-    style G fill:#1a1d26,stroke:#f87171,stroke-width:2px,color:#e5e7eb
-    style H fill:#1a1d26,stroke:#34d399,stroke-width:2px,color:#e5e7eb
-
-    A["FRED + NY Fed<br>(GSCPI · EPUTRADE · TSI · Diesel)"] --> E
-    B["Open-Meteo<br>(37 Ports)"] --> E
-    C["Yahoo Finance<br>(CL=F · BDRY · IYT)"] --> E
-    D["RSS Feeds<br>(17 Feeds)"] --> E
-    
-    E["Background Thread<br>Parallel Aggregator"] --> F["Claude Sonnet<br>News + Port Analyst"]
-    F --> G["Neon Postgres<br>Daily Scores"]
-    E --> H["Dash UI<br>Live Dashboard"]
-</div>
-
-<div class="section-heading"><span class="section-num">2.</span><h2>Data Providers</h2></div>
-<hr class="section-rule">
-<p>Six providers fetch and normalize data from independent sources. Each produces a 0–100 category score where <strong>100 = healthiest</strong>. Monthly sources are blended with a daily proxy so scores move between releases. If a proxy fails, the monthly source is used alone.</p>
-
-<div class="grid-2">
-    <div class="p-card">
-        <h3>Supply Chain Pressure <span class="card-badge">25%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> NY Fed Global Supply Chain Pressure Index (<span class="code-inline">GSCPI</span>, monthly), blended with a daily dry-bulk freight-rate proxy (<span class="code-inline">BDRY</span>).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> GSCPI is a z-score built from transport costs and PMI delivery-time and backlog components. 0 is average pressure. The NY Fed Weekly Economic Index (WEI) is shown for context only and is not scored.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> <span class="highlight-blue">Score = 50 − (GSCPI × 12.5)</span>, clipped to 0–100, then blended 70/30 with BDRY scored by inverse percentile over the trailing 2 years.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
-        <h3>Energy &amp; Fuel <span class="card-badge">20%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Live WTI Crude futures (<span class="code-inline">CL=F</span>) plus DOE retail diesel (<span class="code-inline">GASDESW</span>) via FRED.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Baseline:</strong> Each leg scored against its trailing 2-year FRED distribution.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Average of the two inverse percentiles — <span class="highlight-amber">cheaper fuel = higher score</span>. Crude and diesel are blended into one gauge to avoid double-weighting the oil complex.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
-        <h3>Geopolitical Risk <span class="card-badge">20%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> 17 RSS feeds (FreightWaves, gCaptain, Supply Chain Dive, WTO, NOAA hurricane alerts, and more).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Analysis:</strong> Claude Sonnet scores each article's severity (<span class="highlight-red">-10 to +10</span>). VADER sentiment is the fallback, and re-scores alerts hourly between Claude runs.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Starts at 100 and deducts the 10 most severe negative articles (duplicates removed), with a maximum deduction of 60. That result is blended 85/15 with an AI port-disruption score (100 − 2 × the average port penalty). Positive news never raises the score.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
-        <h3>Trade & Tariffs <span class="card-badge">15%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Baker-Bloom-Davis Trade Policy Uncertainty categorical index (<span class="code-inline">EPUTRADE</span>, monthly) via FRED, plus a daily tariff news nowcast from the RSS feeds.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Counts newspaper coverage of trade policy uncertainty (tariffs, trade wars, import and export policy). The nowcast scores tariff-related headlines with VADER sentiment.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Inverse percentile against the <span class="highlight-blue">trailing 2-year range</span>. When tariff news scores lower, it is blended in at 30%. The news can only lower this score.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
-        <h3>Port Weather <span class="card-badge">10%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> Open-Meteo API (free, no key required).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Coverage:</strong> 37 major ports, including Houston, Shanghai, Rotterdam, Singapore, and Busan.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> Continuous deductions for <span class="highlight-red">wind, precipitation, temperature extremes, and WMO condition codes</span>, averaged across all ports.</div></div>
-        </div>
-    </div>
-    <div class="p-card">
-        <h3>Freight Flow <span class="card-badge">10%</span></h3>
-        <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Source:</strong> BTS Freight Transportation Services Index (<span class="code-inline">TSIFRGHT</span>, monthly, 1 to 2 month lag), blended with a daily transportation-stock proxy (<span class="code-inline">IYT</span>).</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Signal:</strong> Physical throughput across trucking, rail, air, and waterborne freight — are goods actually moving?</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Scoring:</strong> <span class="highlight-amber">Score = 72 + (YoY % × 6.5)</span>, clipped to 0–100, so contraction lowers the score. Blended 70/30 with IYT scored by percentile over the trailing 2 years.</div></div>
-        </div>
-    </div>
-</div>
-
-<div class="section-heading"><span class="section-num">3.</span><h2>Scoring Engine</h2></div>
-<hr class="section-rule">
-<p>The composite index is a <strong>weighted average</strong> of all six category scores, producing a single 0–100 value where 100 represents a completely frictionless global logistics network. The Semiconductor and Aerospace &amp; Manufacturing profiles add four industry categories each and use their own weights.</p>
-
-| Category | Weight | Primary Source | Normalization |
-|:---|:---|:---|:---|
-| **Supply Chain Pressure** | 25% | NY Fed GSCPI + BDRY proxy | 50 − GSCPI × 12.5, blended 70/30 with BDRY percentile |
-| **Energy & Fuel** | 20% | WTI Crude (CL=F) + DOE Diesel (GASDESW) | Average inverse percentile vs trailing 2-year range |
-| **Geopolitical Risk** | 20% | RSS + Claude AI | Severity deductions from 100, blended 85/15 with port disruption |
-| **Trade & Tariffs** | 15% | EPUTRADE (FRED) + news nowcast | Inverse percentile vs trailing 2-year range; news can only lower it |
-| **Port Weather** | 10% | Open-Meteo | Continuous weather deductions |
-| **Freight Flow** | 10% | BTS Freight TSI + IYT proxy | 72 + YoY % × 6.5, blended 70/30 with IYT percentile |
+{category_rows}
 
 <div class="math-block">
     <code>
         <span class="variable">Composite</span>
         <span class="operator">=</span>
-        Σ ( <span class="variable">Category_Score<sub>i</sub></span> × <span class="variable">Weight<sub>i</sub></span> )
+        &Sigma; ( <span class="variable">Score<sub>i</sub></span> &times; <span class="variable">Weight<sub>i</sub></span> )
     </code>
-    <span class="math-caption">Weights must sum to 1.0. Each category score is on a 0–100 scale, and the composite is clipped to [0, 100].</span>
+    <span class="math-caption">The weights sum to 1.0. A category with no usable reading is left out, and the other weights are scaled up so they still sum to 1.0.</span>
 </div>
 
 <div class="callout">
-    <p>The geopolitical score already includes news severity and the AI port-disruption signal (15% of that category). There is no separate penalty term in the composite formula.</p>
+    <p>When a category is excluded, the composite uses those renormalized weights. The weights shown in the category table, the CSV export and the API are the nominal ones, so on those days the scores times the listed weights do not add up to the composite. The snapshot is flagged degraded, and that day's composite is not saved to the history.</p>
 </div>
 
-<p>The composite score maps to a health tier for display:</p>
+<p>The composite maps to a health tier:</p>
 
-| Score Range | Tier | Color |
+| Score | Tier | Color |
 |:---|:---|:---|
-| 80 – 100 | **Healthy** | <span class="highlight-green">● Green</span> |
-| 60 – 79 | **Stable** | <span class="highlight-amber">● Amber</span> |
-| 40 – 59 | **Stressed** | <span style="color: #fb923c;">● Orange</span> |
-| 0 – 39 | **Critical** | <span class="highlight-red">● Red</span> |
+| 80 to 100 | **Healthy** | <span class="highlight-green">&#9679; Green</span> |
+| 60 to 79 | **Stable** | <span class="highlight-amber">&#9679; Amber</span> |
+| 40 to 59 | **Stressed** | <span style="color: #fb923c;">&#9679; Orange</span> |
+| 0 to 39 | **Critical** | <span class="highlight-red">&#9679; Red</span> |
 
-<div class="section-heading"><span class="section-num">4.</span><h2>AI Intelligence Layer</h2></div>
+<div class="section-heading"><span class="section-num">2.</span><h2>The 0 to 100 scale</h2></div>
 <hr class="section-rule">
-<p>Anthropic's Claude Sonnet model runs several separate calls: <strong>article scoring plus the briefing (one call)</strong>, the full report, port summaries, and the explanation shown when you hover over the gauge. Each result is reused for about 24 hours. A failed call is retried after an hour. Without Claude, the site falls back to VADER sentiment and fixed text.</p>
+<p>Six of the eight categories put each input on a fixed scale with three anchors taken from that input's own history:</p>
+
+<div class="step-list" style="margin-bottom: 18px;">
+    <div class="step-item"><div class="step-num">100</div><div class="step-text">The healthiest 5% of months before 2020 (the 5th or 95th percentile, depending on direction).</div></div>
+    <div class="step-item"><div class="step-num">80</div><div class="step-text">The median before 2020. This is "normal".</div></div>
+    <div class="step-item"><div class="step-num">0</div><div class="step-text">The worst monthly average on record through 2025. For the tariff burden, where the record is the current period, a cited historical reference is used instead.</div></div>
+</div>
+<p>Between anchors the score follows a straight line, and it is held at 0 or 100 beyond them. Prices are adjusted for inflation with CPI (<span class="code-inline">CPIAUCSL</span>) to {cpi_dollars} and put on a log scale. The two newspaper indexes (trade policy uncertainty and geopolitical risk) are also on a log scale. Volumes use year-over-year growth. The anchors are stored in <span class="code-inline">data/score_anchors.json</span> and change only with a new methodology version.</p>
+<p>Normal is 80, the bottom of the Healthy tier. Chokepoints and Physical Disruption are built from events, so a normal day reads about 100 there. With every input at normal the composite is about {normal_composite}.</p>
+
+<div class="section-heading"><span class="section-num">3.</span><h2>Freshness, fallbacks and history</h2></div>
+<hr class="section-rule">
+<div class="step-list">
+    <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Age</strong> is counted from the end of the period a value covers: the last day of the month for monthly data, the week-ending date for weekly data, the day itself for daily data.</div></div>
+    <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Two limits per input.</strong> Past the first, the input is flagged stale. Past the second, it is dropped. Each category's limits are listed below.</div></div>
+    <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Missing inputs.</strong> If one input in a category is missing, the category uses the others with their weights scaled up. The category is stale if any input it uses is stale.</div></div>
+    <div class="step-item"><div class="step-num">4</div><div class="step-text"><strong>Failed categories.</strong> If every input is missing, the category shows its last stored daily score, flagged stale and fallback, until that score is too old (Supply Chain {drop_supply_chain} days, Chokepoints {drop_chokepoints}, Energy {drop_energy}, Tariffs {drop_tariffs}, Geopolitical {drop_geopolitical}, Freight {drop_freight}, Input Costs {drop_inputs}, Physical {drop_physical}). After that it is excluded from the composite. A neutral placeholder score is never used.</div></div>
+    <div class="step-item"><div class="step-num">5</div><div class="step-text"><strong>History</strong> is recomputed from the real source series with the same formulas. Each value is dated by when its source published it. Days before a source's first observation stay blank, and gaps are never filled.</div></div>
+</div>
+
+<div class="section-heading"><span class="section-num">4.</span><h2>Categories</h2></div>
+<hr class="section-rule">
+<p>Every number on the dashboard carries its source, the date of the data behind it and its stale or fallback status. Hover over a category name, or tap it on a phone, to see each input.</p>
+
+<div class="grid-1">
+{category_cards}
+</div>
+
+<div class="section-heading"><span class="section-num">5.</span><h2>What Claude does</h2></div>
+<hr class="section-rule">
+<p>Anthropic's Claude writes the headline severities, the briefing, the full report, the port summaries and the disruption register. None of these set a category score.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Article Analysis</h3>
+        <h3>Headlines, briefing and report</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Ingest:</strong> Articles are pulled from <span class="highlight-purple">17 RSS feeds</span> and deduplicated. The 25 newest go to Claude for scoring.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Filter:</strong> Irrelevant articles (sports, crypto, fashion, market research spam) are pre-filtered via keyword exclusion.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Score:</strong> Claude assigns each article a severity from <span class="highlight-red">-10</span> (catastrophic) to <span class="highlight-green">+10</span> (miracle).</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Headlines:</strong> articles from 17 RSS feeds, plus a daily Claude web search, are filtered for relevance. Every {news_hours} hours Claude scores the headlines it has not seen yet; earlier scores are kept. Without an API key, headlines show with no severity.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Topics:</strong> tags use whole-word matching, so "port" does not match "report".</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Briefing and report:</strong> once a day Claude writes a 3-bullet briefing from the top {briefing_alerts} headlines and the full report at <span class="code-inline">/report</span>.</div></div>
+            <div class="step-item"><div class="step-num">4</div><div class="step-text"><strong>Failures:</strong> a failed call is retried after {retry_minutes} minutes. The last result stays up, marked stale, for up to {news_max_days} days.</div></div>
         </div>
     </div>
     <div class="p-card">
-        <h3>Generated Outputs</h3>
+        <h3>Port summaries and disruption register</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Briefing:</strong> A 3-bullet executive summary shown on the dashboard.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Full Report:</strong> A Chief Strategy Officer-style Markdown intelligence report.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Port Summaries:</strong> AI-generated context and a 0–50 disruption penalty for each of the 37 ports, shown in the <span class="highlight-green">map tooltip</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Port summaries:</strong> once a day Claude writes a summary and a 0 to {port_penalty_max} disruption penalty for each of the 37 ports, shown on the map.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Disruption register:</strong> once a day Claude, with web search, keeps a list of ongoing disruptions. Each has a severity from 0 to 10 and the share of world trade affected, with a cited basis. An event stays open until there is evidence it has ended.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Shadow mode:</strong> register score = 100 &minus; {register_factor} &times; &Sigma;(severity &times; trade share %), floored at 0. It is stored every day at {register_weight} weight in Geopolitical Risk while it is compared with PortWatch and GPR.</div></div>
         </div>
     </div>
 </div>
 
-<div class="section-heading"><span class="section-num">5.</span><h2>Infrastructure</h2></div>
+<div class="section-heading"><span class="section-num">6.</span><h2>Port map</h2></div>
 <hr class="section-rule">
-<p>The application is built with <strong>Plotly Dash</strong>, served by Gunicorn, and deployed on Render. A background thread handles all data fetching so page loads are instant.</p>
+<p>Each of the 37 ports scores 60% of the composite plus 40% of its local weather (Open-Meteo: weather code, wind gusts, the day's precipitation and temperature). It then loses the larger of two penalties: a news penalty from headlines that name the port (high 30, medium 15, low 5, plus 20% of the rest, capped at 50) or Claude's port penalty (0 to {port_penalty_max}). Weather is shown on the map only and is not part of the composite.</p>
+
+<div class="section-heading"><span class="section-num">7.</span><h2>Public API</h2></div>
+<hr class="section-rule">
+<p><span class="code-inline">GET /api/v1/latest</span> is free and returns the latest snapshot as JSON, limited to 500 requests per hour and 2,000 per day per IP. Data is licensed CC-BY-4.0. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch".</p>
+
+| Field | Contents |
+|:---|:---|
+| <span class="code-inline">methodology_version</span> | 2 |
+| <span class="code-inline">timestamp</span> | When the snapshot was made (UTC) |
+| <span class="code-inline">composite_index</span> | The composite stored with the snapshot. Under an exclusion it uses renormalized weights |
+| <span class="code-inline">categories</span> | One object per category: <span class="code-inline">score</span> (null when excluded), <span class="code-inline">weight</span> (nominal), <span class="code-inline">as_of</span> (date of the oldest input used), <span class="code-inline">source</span>, <span class="code-inline">is_stale</span>, <span class="code-inline">is_fallback</span>, <span class="code-inline">stored_on</span> (date of the stored score a fallback shows) and <span class="code-inline">inputs</span> (each input's name, score, as_of, status, source and raw value) |
+| <span class="code-inline">degraded</span> | True when any category is on a fallback or excluded |
+| <span class="code-inline">fallback_categories</span> | Categories showing their last stored score |
+| <span class="code-inline">excluded_categories</span> | Categories left out of the composite |
+| <span class="code-inline">stale_categories</span> | Categories using an input past its stale limit |
+| <span class="code-inline">disruptions</span> | Low-scoring categories (impact = 100 &minus; score) and high-severity headlines (impact = severity &times; 10) |
+| <span class="code-inline">map_markers</span> | The 37 ports with score and hover text |
+
+<p><span class="code-inline">GET /health</span> returns <span class="code-inline">state</span> (warming_up, healthy or degraded, with HTTP 503 for degraded), <span class="code-inline">data_age_seconds</span>, <span class="code-inline">last_fetch_status</span>, <span class="code-inline">last_fetch_error</span> (the error type only), <span class="code-inline">fallback_categories</span>, <span class="code-inline">stale_categories</span> and <span class="code-inline">excluded_categories</span>.</p>
+
+<div class="section-heading"><span class="section-num">8.</span><h2>Infrastructure</h2></div>
+<hr class="section-rule">
+<p>The site is built with <strong>Plotly Dash</strong>, served by Gunicorn and hosted on Render. A background thread does all the fetching, so page loads read from memory.</p>
+
+<div class="mermaid">
+flowchart LR
+    style A fill:#07090C,stroke:#1D232B,color:#8A94A3
+    style B fill:#07090C,stroke:#1D232B,color:#8A94A3
+    style C fill:#07090C,stroke:#1D232B,color:#8A94A3
+    style D fill:#07090C,stroke:#1D232B,color:#8A94A3
+    style E fill:#07090C,stroke:#FFB020,stroke-width:2px,color:#F2F4F7
+    style F fill:#07090C,stroke:#8A94A3,color:#F2F4F7
+    style G fill:#07090C,stroke:#8A94A3,color:#F2F4F7
+    style H fill:#07090C,stroke:#8A94A3,color:#F2F4F7
+
+    A["NY Fed, FRED, Treasury<br>BTS, STB, Caldara-Iacoviello"] --> E
+    B["IMF PortWatch, GDACS<br>Panama Canal, USGS"] --> E
+    C["Yahoo Finance<br>(live futures)"] --> E
+    D["RSS feeds and web search<br>(display only)"] --> F
+    E["Background thread<br>8 category providers"] --> G["Neon Postgres<br>daily scores"]
+    F["Claude<br>headlines, ports, register"] --> H
+    E --> H["Dash UI<br>dashboard and API"]
+</div>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Background Data Pipeline</h3>
+        <h3>Background data pipeline</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> A Python daemon thread fetches from <span class="highlight-blue">all providers in parallel</span> (3 at a time) every 5 minutes.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> Results are saved to a JSON payload on disk. A fresh deploy loads the last snapshot saved in the database, then a committed fallback snapshot if that is under 14 days old.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> Page loads read directly from the in-memory cache — <span class="highlight-green">zero database queries on render</span>.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Cycle:</strong> every 5 minutes the providers run 3 at a time. Each has {timeout} seconds ({timeout_long} for Freight and Physical); one that runs over is treated as failed.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Cache:</strong> results are saved to disk. A fresh deploy loads the last snapshot saved in the database, then a committed fallback snapshot if it is under 14 days old.</div></div>
+            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>Serve:</strong> page loads read the in-memory snapshot and never call a data source.</div></div>
         </div>
     </div>
     <div class="p-card">
-        <h3>Persistence & Distribution</h3>
+        <h3>Storage and email</h3>
         <div class="step-list">
-            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Database:</strong> Neon PostgreSQL stores <span class="highlight-blue">daily composite and category scores</span> for the trend charts and day-over-day deltas, plus the latest snapshot.</div></div>
-            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Newsletter:</strong> Subscriber emails are managed in Postgres. The daily briefing is emailed each morning, and every email has an unsubscribe link.</div></div>
-            <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>API:</strong> A public REST endpoint at <span class="code-inline">GET /api/v1/latest</span> serves the latest index data, limited to 500 requests per hour and 2,000 per day per IP.</div></div>
+            <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Database:</strong> Neon PostgreSQL stores daily category scores, the daily composite (only on days with no excluded category), the latest snapshot, the disruption register and river gauge readings.</div></div>
+            <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>Newsletter:</strong> the daily briefing is emailed each morning with the stored composite. No email goes out when there is no composite. Every email has an unsubscribe link.</div></div>
         </div>
     </div>
 </div>
 
-<div class="section-heading"><span class="section-num">6.</span><h2>News Sources</h2></div>
+<div class="section-heading"><span class="section-num">9.</span><h2>News sources</h2></div>
 <hr class="section-rule">
-<p>The geopolitical provider reads 17 curated RSS feeds from industry, trade-policy, and weather-alert sources rather than general news aggregators.</p>
+<p>Headlines come from 17 RSS feeds from industry, trade policy and weather alert sources, plus a daily Claude web search. They are shown for context and do not feed any score.</p>
 
 <div class="grid-2">
     <div class="p-card">
-        <h3>Ports & Shipping</h3>
+        <h3>Ports and shipping</h3>
         <p>gCaptain, Splash 247, The Loadstar, Maritime Executive, Logistics Management (Ocean Freight)</p>
     </div>
     <div class="p-card">
-        <h3>Supply Chain & Logistics</h3>
+        <h3>Supply chain and logistics</h3>
         <p>Supply Chain Dive, SupplyChainBrain, FreightWaves, Logistics Management (Transportation), Supply Chain Management Review, Logistics Viewpoints</p>
     </div>
     <div class="p-card">
-        <h3>Trade Policy</h3>
+        <h3>Trade policy</h3>
         <p>WTO News</p>
     </div>
     <div class="p-card">
-        <h3>Weather & Disasters</h3>
+        <h3>Weather and disasters</h3>
         <p>GDACS Disaster Alerts, plus four NOAA National Hurricane Center feeds (Atlantic and Eastern Pacific cyclones, Atlantic outlook, Atlantic high seas forecast)</p>
     </div>
 </div>
+
+<div class="section-heading"><span class="section-num">10.</span><h2>Data sources and credits</h2></div>
+<hr class="section-rule">
+
+| Source | Data used |
+|:---|:---|
+| [Federal Reserve Bank of New York](https://www.newyorkfed.org/research/policy/gscpi) | Global Supply Chain Pressure Index; Empire State Manufacturing Survey prices paid (FRED PPCDISA066MSFRBNY) |
+| [IMF PortWatch](https://portwatch.imf.org) | Daily chokepoint transits and port calls. Sources: UN Global Platform; IMF PortWatch |
+| [FRED, Federal Reserve Bank of St. Louis](https://fred.stlouisfed.org) | Distribution of most monthly and daily series below, and CPI (CPIAUCSL) |
+| [U.S. Energy Information Administration (EIA)](https://www.eia.gov) | Brent crude and New York Harbor ULSD spot prices (FRED DCOILBRENTEU, DDFUELNYH) |
+| [Yahoo Finance](https://finance.yahoo.com) | Live futures quotes from ICE (Brent, TTF) and CME Group (heating oil, copper, aluminum) |
+| [U.S. Treasury, Daily Treasury Statement](https://fiscaldata.treasury.gov) | Customs duty deposits |
+| [U.S. Census Bureau via FRED](https://fred.stlouisfed.org/series/BOPGIMP) | Goods imports (BOPGIMP) |
+| [Caldara and Iacoviello](https://www.matteoiacoviello.com/gpr.htm) | Geopolitical Risk (GPR) index |
+| [Caldara, Iacoviello, Molligo, Prestipino and Raffo](https://www.matteoiacoviello.com/tpu.htm) | Trade Policy Uncertainty index |
+| [Bureau of Transportation Statistics](https://www.bts.gov) | Freight Transportation Services Index (TSIFRGHT); monthly rail carloads and intermodal units (FRED RAILFRTCARLOADSD11, RAILFRTINTERMODALD11) |
+| [Surface Transportation Board, via USDA AgTransport](https://agtransport.usda.gov/Rail/STB-Weekly-Rail-Carloads/tb7q-kn5i) | Weekly rail carloads (EP 724) |
+| [Federal Reserve Bank of Philadelphia](https://fred.stlouisfed.org/series/PPCDFSA066MSFRBPHI) | Manufacturing Business Outlook Survey prices paid |
+| [Federal Reserve Bank of Dallas](https://fred.stlouisfed.org/series/PRMSAMFRBDAL) | Texas Manufacturing Outlook Survey prices paid for raw materials |
+| [IMF Primary Commodity Prices](https://www.imf.org/en/Research/commodity-prices) | European natural gas, copper and aluminum (FRED PNGASEUUSDM, PCOPPUSDM, PALUMUSDM) |
+| [GDACS](https://www.gdacs.org) | Natural hazard alerts |
+| [Panama Canal Authority](https://evtms-rpts.pancanal.com/eng/h2o/index.html) | Gatun Lake level |
+| [USGS](https://waterdata.usgs.gov/monitoring-location/07010000/) | Mississippi River gauge height at St. Louis (site 07010000) |
+| [USITC](https://www.usitc.gov/documents/dataweb/ave_table_1891_2018.pdf) | Duties as a share of imports, 1891 to 2018 (tariff burden zero point) |
+| [Open-Meteo](https://open-meteo.com) | Port weather for the map |
+| [Anthropic](https://www.anthropic.com) | Claude: headline severities, briefing, report, port summaries, disruption register |
 """
+
+
+def _docs_markdown() -> str:
+    values = _docs_values()
+    values["category_cards"] = _category_cards(values)
+    return _DOCS_MARKDOWN.format(**values)
+
 
 @docs_bp.route("/docs")
 def serve_docs():
-    """Serve the documentation as a highly visual standalone page."""
-    docs_html = markdown.markdown(
-        _DOCS_MARKDOWN,
-        extensions=["extra", "tables"]
-    )
-    
+    """Serve the methodology page, with the current config's numbers filled in."""
+    docs_html = markdown.markdown(_docs_markdown(), extensions=["extra", "tables"])
     return render_template_string(
         _DOCS_TEMPLATE,
-        content=Markup(docs_html)
+        content=Markup(docs_html),
+        version=config.METHODOLOGY_VERSION,
     )
