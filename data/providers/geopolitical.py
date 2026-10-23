@@ -136,11 +136,13 @@ class GeopoliticalProvider(BaseProvider):
     # ------------------------------------------------------------------ history
 
     def fetch_history(self, days: int) -> pd.Series:
-        """Daily GPR scores at the file's own dates, the last ``days`` calendar days.
+        """Daily GPR scores for the last ``days`` calendar days ending today.
 
-        The file is the publication, so nothing is shifted by a lag and the series never runs
-        past the file's last date. Days before the first usable 30-day mean stay NaN.
-        The register has no history source, so it is not blended in here.
+        Days inside the file keep their own values (the file is the publication, so nothing
+        is shifted by a lag). After the file's last date the last value is carried forward
+        day by day while its age is within ``FRESHNESS["gpr"]`` drop_after_days, which is
+        what the live score shows, and is NaN after that. Days before the first usable
+        30-day mean stay NaN. The register has no history source, so it is not blended in.
         """
         anchor = get_anchor(_GPR)
         try:
@@ -148,8 +150,16 @@ class GeopoliticalProvider(BaseProvider):
         except Exception as exc:
             raise RuntimeError(f"no GPR history available: {exc}") from exc
         scores = pd.Series([_safe_score(v, anchor) for v in mean], index=mean.index)
-        window = pd.date_range(end=pd.Timestamp(last), periods=days, freq="D")
-        out = scores.reindex(window).clip(0.0, 100.0).round(1)
+        today = _today()
+        window = pd.date_range(end=pd.Timestamp(max(today, last)), periods=days, freq="D")
+        out = scores.reindex(window)
+        last_score = scores.get(pd.Timestamp(last), float("nan"))
+        if math.isfinite(last_score):
+            drop_after = config.FRESHNESS[_GPR][1]
+            age = (window - pd.Timestamp(last)).days
+            tail = (age > 0) & (age <= drop_after)
+            out[tail] = last_score
+        out = out.clip(0.0, 100.0).round(1)
         if out.isna().all():
             raise RuntimeError("no GPR history available")
         return out.rename("geopolitical")

@@ -13,6 +13,7 @@ import data.database as database
 from data.providers import geopolitical
 from data.providers.geopolitical import GeopoliticalProvider
 from data.sources import gpr
+from scoring.anchors import score_raw
 
 TODAY = date(2026, 10, 22)
 LAST = date(2026, 10, 19)   # last day in the synthetic file, three days before TODAY
@@ -283,29 +284,58 @@ def test_geo_missing_anchor_raises(monkeypatch):
 
 # ------------------------------------------------------------------------- history
 
-def test_geo_history_is_dated_by_the_file_and_never_extends_past_it(anchors, monkeypatch):
-    values = [_level_for(60)] * 20 + [_level_for(40)] * 20
-    _with_gpr(monkeypatch, _daily(values))
+def test_geo_history_carries_the_last_value_to_today(anchors, monkeypatch):
+    values = [_level_for(60)] * 20 + [_level_for(40)] * 40
+    _with_gpr(monkeypatch, _daily(values))           # the file ends three days before TODAY
 
     hist = GeopoliticalProvider().fetch_history(10)
 
     assert len(hist) == 10
-    assert hist.index[-1] == pd.Timestamp(LAST)      # not TODAY
-    assert hist.index[0] == pd.Timestamp(LAST) - pd.Timedelta(days=9)
+    assert hist.index[-1] == pd.Timestamp(TODAY)
+    assert hist.index[0] == pd.Timestamp(TODAY) - pd.Timedelta(days=9)
     assert hist.name == "geopolitical"
     assert hist.notna().all()
     assert 0.0 <= hist.min() and hist.max() <= 100.0
+    final = hist[pd.Timestamp(LAST)]                 # inside the file: its own value
+    assert final == pytest.approx(40.0, abs=0.1)
+    for n in (1, 2, 3):                              # after the file: the final value, day by day
+        assert hist[pd.Timestamp(LAST) + pd.Timedelta(days=n)] == final
+    assert hist[pd.Timestamp(LAST) - pd.Timedelta(days=1)] == final   # mean already settled at 40
+
+
+def test_geo_history_inside_the_file_keeps_actual_values(anchors, monkeypatch):
+    values = [_level_for(60)] * 30 + [_level_for(30)] * 30
+    _with_gpr(monkeypatch, _daily(values))
+    hist = GeopoliticalProvider().fetch_history(60)
+    mean = _daily(values).rolling(config.GPR_MEAN_DAYS, min_periods=config.GPR_MIN_PERIODS).mean()
+    for day in ("2026-09-10", "2026-10-05", "2026-10-19"):
+        expected = score_raw(float(mean[pd.Timestamp(day)]), GPR_ANCHOR)
+        assert hist[pd.Timestamp(day)] == pytest.approx(expected, abs=0.1)
+
+
+def test_geo_history_tail_is_nan_past_the_drop_limit(anchors, monkeypatch):
+    drop = config.FRESHNESS["gpr"][1]
+    last = TODAY - timedelta(days=drop + 1)          # the file ends drop+1 days before today
+    _with_gpr(monkeypatch, _daily([_level_for(60)] * 40, last=last))
+
+    hist = GeopoliticalProvider().fetch_history(10)
+
+    assert hist.index[-1] == pd.Timestamp(TODAY)
+    assert math.isnan(hist[pd.Timestamp(TODAY)])     # age drop+1: dropped
+    assert hist[pd.Timestamp(TODAY) - pd.Timedelta(days=1)] == 60.0   # age == drop: still carried
 
 
 def test_geo_history_keeps_leading_gaps(anchors, monkeypatch):
-    _with_gpr(monkeypatch, _daily([_level_for(60)] * 25))     # 25 rows; the mean starts at row 20
+    _with_gpr(monkeypatch, _daily([_level_for(60)] * 25))     # 25 rows, 2026-09-25 to 2026-10-19
 
-    hist = GeopoliticalProvider().fetch_history(30)
+    hist = GeopoliticalProvider().fetch_history(30)           # 2026-09-23 to TODAY
 
     assert len(hist) == 30
-    assert hist.iloc[:5].isna().all()        # before the file starts
-    assert hist.iloc[5:24].isna().all()      # fewer than 20 observations behind the mean
-    assert hist.iloc[24:].notna().all()      # rows 20 to 25 of the file
+    first_row = pd.Timestamp(LAST) - pd.Timedelta(days=24)
+    first_mean = first_row + pd.Timedelta(days=config.GPR_MIN_PERIODS - 1)
+    assert hist[:first_row - pd.Timedelta(days=1)].isna().all()                  # before the file starts
+    assert hist[first_row:first_mean - pd.Timedelta(days=1)].isna().all()        # too few observations
+    assert hist[first_mean:].notna().all()                                       # the mean, then carried
     assert hist.iloc[-1] == 60.0
 
 

@@ -2,7 +2,7 @@
 import importlib.util
 import io
 import math
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 import openpyxl
@@ -472,6 +472,28 @@ def test_tariffs_history_tpu_dated_by_its_own_days(anchors):
     mean30 = daily.rolling(30, min_periods=20).mean()
     for day in ("2026-10-05", "2026-10-15", "2026-10-19"):
         assert hist[pd.Timestamp(day)] == pytest.approx(_tpu_score_at(mean30[pd.Timestamp(day)]), abs=0.1)
+
+
+def test_tariffs_history_tpu_carries_last_value_to_today(anchors):
+    idx = pd.date_range("2026-08-01", "2026-10-19", freq="D")          # the file ends 3 days before TODAY
+    daily = pd.Series(_tpu_value_for(70), index=idx)
+    hist = _run(lambda: TariffsProvider().fetch_history(10), customs=None, imports=None, tpu_daily=daily)
+    assert hist.index[-1] == pd.Timestamp(TODAY)
+    last = hist[pd.Timestamp("2026-10-19")]
+    assert last == pytest.approx(70.0, abs=0.1)
+    for day in ("2026-10-20", "2026-10-21", "2026-10-22"):
+        assert hist[pd.Timestamp(day)] == last
+
+
+def test_tariffs_history_tpu_tail_is_nan_past_the_drop_limit(anchors):
+    drop = config.FRESHNESS["tpu"][1]
+    end = TODAY - timedelta(days=drop + 1)                              # the file ends drop+1 days before TODAY
+    idx = pd.date_range(end - timedelta(days=60), end, freq="D")
+    daily = pd.Series(_tpu_value_for(70), index=idx)
+    hist = _run(lambda: TariffsProvider().fetch_history(10), customs=None, imports=None, tpu_daily=daily)
+    assert hist.index[-1] == pd.Timestamp(TODAY)
+    assert math.isnan(hist[pd.Timestamp(TODAY)])
+    assert hist[pd.Timestamp(TODAY) - pd.Timedelta(days=1)] == pytest.approx(70.0, abs=0.1)
 
 
 def _tpu_score_at(level):
