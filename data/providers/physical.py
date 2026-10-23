@@ -165,8 +165,9 @@ class PhysicalProvider(BaseProvider):
             sentences.append(
                 f"{len(active)} Orange or Red natural-hazard alert{' is' if len(active) == 1 else 's are'} "
                 f"active worldwide today; {len(near)} {'is' if len(near) == 1 else 'are'} close enough to "
-                "affect a major port (cyclones within 300 km, floods 100 km, earthquakes 150 km, "
-                "volcanoes 50 km), weighted by the port's share of world port calls.")
+                "affect a major port (cyclones within {TC:.0f} km, floods {FL:.0f} km, earthquakes "
+                "{EQ:.0f} km, volcanoes {VO:.0f} km), weighted by the port's share of world port "
+                "calls.".format(**config.HAZARD_RADIUS_KM))
         if gatun in used:
             sentences.append(
                 f"Gatun Lake is {gatun.raw_value}; the Panama Canal allows the full 50 ft draft only at "

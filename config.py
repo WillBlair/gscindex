@@ -487,9 +487,13 @@ PHYSICAL_WEIGHTS: dict[str, float] = {"hazards": 0.5, "gatun": 0.25, "mississipp
 HAZARD_SCALE: float = 5000.0
 HAZARD_LEVEL_POINTS: dict[str, float] = {"Orange": 0.5, "Red": 1.0}
 # A port is affected by an event whose centre lies within this many km. Rough footprints of
-# a damaging event of each GDACS type (ours, not GDACS's): tropical cyclone wind field 300 km,
-# flood 100 km, earthquake 150 km, volcano 50 km.
-HAZARD_RADIUS_KM: dict[str, float] = {"TC": 300.0, "FL": 100.0, "EQ": 150.0, "VO": 50.0}
+# a damaging event of each GDACS type (ours, not GDACS's): tropical cyclone 450 km, flood
+# 100 km, earthquake 150 km, volcano 50 km. The cyclone radius is a judgment, not a citation:
+# a strong typhoon's gale-force wind radius commonly extends several hundred km, and GDACS
+# gives only the storm's centre point. At 300 km, Red typhoon CHAMPI-26 (centre 358 km from
+# Kaohsiung on 2026-10-22, its tropical-storm-force wind zone within 80 km of the port) did not
+# register.
+HAZARD_RADIUS_KM: dict[str, float] = {"TC": 450.0, "FL": 100.0, "EQ": 150.0, "VO": 50.0}
 # Days of GDACS events fetched for the current reading; an event still active today may have
 # started weeks ago (a tropical cyclone lasts up to about two weeks).
 HAZARD_LOOKBACK_DAYS = 90

@@ -20,7 +20,7 @@ PORTS = [
     {"name": "Shanghai", "lat": 31.23, "lon": 121.47},
 ]
 SHARES = {"Houston": 0.05, "Rotterdam": 0.04, "Shanghai": 0.10}
-RADIUS = {"TC": 300.0, "FL": 100.0, "EQ": 150.0, "VO": 50.0}
+RADIUS = {"TC": 450.0, "FL": 100.0, "EQ": 150.0, "VO": 50.0}
 
 WATERWAY_ANCHORS = {"gatun_record_low": 78.0, "mississippi_record_low": -6.0,
                     "mississippi_threshold": 5.0}
@@ -82,7 +82,7 @@ def test_hazard_orange_costs_half_of_red():
 
 
 def test_hazard_radius_depends_on_event_type():
-    # Houston is about 200 km from this point: inside a cyclone's 300 km, outside a flood's 100 km.
+    # Houston is about 200 km from this point: inside a cyclone's 450 km, outside a flood's 100 km.
     lat = 29.76 + 200 / 111.2
     assert gdacs.hazard_score([_event("TC", lat=lat)], PORTS, SHARES, RADIUS) < 100.0
     assert gdacs.hazard_score([_event("FL", lat=lat)], PORTS, SHARES, RADIUS) == 100.0
@@ -102,6 +102,15 @@ def test_hazard_sums_over_ports_and_events_and_clips_at_zero():
                               _event("TC", lat=10.0, lon=10.0, eid=2)], ports, shares, RADIUS)
     assert two == 0.0                          # 100 points would be below zero: clipped
     assert gdacs.hazard_score([], ports, shares, RADIUS) == 100.0
+
+
+def test_red_typhoon_358_km_from_kaohsiung_registers():
+    """CHAMPI-26 on 2026-10-22: centre (22.7, 123.8), 358 km from Kaohsiung, Red."""
+    kaohsiung = [{"name": "Kaohsiung", "lat": 22.62, "lon": 120.31}]
+    champi = _event("TC", alert="Red", lat=22.7, lon=123.8)
+    score = gdacs.hazard_score([champi], kaohsiung, {"Kaohsiung": 0.01}, config.HAZARD_RADIUS_KM)
+    assert score == pytest.approx(100.0 - config.HAZARD_SCALE * 0.01)
+    assert gdacs.hazard_score([champi], kaohsiung, {"Kaohsiung": 0.01}, {"TC": 300.0}) == 100.0
 
 
 def test_hazard_ignores_unknown_type_or_alert():
@@ -640,7 +649,7 @@ def test_physical_category_constants(monkeypatch):
     assert config.CATEGORY_LABELS["physical"] == "Physical Disruption"
     assert config.PHYSICAL_WEIGHTS == {"hazards": 0.5, "gatun": 0.25, "mississippi": 0.25}
     assert config.GATUN_FULL_DRAFT_FT == 85.0
-    assert config.HAZARD_RADIUS_KM == {"TC": 300, "FL": 100, "EQ": 150, "VO": 50}
+    assert config.HAZARD_RADIUS_KM == {"TC": 450, "FL": 100, "EQ": 150, "VO": 50}
     assert config.HAZARD_LEVEL_POINTS == {"Orange": 0.5, "Red": 1.0} and config.HAZARD_SCALE == 5000.0
     colors = list(config.CATEGORY_COLORS.values())
     assert config.CATEGORY_COLORS["physical"] and len(colors) == len(set(colors))
