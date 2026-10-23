@@ -75,7 +75,7 @@ def harness(monkeypatch):
     """Patch everything aggregate_data touches; returns (run, recorded)."""
     recorded = {"record": [], "snapshot": 0}
 
-    def run(providers=None, *, last=None, register=None, news=None, tasks=None):
+    def run(providers=None, *, last=None, register=None, news=None, tasks=None, daily=None):
         monkeypatch.setattr(aggregator, "_FETCH_TASKS", tasks or _SyncTasks())
         monkeypatch.setattr(
             aggregator, "_PROVIDERS",
@@ -92,7 +92,7 @@ def harness(monkeypatch):
         monkeypatch.setattr(database, "get_last_category_score",
                             last or (lambda cat: None))
         monkeypatch.setattr(database, "get_daily_category_scores",
-                            lambda days: {"dates": [], "scores": {}})
+                            lambda days: daily or {"dates": [], "scores": {}})
         monkeypatch.setattr(
             database, "record_daily_scores",
             lambda composite, scores: recorded["record"].append((composite, dict(scores))))
@@ -384,8 +384,8 @@ def test_provider_timeouts_come_from_config():
 
 def test_weather_is_map_only():
     assert all(p.category != "weather" for p in aggregator._PROVIDERS)
-    assert {p.category for p in aggregator._PROVIDERS} == (
-        set(CATEGORY_WEIGHTS) | {"chip_fab_util", "aero_metals"})
+    sector_categories = {c for s in config.SECTORS.values() for c in s["weights"]}
+    assert {p.category for p in aggregator._PROVIDERS} == set(CATEGORY_WEIGHTS) | sector_categories
 
 
 # -- history alignment ---------------------------------------------------------------------------

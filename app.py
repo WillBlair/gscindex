@@ -27,7 +27,7 @@ from dash import Input, Output, State, ctx, html, dcc
 from dotenv import load_dotenv
 
 from components.layout import build_layout
-from config import APP_TITLE, CATEGORY_WEIGHTS, FALLBACK_SNAPSHOT_MAX_AGE_DAYS
+from config import APP_TITLE, CATEGORY_WEIGHTS, FALLBACK_SNAPSHOT_MAX_AGE_DAYS, RETIRED_CATEGORIES
 from data import aggregate_data
 
 # Load .env before anything reads API keys
@@ -65,7 +65,11 @@ _KEY_MIGRATIONS: dict[str, str] = {
 }
 
 def _migrate_keys(data: dict) -> dict:
-    """Remap legacy category keys to current names in-place."""
+    """Remap legacy category keys to current names in-place.
+
+    The retired industry categories (``config.RETIRED_CATEGORIES``) are dropped, so an old
+    snapshot never shows them.
+    """
     for section in ("current_scores", "category_history", "category_metadata"):
         sub = data.get(section)
         if not isinstance(sub, dict):
@@ -73,6 +77,15 @@ def _migrate_keys(data: dict) -> dict:
         for old_key, new_key in _KEY_MIGRATIONS.items():
             if old_key in sub and new_key not in sub:
                 sub[new_key] = sub.pop(old_key)
+        for key in RETIRED_CATEGORIES & set(sub):
+            del sub[key]
+    history = data.get("daily_history")
+    if isinstance(history, dict) and isinstance(history.get("scores"), dict):
+        for key in RETIRED_CATEGORIES & set(history["scores"]):
+            del history["scores"][key]
+    for section in ("fallback_categories", "stale_categories", "excluded_categories"):
+        if isinstance(data.get(section), list):
+            data[section] = [c for c in data[section] if c not in RETIRED_CATEGORIES]
     return data
 
 

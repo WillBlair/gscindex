@@ -59,3 +59,21 @@ def test_cache_key_includes_the_lookback_window(monkeypatch):
     fred.fetch_fred_series("TEST", lookback_days=2000)
     assert keys == ["fred_TEST_100d", "fred_TEST_2000d"]
     assert [c.args[0] for c in saved.call_args_list] == keys
+
+
+# Percentile helpers (kept for the research scripts; moved from the retired industry tests).
+
+def _monthly(values):
+    import pandas as pd
+    return pd.Series(values, index=pd.date_range("2024-01-01", periods=len(values), freq="MS"))
+
+
+def test_direct_and_inverse_percentiles_mirror_each_other():
+    series = _monthly(list(range(1, 25)))
+    assert fred.direct_percentile_value(24.0, series) > 90.0
+    assert fred.direct_percentile_value(1.0, series) < 10.0
+    assert fred.inverse_percentile_value(24.0, series) < 10.0
+    assert fred.inverse_percentile_value(1.0, series) > 90.0
+    direct = fred.normalize_series_direct(series).dropna()
+    inverse = fred.normalize_series_inverse(series).dropna()
+    assert direct.iloc[-1] > inverse.iloc[-1]

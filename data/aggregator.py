@@ -12,8 +12,13 @@ This is the main entry point for data. It:
        excluded and the remaining weights are renormalized. A provider whose inputs are all
        past their drop windows (``InputsExpired``) is excluded at once, with no stored score
     4. Computes and stores the composite (``result["composite"]``)
-    5. Assembles alerts from the RSS news pipeline and the port map
-    6. Returns everything in the shape the layout expects
+    5. Computes the sector indexes (``result["sectors"]``, ``config.SECTORS``) from their own
+       categories only. Sector categories run in the same cycle with the same fallback and
+       exclusion rules (``SECTOR_DROP_AFTER_DAYS``, ``SECTOR_PROVIDER_TIMEOUT_SECONDS``) but never
+       touch the composite, the global disruptions or the global degraded / fallback / stale /
+       excluded lists
+    6. Assembles alerts from the RSS news pipeline and the port map
+    7. Returns everything in the shape the layout expects
 """
 
 from __future__ import annotations
@@ -46,8 +51,8 @@ from data.providers.readings import InputsExpired
 from data.providers.supply_chain import SupplyChainProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
-from data.providers.aerospace import AeroMetalsProvider
-from data.providers.silicon_analysts import ChipFabUtilProvider
+from data.providers.aero import FlowProvider, ForgeCastProvider, MillPricesProvider, ThroughputProvider
+from data.providers.semis import FabUtilizationProvider, LogicPricesProvider, MemoryPricesProvider
 from data.news_alerts import fetch_supply_chain_news, scoring_label
 from data.port_analyst import generate_port_summaries
 from data.portwatch import fetch_chokepoint_traffic
@@ -59,9 +64,10 @@ from data.runtime import RefreshTasks
 logger = logging.getLogger(__name__)
 _FETCH_TASKS = RefreshTasks(max_workers=3)
 
-# The eight weighted categories plus the two industry adapters, instantiated once. The
-# slow ones (freight, physical) go last so the fast providers finish inside their 45 s
-# before those two take workers; their own timeouts are longer (PROVIDER_TIMEOUT_OVERRIDES).
+# The eight weighted categories plus the seven sector categories, instantiated once. The
+# slow global ones (freight, physical) follow the fast ones so those finish inside their 45 s
+# before freight and physical take workers; their own timeouts are longer
+# (PROVIDER_TIMEOUT_OVERRIDES). The sector providers go last so they never delay a global one.
 _PROVIDERS = [
     SupplyChainProvider(),
     ChokepointsProvider(),
@@ -69,11 +75,21 @@ _PROVIDERS = [
     TariffsProvider(),
     GeopoliticalProvider(),
     InputsProvider(),
-    ChipFabUtilProvider(),
-    AeroMetalsProvider(),
     FreightProvider(),
     PhysicalProvider(),
+    MemoryPricesProvider(),
+    LogicPricesProvider(),
+    FabUtilizationProvider(),
+    ThroughputProvider(),
+    FlowProvider(),
+    MillPricesProvider(),
+    ForgeCastProvider(),
 ]
+
+# Sector category -> sector key (config.SECTORS).
+_SECTOR_OF: dict[str, str] = {
+    cat: sector for sector, spec in config.SECTORS.items() for cat in spec["weights"]
+}
 
 # Port weather for the map only; weather is not a composite category.
 _WEATHER = WeatherProvider()
@@ -278,16 +294,24 @@ def _derive_map_markers(
 
 def _provider_timeout(category: str) -> float:
     """Seconds to wait for one provider, counted from the start of the cycle."""
+    if category in _SECTOR_OF:
+        return float(config.SECTOR_PROVIDER_TIMEOUT_SECONDS)
     return float(config.PROVIDER_TIMEOUT_OVERRIDES.get(category, config.PROVIDER_TIMEOUT_SECONDS))
+
+
+def _drop_after_days(category: str) -> int | None:
+    """How long a failed category may show its last stored score (None: never)."""
+    if category in _SECTOR_OF:
+        return config.SECTOR_DROP_AFTER_DAYS
+    return config.CATEGORY_DROP_AFTER_DAYS.get(category)
 
 
 def _recent_stored_score(category: str, today: date) -> tuple[date, float] | None:
     """The category's last stored daily score while it is younger than its drop limit.
 
-    Categories without a ``CATEGORY_DROP_AFTER_DAYS`` entry (the industry ones) never
-    fall back to a stored score.
+    Categories without a drop limit never fall back to a stored score.
     """
-    limit = config.CATEGORY_DROP_AFTER_DAYS.get(category)
+    limit = _drop_after_days(category)
     if limit is None:
         return None
     try:
@@ -305,7 +329,8 @@ def _recent_stored_score(category: str, today: date) -> tuple[date, float] | Non
 
 def _stored_fallback_metadata(category: str, reason: str, day: date, score: float) -> dict:
     """Metadata for a category served from its last stored score (fallback and stale)."""
-    limit = config.CATEGORY_DROP_AFTER_DAYS[category]
+    limit = _drop_after_days(category)
+    index = "its sector index" if category in _SECTOR_OF else "the composite"
     return {
         "source": "Last stored reading (live source unavailable)",
         "raw_value": f"{score:.1f}",
@@ -313,7 +338,7 @@ def _stored_fallback_metadata(category: str, reason: str, day: date, score: floa
         "description": f"The live source failed this cycle: {reason}",
         "calculation": (
             f"Not measured this cycle. The last stored daily score is used until it is "
-            f"{limit} days old; after that the category is left out of the composite and "
+            f"{limit} days old; after that the category is left out of {index} and "
             "the other weights are renormalized."
         ),
         "updated": day.isoformat(),
@@ -334,19 +359,20 @@ def _unavailable_metadata(category: str, reason: str, expired: bool = False) -> 
     ``expired``: every input that returned data is past its drop window, so no stored
     score is used (it would be older still).
     """
+    index = "its sector index" if category in _SECTOR_OF else "the composite"
     if expired:
         source = "Unavailable (data past its drop window)"
         description = (
-            "Every input is past its drop window, so this category is left out of the "
-            f"composite. A stored score is not used because it would be older still. {reason}"
+            "Every input is past its drop window, so this category is left out of "
+            f"{index}. A stored score is not used because it would be older still. {reason}"
         )
     else:
-        limit = config.CATEGORY_DROP_AFTER_DAYS.get(category)
+        limit = _drop_after_days(category)
         stored = f"no stored score younger than {limit} days" if limit else "no stored fallback"
         source = "Unavailable (provider failed)"
         description = (
             f"The live source failed and there is {stored}, so this category is left out "
-            f"of the composite. Error: {reason}"
+            f"of {index}. Error: {reason}"
         )
     return {
         "source": source,
@@ -439,6 +465,35 @@ def _collect_provider_results(future_to_provider: dict, started: float) -> tuple
     return results, timed_out
 
 
+def _sector_block(sector: str, current_scores: dict, category_metadata: dict) -> dict:
+    """One sector's index and flags, from its own categories only.
+
+    The index is the mean of the present categories (measured, stale or stored fallback) with
+    the sector weights renormalized over them, and None below the sector's ``min_categories``.
+    A sector category with no score is excluded.
+    """
+    spec = config.SECTORS[sector]
+    cats = sorted(spec["weights"])
+    present = {cat for cat in cats if cat in current_scores}
+    index = None
+    if present and len(present) >= spec["min_categories"]:
+        weights = renormalized_weights(spec["weights"], present)
+        index = float(sum(weights[cat] * current_scores[cat] for cat in present))
+    fallback = [c for c in cats if c in present and category_metadata.get(c, {}).get("is_fallback")]
+    excluded = [c for c in cats if c not in present]
+    return {
+        "index": index,
+        "tier": get_health_tier(index)["label"] if index is not None else None,
+        "coverage": len(present),
+        "degraded": bool(fallback or excluded),
+        "stale_categories": [
+            c for c in cats if c in present and category_metadata.get(c, {}).get("is_stale")
+        ],
+        "excluded_categories": excluded,
+        "fallback_categories": fallback,
+    }
+
+
 def aggregate_data(status_callback=None) -> dict:
     """Fetch data from all providers and assemble the dashboard data dict.
 
@@ -455,8 +510,10 @@ def aggregate_data(status_callback=None) -> dict:
         ``"current_scores"``      – dict[str, float] (excluded categories are absent)
         ``"composite"``           – float | None, renormalized over present weighted categories
         ``"excluded_categories"`` – weighted categories left out of the composite
-        ``"stale_categories"``    – categories whose metadata says ``is_stale``
-        ``"fallback_categories"`` – categories serving a stored or fallback value
+        ``"stale_categories"``    – weighted categories whose metadata says ``is_stale``
+        ``"fallback_categories"`` – weighted categories serving a stored or fallback value
+        ``"sectors"``             – per sector: index, tier, coverage, degraded and its own
+                                    stale / excluded / fallback lists (``_sector_block``)
         ``"map_markers"``         – list[dict]
         ``"alerts"``              – list[dict] (severity None when unscored)
         ``"news_scoring"``        – "Claude", "Claude (stale)", "Unscored" or "" (news failed)
@@ -522,25 +579,6 @@ def aggregate_data(status_callback=None) -> dict:
             meta["score"] = round(score, 1)
             meta["tier"] = get_health_tier(score)
             category_metadata[cat] = meta
-
-            # Industry adapters (SiliconAnalysts / Aerospace) return 4 categories under
-            # one primary key. Pop so the packed Series/tuples never leak into card
-            # modals or cache.
-            additional_scores = meta.pop("additional_scores", None)
-            additional_history = meta.pop("additional_history", None)
-            if additional_scores:
-                for add_cat, (add_score, add_meta) in additional_scores.items():
-                    if not math.isfinite(add_score):
-                        continue
-                    current_scores[add_cat] = float(add_score)
-                    add_meta = dict(add_meta or {})
-                    add_meta["score"] = round(add_score, 1)
-                    add_meta["tier"] = get_health_tier(add_score)
-                    add_meta["is_stale"] = bool(add_meta.get("is_stale", False))
-                    category_metadata[add_cat] = add_meta
-                    add_hist = additional_history.get(add_cat) if additional_history else None
-                    category_history[add_cat] = _align_history_to_dates(add_hist, dates, add_score)
-                    logger.info("Loaded %s (via %s): %.1f", add_cat, cat, add_score)
 
             # Reindex fills gaps by ffill. Dates BEFORE the first real observation stay
             # NaN; with no history only today's live point is set.
@@ -622,6 +660,10 @@ def aggregate_data(status_callback=None) -> dict:
             category_history.setdefault(cat, _empty_history(dates, cat))
             category_metadata.setdefault(cat, _unavailable_metadata(cat, "No provider result"))
     excluded_categories.sort()
+    for cat in _SECTOR_OF:
+        if cat not in current_scores:
+            category_history.setdefault(cat, _empty_history(dates, cat))
+            category_metadata.setdefault(cat, _unavailable_metadata(cat, "No provider result"))
 
     # Composite over the weighted categories present, weights renormalized explicitly.
     present = {cat for cat in CATEGORY_WEIGHTS if cat in current_scores}
@@ -632,14 +674,18 @@ def aggregate_data(status_callback=None) -> dict:
     except ValueError as exc:
         logger.error("Composite unavailable: %s", exc)
 
-    # Degradation flags, exposed via the snapshot, API, and /health.
-    fallback_categories = sorted(
-        cat for cat, meta in category_metadata.items() if meta.get("is_fallback")
-    )
+    # Degradation flags, exposed via the snapshot, API, and /health. Global categories only;
+    # each sector keeps its own flags under result["sectors"].
+    all_fallback = {cat for cat, meta in category_metadata.items() if meta.get("is_fallback")}
+    fallback_categories = sorted(cat for cat in all_fallback if cat in CATEGORY_WEIGHTS)
     stale_categories = sorted(
         cat for cat, meta in category_metadata.items()
-        if meta.get("is_stale") and cat in current_scores
+        if meta.get("is_stale") and cat in current_scores and cat in CATEGORY_WEIGHTS
     )
+    sectors = {
+        sector: _sector_block(sector, current_scores, category_metadata)
+        for sector in config.SECTORS
+    }
 
     # Map markers (port weather is fetched here, for the map only)
     try:
@@ -651,10 +697,11 @@ def aggregate_data(status_callback=None) -> dict:
     # Disruptions aggregation, on one 0-100 impact scale.
     disruptions: list[dict] = []
 
-    # Source 1: Low-scoring categories, impact = 100 - score (measured values only — a
-    # category serving a stored fallback is an outage, not a supply chain event)
+    # Source 1: Low-scoring global categories, impact = 100 - score (measured values only — a
+    # category serving a stored fallback is an outage, not a supply chain event). Sector
+    # categories are reported only in their sector block.
     for cat, score in current_scores.items():
-        if cat in fallback_categories:
+        if cat not in CATEGORY_WEIGHTS or cat in fallback_categories:
             continue
         if score < DISRUPTION_SCORE_THRESHOLD:
             severity = "Critical" if score < 40 else "Stressed"
@@ -690,6 +737,11 @@ def aggregate_data(status_callback=None) -> dict:
     except Exception as e:
         logger.warning("Failed to load daily history: %s", e)
         daily_history = {"dates": [], "scores": {}}
+    # Rows of the retired industry categories stay in the database and are never read.
+    daily_history["scores"] = {
+        cat: values for cat, values in (daily_history.get("scores") or {}).items()
+        if cat not in config.RETIRED_CATEGORIES
+    }
 
     result = {
         "last_updated_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -711,6 +763,7 @@ def aggregate_data(status_callback=None) -> dict:
         "fallback_categories": fallback_categories,
         "excluded_categories": excluded_categories,
         "stale_categories": stale_categories,
+        "sectors": sectors,
         "daily_history": daily_history,
     }
 
@@ -736,7 +789,7 @@ def aggregate_data(status_callback=None) -> dict:
         # category is excluded (history keeps a gap on degraded days).
         measured_scores = {
             cat: score for cat, score in current_scores.items()
-            if cat not in fallback_categories
+            if cat not in all_fallback
         }
         if isinstance(register_score, float) and math.isfinite(register_score):
             measured_scores["geo_register"] = register_score

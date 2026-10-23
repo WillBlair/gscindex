@@ -58,13 +58,6 @@ NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v19"
 FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "730"))
 
 # ---------------------------------------------------------------------------
-# Industry-specific provider cache
-# ---------------------------------------------------------------------------
-# Semiconductor and other industry-specific data is slow-moving (quarterly
-# or monthly updates). A 24-hour cache prevents unnecessary API calls.
-INDUSTRY_PROVIDER_CACHE_TTL: int = int(os.environ.get("INDUSTRY_PROVIDER_CACHE_TTL", "86400"))
-
-# ---------------------------------------------------------------------------
 # Category Definitions
 # ---------------------------------------------------------------------------
 # Each category contributes to the overall Supply Chain Health Index.
@@ -609,6 +602,14 @@ SECTOR_DROP_AFTER_DAYS: int = 150
 
 # Seconds the aggregator waits for each sector provider, counted from the start of its cycle.
 SECTOR_PROVIDER_TIMEOUT_SECONDS: float = 60
+
+# Categories of the industry profiles retired in project 3 (Silicon Analysts and the old aerospace
+# adapter). Their stored rows stay in the database untouched; the aggregator never reads them and
+# app startup strips them from an old snapshot.
+RETIRED_CATEGORIES: frozenset[str] = frozenset({
+    "chip_fab_util", "chip_memory_prices", "chip_lead_times", "chip_wafer_prices",
+    "aero_metals", "aero_orders", "aero_production", "aero_ppi",
+})
 
 # Credit line required by the Bank of Japan Time-Series Data Search API terms. It appears in the
 # description of every category that uses BOJ data and in the API output.
