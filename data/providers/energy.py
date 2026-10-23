@@ -40,7 +40,8 @@ from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.prices import clean_prices, cpi_ratios, cpi_reference, cpi_reference_date
 from data.providers.readings import (
-    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end,
+    safe_score)
 from data.sources import markets
 from scoring.anchors import get_anchor, score_raw
 
@@ -309,7 +310,7 @@ class EnergyProvider(BaseProvider):
                 ratio = ratios.reindex(ratios.index.union(daily.index)).ffill().reindex(daily.index)
                 real = daily * ratio
                 scores[leg] = pd.Series(
-                    [self._safe_score(p, anchor, r) for p, r in zip(daily, ratio)], index=daily.index)
+                    [safe_score(p, anchor, r) for p, r in zip(daily, ratio)], index=daily.index)
                 penalties[leg] = (real / real.shift(lookback) - 1.0).map(spike_penalty)
             except Exception as exc:
                 logger.warning("Energy %s history unavailable: %s", leg, exc)
@@ -328,9 +329,3 @@ class EnergyProvider(BaseProvider):
         if out.isna().all():
             raise RuntimeError("no energy history available")
         return out.rename("energy")
-
-    @staticmethod
-    def _safe_score(price: float, anchor: dict, ratio: float) -> float:
-        if not (math.isfinite(price) and math.isfinite(ratio)):
-            return float("nan")
-        return score_raw(price, anchor, ratio)

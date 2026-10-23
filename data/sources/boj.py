@@ -40,14 +40,16 @@ def _cache_key(code: str) -> str:
 def parse_series(payload: dict, code: str) -> pd.Series:
     """Monthly series for ``code`` indexed by month start, finite values only.
 
-    A reply that is HTTP 200 but not the series asked for (an error body, a reshaped result,
-    another code, no values) raises ``ValueError``, so the caller counts the input as missing.
+    A reply that is HTTP 200 but not the whole series asked for (an error body, a reshaped result,
+    another code, no values, a page with more to fetch) raises ``ValueError``, so the caller counts the input as missing.
     """
     if not isinstance(payload, dict):
         raise ValueError("BOJ reply is not a JSON object")
     status = payload.get("STATUS")
     if status != 200:
         raise ValueError(f"BOJ status {status!r}: {payload.get('MESSAGE', 'no message')}")
+    if payload.get("NEXTPOSITION") is not None:
+        raise ValueError(f"BOJ reply for {code} is truncated (NEXTPOSITION {payload['NEXTPOSITION']!r})")
     results = payload.get("RESULTSET")
     if not isinstance(results, list) or not results:
         raise ValueError(f"BOJ reply has no series for {code}")

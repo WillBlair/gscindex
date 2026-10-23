@@ -36,7 +36,8 @@ from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.prices import clean_prices, cpi_ratios, cpi_reference, cpi_reference_date
 from data.providers.readings import (
-    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, monthly_daily, oldest_as_of,
+    period_end, safe_score)
 from data.sources import fed_surveys, markets
 from scoring.anchors import get_anchor, score_raw
 
@@ -76,24 +77,6 @@ def _anchors() -> tuple[dict, dict, float]:
     """Input anchors, the survey stats and the CPI reference; a missing one is a RuntimeError."""
     anchors = {key: get_anchor(key) for key in _ANCHOR_KEYS}
     return anchors, _stats(), cpi_reference()
-
-
-def _safe_score(value: float, anchor: dict, ratio: float | None = None) -> float:
-    if not (math.isfinite(value) and (ratio is None or math.isfinite(ratio))):
-        return float("nan")
-    return score_raw(value, anchor, ratio)
-
-
-def _monthly_daily(scores: pd.Series, lag_days: int, drop_after: int, today: date) -> pd.Series:
-    """Monthly scores on a daily index: each public ``lag_days`` after its month ends, carried
-    forward until it is ``drop_after`` days past the period end."""
-    scores = scores.dropna()
-    dated = scores.copy()
-    dated.index = pd.DatetimeIndex([pd.Timestamp(period_end(d.date(), "M")) + pd.Timedelta(days=lag_days)
-                                    for d in scores.index])
-    dated = dated[~dated.index.duplicated(keep="last")]
-    full = pd.date_range(dated.index.min().normalize(), pd.Timestamp(today), freq="D")
-    return dated.reindex(full).ffill(limit=max(drop_after - lag_days, 0))
 
 
 class InputsProvider(BaseProvider):
@@ -236,8 +219,8 @@ class InputsProvider(BaseProvider):
         composite = fed_surveys.prices_paid_composite(fed_surveys.fetch_prices_paid(), stats)
         if composite.empty:
             raise ValueError("no survey has a usable value")
-        scores = pd.Series([_safe_score(float(z), anchor) for z in composite], index=composite.index)
-        return _monthly_daily(scores, config.PUBLICATION_LAG_DAYS[_PP], config.FRESHNESS[_PP][1], today)
+        scores = pd.Series([safe_score(float(z), anchor) for z in composite], index=composite.index)
+        return monthly_daily(scores, config.PUBLICATION_LAG_DAYS[_PP], config.FRESHNESS[_PP][1], today)
 
     @staticmethod
     def _metal_history(leg: str, today: date, anchor: dict, ratios: pd.Series) -> pd.Series:
@@ -245,9 +228,9 @@ class InputsProvider(BaseProvider):
         if monthly.empty:
             raise ValueError("no observations")
         ratio = ratios.reindex(ratios.index.union(monthly.index)).ffill().reindex(monthly.index)
-        scores = pd.Series([_safe_score(float(p), anchor, float(r)) for p, r in zip(monthly, ratio)],
+        scores = pd.Series([safe_score(float(p), anchor, float(r)) for p, r in zip(monthly, ratio)],
                            index=monthly.index)
-        return _monthly_daily(scores, config.PUBLICATION_LAG_DAYS["imf_monthly"],
+        return monthly_daily(scores, config.PUBLICATION_LAG_DAYS["imf_monthly"],
                               config.FRESHNESS[f"{leg}_monthly"][1], today)
 
     def fetch_history(self, days: int) -> pd.Series:

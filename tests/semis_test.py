@@ -82,6 +82,7 @@ def _with_fab(fn, series):
     _payload("C", dates=[202401], values=[1.0, 2.0]),                                      # reshaped
     _payload("C", FREQUENCY="x") | {"RESULTSET": [{"SERIES_CODE": "C", "FREQUENCY": "QUARTERLY",
                                                    "VALUES": {"SURVEY_DATES": [20241], "VALUES": [1.0]}}]},
+    _payload("C", NEXTPOSITION=61),                                                        # truncated
     ["not", "a", "dict"],
 ])
 def test_boj_parse_reshaped_raises(payload):
@@ -189,6 +190,13 @@ def test_fab_util_lower_is_better(anchors):
     assert low > normal > high
     assert normal == pytest.approx(80.0, abs=0.05)
     assert run(64.8) == 100.0 and run(93.2) == 0.0
+
+
+def test_fab_util_description_says_weak_demand_is_not_separated(anchors):
+    idx = pd.date_range(end="2026-09-01", periods=12, freq="MS")
+    _, meta = _with_fab(semis.FabUtilizationProvider().fetch_current,
+                        pd.Series([75.0] * 12, index=idx, dtype=float))
+    assert "weak demand is not separated out" in meta["description"]
 
 
 def test_fab_util_metadata_has_no_boj_credit(anchors):

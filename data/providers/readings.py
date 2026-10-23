@@ -6,7 +6,10 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
+import pandas as pd
+
 import config
+from scoring.anchors import score_raw
 
 
 class InputsExpired(RuntimeError):
@@ -96,3 +99,24 @@ def no_inputs_error(readings: list[InputReading], message: str) -> RuntimeError:
     """
     aged = [r for r in readings if r.as_of is not None and r.score is not None and r.status == "missing"]
     return InputsExpired(message) if aged else RuntimeError(message)
+
+
+def safe_score(value: float, anchor: dict, ratio: float | None = None) -> float:
+    """Anchored score of a reading, or NaN when the value (or the CPI ratio, if given) is not finite."""
+    if not (math.isfinite(value) and (ratio is None or math.isfinite(ratio))):
+        return float("nan")
+    return score_raw(value, anchor, ratio)
+
+
+def monthly_daily(scores: pd.Series, lag_days: int, drop_after: int, today: date) -> pd.Series:
+    """Monthly scores on a daily index: each public ``lag_days`` after its month ends, carried
+    forward until it is ``drop_after`` days past the period end. Empty input gives an empty series."""
+    scores = scores.dropna()
+    if scores.empty:
+        return scores.astype(float)
+    dated = scores.copy()
+    dated.index = pd.DatetimeIndex([pd.Timestamp(period_end(d.date(), "M")) + pd.Timedelta(days=lag_days)
+                                    for d in scores.index])
+    dated = dated[~dated.index.duplicated(keep="last")]
+    full = pd.date_range(dated.index.min().normalize(), pd.Timestamp(today), freq="D")
+    return dated.reindex(full).ffill(limit=max(drop_after - lag_days, 0))

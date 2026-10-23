@@ -28,7 +28,6 @@ Sector categories are not part of the global composite; the aggregator runs them
 from __future__ import annotations
 
 import logging
-import math
 from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
@@ -38,8 +37,8 @@ import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, no_inputs_error, oldest_as_of,
-    period_end)
+    InputReading, blend_inputs, freshness_status, inputs_metadata, monthly_daily, no_inputs_error, oldest_as_of,
+    period_end, safe_score)
 from data.sources import boj
 from scoring.anchors import get_anchor, score_raw
 
@@ -65,24 +64,6 @@ def _yoy_percent(levels: pd.Series) -> pd.Series:
     base = levels.reindex(levels.index - pd.DateOffset(months=_YOY_MONTHS)).to_numpy()
     base = np.where(base > 0, base, np.nan)
     return _finite(pd.Series((levels.to_numpy() / base - 1.0) * 100.0, index=levels.index))
-
-
-def _safe_score(value: float, anchor: dict) -> float:
-    return score_raw(value, anchor) if math.isfinite(value) else float("nan")
-
-
-def monthly_daily(scores: pd.Series, lag_days: int, drop_after: int, today: date) -> pd.Series:
-    """Monthly scores on a daily index: each public ``lag_days`` after its month ends, carried
-    forward until it is ``drop_after`` days past the period end. Empty input gives an empty series."""
-    scores = scores.dropna()
-    if scores.empty:
-        return scores.astype(float)
-    dated = scores.copy()
-    dated.index = pd.DatetimeIndex([pd.Timestamp(period_end(d.date(), "M")) + pd.Timedelta(days=lag_days)
-                                    for d in scores.index])
-    dated = dated[~dated.index.duplicated(keep="last")]
-    full = pd.date_range(dated.index.min().normalize(), pd.Timestamp(today), freq="D")
-    return dated.reindex(full).ffill(limit=max(drop_after - lag_days, 0))
 
 
 class _SemisProvider(BaseProvider):
@@ -149,7 +130,7 @@ class _SemisProvider(BaseProvider):
         today = _today()
         anchor = get_anchor(self.input_key)
         monthly = self._monthly()
-        scores = pd.Series([_safe_score(float(v), anchor) for v in monthly], index=monthly.index, dtype=float)
+        scores = pd.Series([safe_score(float(v), anchor) for v in monthly], index=monthly.index, dtype=float)
         daily = monthly_daily(scores, config.PUBLICATION_LAG_DAYS[self.lag_key],
                               config.FRESHNESS[self.input_key][1], today)
         window = pd.date_range(pd.Timestamp(today - timedelta(days=days)) + pd.Timedelta(days=1),
@@ -221,7 +202,7 @@ class FabUtilizationProvider(_SemisProvider):
         "Share of US semiconductor and electronic component manufacturing capacity in use, from the "
         "Federal Reserve's industrial production report. Utilization near the top of its range leaves "
         "little spare capacity to absorb a demand jump, so lower utilization reads as healthier on this "
-        "index.")
+        "index, though low utilization caused by weak demand is not separated out.")
     calculation = (
         "Utilization level in percent, mapped through anchors (healthiest 5% of pre-2020 history = 100, "
         "pre-2020 median = 80, worst month on record through 2025 = 0). Lower utilization scores higher.")

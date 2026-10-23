@@ -31,7 +31,8 @@ import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
-    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end,
+    safe_score)
 from data.sources import rail
 from scoring.anchors import get_anchor, score_raw
 
@@ -86,10 +87,6 @@ def _rail_series() -> tuple[pd.Series, pd.Series]:
     return weekly, yoy
 
 
-def _safe_score(value: float, anchor: dict) -> float:
-    return score_raw(value, anchor) if math.isfinite(value) else float("nan")
-
-
 def _carry(yoy: pd.Series, anchor: dict, key: str, as_of_of, today: date) -> pd.Series:
     """Daily scores of one input: each reading public ``PUBLICATION_LAG_DAYS[key]`` days after
     its period ends, carried forward, and dropped once older than the freshness drop window."""
@@ -97,7 +94,7 @@ def _carry(yoy: pd.Series, anchor: dict, key: str, as_of_of, today: date) -> pd.
     rows = []
     for stamp, value in yoy.items():
         as_of = as_of_of(stamp.date())
-        rows.append((pd.Timestamp(as_of + lag), pd.Timestamp(as_of), _safe_score(float(value), anchor)))
+        rows.append((pd.Timestamp(as_of + lag), pd.Timestamp(as_of), safe_score(float(value), anchor)))
     frame = pd.DataFrame(rows, columns=["available", "as_of", "score"]).dropna()
     frame = frame.drop_duplicates("available", keep="last").set_index("available")
     full = pd.date_range(frame.index.min().normalize(), pd.Timestamp(today), freq="D")

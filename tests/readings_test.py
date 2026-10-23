@@ -74,3 +74,24 @@ def test_no_inputs_error_is_plain_runtime_error_on_fetch_failures():
     # A non-finite value with a date is a parse failure, not an aged reading.
     nan = InputReading("a", float("nan"), date(2026, 10, 1), "x")
     assert not isinstance(no_inputs_error([nan], "m"), InputsExpired)
+
+
+def test_safe_score_is_nan_for_non_finite_inputs():
+    import math
+    from data.providers.readings import safe_score
+    anchor = {"transform": "identity", "direction": "lower_better", "best": 0.0, "normal": 10.0, "worst": 50.0}
+    assert safe_score(10.0, anchor) == 80.0
+    assert math.isnan(safe_score(float("nan"), anchor))
+    assert math.isnan(safe_score(float("inf"), anchor))
+    assert math.isnan(safe_score(10.0, anchor, float("nan")))
+
+
+def test_monthly_daily_dates_by_lag_carries_to_drop_window_and_handles_empty():
+    import pandas as pd
+    from datetime import date
+    from data.providers.readings import monthly_daily
+    scores = pd.Series([50.0], index=pd.DatetimeIndex(["2026-01-01"]))
+    out = monthly_daily(scores, 10, 100, date(2026, 6, 30))
+    assert out.index[0] == pd.Timestamp("2026-02-10")                 # Jan 31 + 10 days
+    assert out.loc["2026-05-11"] == 50.0 and pd.isna(out.loc["2026-05-12"])   # 100 days after Jan 31
+    assert monthly_daily(pd.Series([], dtype=float), 10, 100, date(2026, 6, 30)).empty
