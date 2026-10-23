@@ -374,7 +374,7 @@ FRESHNESS: dict[str, tuple[int, int]] = {
     "ttf_monthly":      (75, 150),
     "copper_monthly":   (75, 150),
     "aluminum_monthly": (75, 150),
-    "tariff_burden":    (60, 150),
+    "tariff_burden":    (75, 150),
     "tpu":              (14, 42),
     "gpr":              (14, 42),
     "geo_register":     (3, 9),

@@ -113,3 +113,8 @@ def test_docs_failed_category_step_separates_fetch_failure_from_expired_inputs(b
     assert ("If the inputs load but are all past their drop limits, the category is excluded "
             "right away") in text
     assert "If every input is missing, the category shows" not in text
+
+
+def test_docs_tariff_burden_freshness_reads_config(body):
+    stale, drop = config.FRESHNESS["tariff_burden"]
+    assert f"The burden is stale after {stale} days, dropped after {drop}" in _text(body)

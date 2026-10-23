@@ -419,9 +419,9 @@ def test_tariffs_missing_anchor_raises(monkeypatch):
 
 
 def test_tariffs_stale_burden_flags_stale(anchors, monkeypatch):
-    monkeypatch.setattr(tariffs, "_today", lambda: date(2026, 11, 5))   # 66 days after Aug 31
+    monkeypatch.setattr(tariffs, "_today", lambda: date(2026, 11, 16))  # 77 days after Aug 31
     _, meta = _run(TariffsProvider().fetch_current, customs=_customs(), imports=_imports(),
-                   tpu_daily=_tpu_daily(100.0, end="2026-11-03"))
+                   tpu_daily=_tpu_daily(100.0, end="2026-11-14"))
     inputs = {i["name"]: i for i in meta["inputs"]}
     assert inputs["tariff_burden"]["status"] == "stale"
     assert inputs["tpu"]["status"] == "live"
@@ -515,3 +515,13 @@ def test_tariffs_fetch_failures_are_not_inputs_expired(anchors):
     with pytest.raises(RuntimeError) as failure:
         _run(TariffsProvider().fetch_current, customs=None, imports=None, tpu_daily=None)
     assert not isinstance(failure.value, InputsExpired)
+
+
+def test_tariff_burden_is_live_until_the_next_print_is_due():
+    # BOPGIMP for August lands about Oct 5 (35 days after month end); September's lands about
+    # Nov 4. A healthy source is about 65 days old just before the next print: still live.
+    from data.providers.readings import freshness_status
+    assert config.FRESHNESS["tariff_burden"] == (75, 150)
+    august_end = date(2026, 8, 31)
+    assert freshness_status(august_end, date(2026, 11, 4), "tariff_burden") == "live"
+    assert freshness_status(august_end, date(2026, 11, 15), "tariff_burden") == "stale"
