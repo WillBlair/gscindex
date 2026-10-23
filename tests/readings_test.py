@@ -28,3 +28,16 @@ def test_non_finite_score_counts_as_missing():
     inf = InputReading("a", float("inf"), date(2026, 10, 1), "x")
     ok = InputReading("b", 60.0, date(2026, 10, 1), "y")
     assert blend_inputs([inf, ok], w) == (60.0, "live")
+
+
+def test_non_finite_score_is_normalized_to_missing_in_metadata():
+    from data.providers.readings import inputs_metadata
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        r = InputReading("a", bad, date(2026, 10, 1), "x")
+        assert r.score is None and r.status == "missing"
+        entry = inputs_metadata([r])[0]
+        assert entry["score"] is None and entry["status"] == "missing"
+    ok = InputReading("a", 42.0, date(2026, 10, 1), "x")
+    assert ok.score == 42.0 and ok.status == "live"
+    stale = InputReading("a", 42.0, date(2026, 10, 1), "x", status="stale")
+    assert stale.status == "stale"

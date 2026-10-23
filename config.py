@@ -444,3 +444,9 @@ CATEGORY_DROP_AFTER_DAYS: dict[str, int] = {
     "inputs":       150,
     "physical":     9,
 }
+
+# Chokepoints: a corridor at or above this share of its normal traffic is not a problem
+# (deadband); each corridor's shortfall below it is weighted and multiplied by the
+# severity factor, so a closed Hormuz alone takes the category to about 63.
+CHOKEPOINT_DEADBAND = 0.90
+CHOKEPOINT_SEVERITY = 3.0

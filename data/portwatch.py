@@ -16,8 +16,11 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
+import numpy as np
+import pandas as pd
 import requests
 
+import config
 from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,29 @@ _STALE_TTL = 3 * 86400
 RECENT_DAYS = 7
 BASELINE_YEARS = (2022, 2023)
 
+# Category scoring (Chokepoints provider). Short names -> PortWatch portids; the Dover
+# and Bosporus ids come from the PortWatch_chokepoints_database layer.
+PORTIDS: dict[str, str] = {
+    "Hormuz": "chokepoint6",
+    "BabM": "chokepoint4",
+    "Suez": "chokepoint1",
+    "Panama": "chokepoint2",
+    "Malacca": "chokepoint5",
+    "Taiwan": "chokepoint11",
+    "Gibraltar": "chokepoint8",
+    "Dover": "chokepoint9",
+    "Bosporus": "chokepoint3",
+    "Cape": "chokepoint7",
+}
+# The eight scored corridors. RedSea is the worse of Bab el-Mandeb and Suez; Cape of
+# Good Hope is context only (it rises when ships reroute).
+CORRIDORS = ["Malacca", "Taiwan", "Gibraltar", "Hormuz", "Dover", "RedSea", "Bosporus", "Panama"]
+RATIO_COLUMNS = CORRIDORS + ["BabM", "Suez", "Cape"]
+_DAILY_KEY = "portwatch_daily_v1"
+_DAILY_TTL = 6 * 3600
+_PAGE_SIZE = 1000
+_MAX_PAGES = 200
+
 # (PortWatch id, display name) in display order.
 CHOKEPOINTS: list[tuple[str, str]] = [
     ("chokepoint6", "Hormuz"),
@@ -46,10 +72,13 @@ CHOKEPOINTS: list[tuple[str, str]] = [
 ]
 
 
-def _query(where: str, fields: str, order: str | None = None, count: int = 2000) -> list[dict]:
+def _query(where: str, fields: str, order: str | None = None, count: int = 2000,
+           offset: int = 0) -> list[dict]:
     params = {"where": where, "outFields": fields, "f": "json", "resultRecordCount": count}
     if order:
         params["orderByFields"] = order
+    if offset:
+        params["resultOffset"] = offset
     resp = requests.get(_URL, params=params, timeout=_TIMEOUT)
     resp.raise_for_status()
     body = resp.json()
@@ -127,3 +156,89 @@ def fetch_chokepoint_traffic() -> dict | None:
         return get_cached(_CACHE_KEY, ttl=_STALE_TTL)
     set_cached(_CACHE_KEY, result)
     return result
+
+
+def _daily_frame(rows: list[dict]) -> pd.DataFrame:
+    """Rows from the daily layer as a frame of known corridors; anything unusable is dropped."""
+    cols = ["date", "portid", "n_total", "capacity"]
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    df = pd.DataFrame(rows).reindex(columns=cols)
+    df = df[df["portid"].isin(PORTIDS.values())].copy()
+    dates = df["date"]
+    if pd.api.types.is_numeric_dtype(dates):
+        df["date"] = pd.to_datetime(dates, unit="ms", errors="coerce")
+    else:
+        df["date"] = pd.to_datetime(dates.astype("string").str[:10], errors="coerce")
+    df["n_total"] = pd.to_numeric(df["n_total"], errors="coerce")
+    df["capacity"] = pd.to_numeric(df["capacity"], errors="coerce")
+    return df.dropna(subset=["date"]).reset_index(drop=True)
+
+
+def fetch_chokepoint_daily(start: date) -> pd.DataFrame:
+    """Daily transits for every scored corridor from ``start``: date, portid, n_total, capacity.
+
+    Pages the ArcGIS layer; an empty result is returned as an empty frame, and the
+    caller decides what that means. Network errors propagate.
+    """
+    cached = get_cached(_DAILY_KEY, ttl=_DAILY_TTL)
+    if isinstance(cached, dict) and cached.get("rows"):
+        try:
+            if date.fromisoformat(cached["start"]) <= start:
+                return _daily_frame(cached["rows"])
+        except (KeyError, TypeError, ValueError):
+            pass
+    ids = ",".join(f"'{pid}'" for pid in PORTIDS.values())
+    where = f"portid IN ({ids}) AND date >= DATE '{start}'"
+    rows: list[dict] = []
+    for _ in range(_MAX_PAGES):
+        page = _query(where, "date,portid,n_total,capacity", order="ObjectId",
+                      count=_PAGE_SIZE, offset=len(rows))
+        if not page:
+            break
+        rows.extend(page)
+    else:
+        raise RuntimeError("PortWatch paging did not finish")
+    df = _daily_frame(rows)
+    if not df.empty:
+        records = df.assign(date=df["date"].dt.strftime("%Y-%m-%d"))
+        records = records.astype(object).where(records.notna(), None).to_dict("records")
+        set_cached(_DAILY_KEY, {"start": start.isoformat(), "rows": records})
+    return df
+
+
+def corridor_ratios(daily: pd.DataFrame, baseline: dict) -> pd.DataFrame:
+    """Daily 7-day mean transits over the same calendar month's baseline, per corridor.
+
+    Columns are RATIO_COLUMNS. A corridor with no data, a gap inside the 7 days, or a
+    missing or non-positive baseline is NaN. RedSea is the worse of BabM and Suez.
+    """
+    if daily is None or daily.empty:
+        return pd.DataFrame(columns=RATIO_COLUMNS, dtype=float)
+    names = {pid: name for name, pid in PORTIDS.items()}
+    d = daily.assign(name=daily["portid"].map(names)).dropna(subset=["name"])
+    d = d.drop_duplicates(["date", "name"], keep="last")
+    wide = d.pivot(index="date", columns="name", values="n_total").astype(float)
+    wide = wide.sort_index().asfreq("D").reindex(columns=list(PORTIDS))
+    mean7 = wide.rolling(RECENT_DAYS, min_periods=RECENT_DAYS).mean()
+    months = wide.index.month
+    base = pd.DataFrame(index=wide.index, columns=wide.columns, dtype=float)
+    for name in wide.columns:
+        by_month = baseline.get(name) or {}
+        vals = np.array([float(by_month.get(str(m), by_month.get(m, np.nan))) for m in range(1, 13)])
+        vals[~(np.isfinite(vals) & (vals > 0))] = np.nan
+        base[name] = vals[months - 1]
+    ratios = mean7 / base
+    ratios["RedSea"] = ratios[["BabM", "Suez"]].min(axis=1, skipna=False)
+    return ratios[RATIO_COLUMNS]
+
+
+def chokepoint_score(ratios_row: pd.Series, weights: dict) -> float:
+    """0-100 category score from one day's ratios; NaN when any weighted corridor is NaN."""
+    ratios = np.array([ratios_row.get(c, np.nan) for c in weights], dtype=float)
+    if not np.isfinite(ratios).all():
+        return float("nan")
+    w = np.array(list(weights.values()), dtype=float)
+    share = np.clip(ratios / config.CHOKEPOINT_DEADBAND, 0.0, 1.0)
+    score = 100.0 - 100.0 * config.CHOKEPOINT_SEVERITY * float(np.sum(w * (1.0 - share)))
+    return float(np.clip(score, 0.0, 100.0))

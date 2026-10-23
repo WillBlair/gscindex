@@ -18,6 +18,12 @@ class InputReading:
     raw_value: str = ""
     status: str = "live"  # live | stale | missing
 
+    def __post_init__(self) -> None:
+        # A NaN or infinite score is a missing reading, so metadata never carries NaN.
+        if self.score is not None and not math.isfinite(self.score):
+            self.score = None
+            self.status = "missing"
+
 
 def period_end(obs: date, freq: str) -> date:
     """Date a period's data is complete: month end for monthly series, else unchanged."""
