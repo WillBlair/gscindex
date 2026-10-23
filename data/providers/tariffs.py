@@ -5,15 +5,17 @@ How much trade policy is costing supply chains, from two inputs (weights in
 ``config.TARIFF_WEIGHTS``, renormalized over the inputs available):
 
     1. Tariff burden (60%) - customs deposits in the Daily Treasury Statement as a share of
-       goods imports (FRED ``BOPGIMP``), both summed over the trailing three months. Deposits
-       are gross of IEEPA refunds.
+       goods imports (FRED ``BOPGIMP``), both summed over three months. Duties arrive mostly
+       the month after goods are imported, so deposits of month m+1 pair with imports of
+       month m. Deposits are gross of IEEPA refunds.
     2. Trade Policy Uncertainty (40%) - the 30-day mean of the daily Caldara et al. index.
 
 Each input is mapped through its anchors (healthiest 5% of pre-2020 history = 100, pre-2020
 median = 80, worst on record = 0). FRED ``EPUTRADE`` is shown on hover as context only.
 
-The burden is monthly: the newest value is the latest month for which customs deposits are
-complete and BOPGIMP is published. In history it is dated by publication lag.
+The burden is monthly: month m is scored once deposits for m+1 are complete and BOPGIMP is
+published for m. In history it is available from the later of period end of m+1 plus the DTS
+lag and period end of m plus the BOPGIMP lag.
 """
 
 from __future__ import annotations
@@ -146,9 +148,10 @@ class TariffsProvider(BaseProvider):
         sentences = []
         if burden in used:
             sentences.append(
-                f"Customs duties deposited to the US Treasury were {burden_value:.2f}% of goods imports "
-                f"over the three months to {burden.as_of:%B %Y}. Deposits are gross of IEEPA refunds, so "
-                "the burden can overstate what importers end up paying.")
+                f"Customs duties deposited to the US Treasury, paid mostly the month after goods are "
+                f"imported, were {burden_value:.2f}% of goods imports over the three months to "
+                f"{burden.as_of:%B %Y}. Deposits are gross of IEEPA refunds, so the burden can "
+                "overstate what importers end up paying.")
         if uncertainty in used:
             sentences.append(
                 f"Trade Policy Uncertainty, a daily index built from newspaper coverage, averaged "
@@ -164,7 +167,8 @@ class TariffsProvider(BaseProvider):
             "calculation": (
                 "Each input is mapped through its anchors (healthiest 5% of pre-2020 history = 100, "
                 "pre-2020 median = 80, worst on record = 0): the burden as customs deposits over "
-                f"goods imports, {config.TARIFF_BURDEN_MONTHS}-month sums, and the TPU 30-day mean on a log "
+                f"goods imports, {config.TARIFF_BURDEN_MONTHS}-month sums with deposits shifted back one month "
+                "(month m+1 deposits against month m imports), and the TPU 30-day mean on a log "
                 f"scale. Weights {weights}, renormalized over the inputs available."),
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             "as_of": oldest_as_of(readings).isoformat(),
@@ -177,15 +181,26 @@ class TariffsProvider(BaseProvider):
 
     @staticmethod
     def _burden_history(today: date, anchor: dict) -> pd.Series:
-        """Monthly burden scores, dated at period end plus the publication lag and carried forward."""
+        """Monthly burden scores, available once both inputs are public, carried forward.
+
+        Month m is public at the later of period end of m+1 plus the DTS lag (its deposits)
+        and period end of m plus the BOPGIMP lag (its imports). A value is dropped once the
+        month is older than the freshness drop window.
+        """
         burden = _burden_series()
-        lag = max(config.PUBLICATION_LAG_DAYS["dts"], config.PUBLICATION_LAG_DAYS["bopgimp"])
-        scores = pd.Series([_safe_score(v, anchor) for v in burden],
-                           index=[pd.Timestamp(period_end(d.date(), "M")) + pd.Timedelta(days=lag)
-                                  for d in burden.index]).dropna()
-        full = pd.date_range(scores.index.min().normalize(), pd.Timestamp(today), freq="D")
-        limit = max(config.FRESHNESS[_BURDEN][1] - lag, 0)
-        return scores.reindex(full).ffill(limit=limit)
+        lags = config.PUBLICATION_LAG_DAYS
+        rows = []
+        for month, value in burden.items():
+            end = period_end(month.date(), "M")
+            nxt = period_end((month + pd.DateOffset(months=1)).date(), "M")
+            available = max(nxt + timedelta(days=lags["dts"]), end + timedelta(days=lags["bopgimp"]))
+            rows.append((pd.Timestamp(available), pd.Timestamp(end), _safe_score(value, anchor)))
+        frame = pd.DataFrame(rows, columns=["available", "as_of", "score"]).dropna()
+        frame = frame.drop_duplicates("available", keep="last").set_index("available")
+        full = pd.date_range(frame.index.min().normalize(), pd.Timestamp(today), freq="D")
+        daily = frame.reindex(full).ffill()
+        age = (daily.index.to_series() - daily["as_of"]).dt.days
+        return daily["score"].where(age <= config.FRESHNESS[_BURDEN][1])
 
     @staticmethod
     def _tpu_history(today: date, anchor: dict) -> pd.Series:

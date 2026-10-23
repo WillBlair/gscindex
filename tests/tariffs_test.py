@@ -128,21 +128,51 @@ def test_fetch_customs_monthly_uses_cache():
 
 
 def test_tariff_burden_ratio():
-    idx = pd.date_range("2026-06-01", periods=3, freq="MS")
-    customs = pd.Series([10.0, 10.0, 10.0], index=idx)
-    imports = pd.Series([1000.0, 1000.0, 1000.0], index=idx)
+    # Customs of Jul-Sep pair with imports of Jun-Aug: deposits are shifted back one month.
+    customs = pd.Series([10.0, 20.0, 30.0], index=pd.date_range("2026-07-01", periods=3, freq="MS"))
+    imports = pd.Series([1000.0] * 3, index=pd.date_range("2026-06-01", periods=3, freq="MS"))
     burden = treasury.tariff_burden_series(customs, imports)
-    assert burden.dropna().tolist() == [1.0]
+    assert burden.dropna().tolist() == [2.0]               # 100 * (10 + 20 + 30) / 3000
+    assert burden.index[-1] == pd.Timestamp("2026-08-01")  # indexed by the import month m
+
+
+def test_tariff_burden_flat_ratio():
+    idx = pd.date_range("2026-06-01", periods=4, freq="MS")
+    customs = pd.Series([10.0] * 4, index=idx)
+    imports = pd.Series([1000.0] * 4, index=idx)
+    burden = treasury.tariff_burden_series(customs, imports)
+    assert burden.dropna().tolist() == [1.0]               # only Aug has imports for Jun-Aug and customs Jul-Sep
     assert burden.index[-1] == pd.Timestamp("2026-08-01")
 
 
-def test_tariff_burden_gap_month_gives_no_value():
-    idx = pd.date_range("2026-01-01", periods=6, freq="MS")
-    customs = pd.Series([10.0] * 6, index=idx).drop(idx[3])
-    imports = pd.Series([1000.0] * 6, index=idx)
+def test_tariff_burden_pairs_next_month_deposits_with_imports():
+    # A one-month spike in deposits shows up one month earlier than the deposit month.
+    idx = pd.date_range("2026-01-01", periods=8, freq="MS")
+    customs = pd.Series([10.0] * 8, index=idx)
+    customs[pd.Timestamp("2026-06-01")] = 40.0             # June deposits belong to May entries
+    imports = pd.Series([1000.0] * 8, index=idx)
     burden = treasury.tariff_burden_series(customs, imports)
-    # Windows ending Apr, May and Jun each contain the missing April.
-    assert burden.dropna().index.tolist() == [pd.Timestamp("2026-03-01")]
+    assert burden[pd.Timestamp("2026-04-01")] == pytest.approx(1.0)   # deposits Mar-May
+    assert burden[pd.Timestamp("2026-05-01")] == pytest.approx(100 * 60 / 3000)  # deposits Apr-Jun
+
+
+def test_tariff_burden_latest_month_needs_next_month_deposits():
+    # DTS through Sep 21 (September still open): Sep is dropped, so August cannot be scored.
+    rows = [_row(f"2026-{m:02d}-15", 10) for m in range(3, 10)] + [_row("2026-09-21", 5)]
+    customs = treasury.monthly_customs_from_rows(rows, complete_only=True)
+    assert customs.index[-1] == pd.Timestamp("2026-08-01")
+    imports = pd.Series([1000.0] * 7, index=pd.date_range("2026-03-01", periods=7, freq="MS"))
+    burden = treasury.tariff_burden_series(customs, imports)
+    assert burden.index[-1] == pd.Timestamp("2026-07-01")
+
+
+def test_tariff_burden_gap_month_gives_no_value():
+    idx = pd.date_range("2026-01-01", periods=8, freq="MS")
+    customs = pd.Series([10.0] * 8, index=idx).drop(pd.Timestamp("2026-04-01"))
+    imports = pd.Series([1000.0] * 8, index=idx)
+    burden = treasury.tariff_burden_series(customs, imports)
+    # Missing April deposits belong to March; windows ending Mar, Apr and May contain it.
+    assert burden.index.tolist() == [pd.Timestamp("2026-06-01"), pd.Timestamp("2026-07-01")]
 
 
 # ---------------------------------------------------------------------------- tpu
@@ -244,7 +274,7 @@ def _months(end="2026-08-01", start="2025-01-01"):
     return pd.date_range(start, end, freq="MS")
 
 
-def _customs(pct=6.0, end="2026-08-01"):
+def _customs(pct=6.0, end="2026-09-01"):
     idx = _months(end)
     return pd.Series([pct * 10.0] * len(idx), index=idx)      # $M; imports below are 1000
 
@@ -408,28 +438,30 @@ def test_tariffs_burden_dropped_after_freshness_window(anchors, monkeypatch):
 
 def test_tariffs_history_dates_burden_by_publication_lag(anchors):
     customs = _customs(6.0)
-    customs[pd.Timestamp("2026-07-01")] = 120.0            # July 12%; 3-month burden ending Jul = 8%
+    customs[pd.Timestamp("2026-07-01")] = 120.0            # July deposits 12%; burden for Jun, Jul, Aug = 8%
     daily = _tpu_daily(_tpu_value_for(70), start="2026-01-01", end="2026-10-19")
     hist = _run(lambda: TariffsProvider().fetch_history(120), customs=customs,
                 imports=_imports(), tpu_daily=daily)
     assert hist.name == "tariffs"
     assert hist.index[-1] == pd.Timestamp(TODAY)
     assert (config.PUBLICATION_LAG_DAYS["dts"], config.PUBLICATION_LAG_DAYS["bopgimp"]) == (1, 35)
-    # July's window is public Jul 31 + 35 days = Sep 4; until then June's 6% reading (score 40) stands.
-    assert hist[pd.Timestamp("2026-09-03")] == pytest.approx(0.6 * 40 + 0.4 * 70, abs=0.1)
-    assert hist[pd.Timestamp("2026-09-04")] == pytest.approx(0.6 * 20 + 0.4 * 70, abs=0.1)
+    # June's burden (deposits May-Jul) is public at max(Jul 31 + 1, Jun 30 + 35) = Aug 4;
+    # until then May's 6% reading (score 40) stands.
+    assert hist[pd.Timestamp("2026-08-03")] == pytest.approx(0.6 * 40 + 0.4 * 70, abs=0.1)
+    assert hist[pd.Timestamp("2026-08-04")] == pytest.approx(0.6 * 20 + 0.4 * 70, abs=0.1)
 
 
 def test_tariffs_history_leaves_unobserved_days_nan(anchors):
-    # Burden last window ends April: public Jun 4, carried 115 days (150 drop - 35 lag) to Sep 27.
-    # The TPU 30-day mean needs 20 observations, so it first exists Oct 14 for a file starting Sep 25.
-    daily = _tpu_daily(_tpu_value_for(70), start="2026-09-25", end="2026-10-19")
+    # Customs complete through April, imports through April: the last burden is March (public
+    # May 5) and drops 150 days after Mar 31, on Aug 28. The TPU 30-day mean needs 20
+    # observations, so it first exists Sep 29 for a file starting Sep 10.
+    daily = _tpu_daily(_tpu_value_for(70), start="2026-09-10", end="2026-10-19")
     hist = _run(lambda: TariffsProvider().fetch_history(120), customs=_customs(6.0, end="2026-04-01"),
                 imports=_imports("2026-04-01"), tpu_daily=daily)
     assert hist[pd.Timestamp("2026-06-25")] == pytest.approx(40.0, abs=0.1)
-    assert hist[pd.Timestamp("2026-09-27")] == pytest.approx(40.0, abs=0.1)
-    assert hist["2026-09-28":"2026-10-13"].isna().all()
-    assert hist[pd.Timestamp("2026-10-14")] == pytest.approx(70.0, abs=0.1)
+    assert hist[pd.Timestamp("2026-08-28")] == pytest.approx(40.0, abs=0.1)
+    assert hist["2026-08-29":"2026-09-28"].isna().all()
+    assert hist[pd.Timestamp("2026-09-29")] == pytest.approx(70.0, abs=0.1)
     assert hist[pd.Timestamp(TODAY)] == pytest.approx(70.0, abs=0.1)
 
 

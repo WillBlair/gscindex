@@ -7,7 +7,10 @@ three gives one continuous series. Deposits are gross of IEEPA refunds: refunds 
 withdrawals and are not netted out here.
 
 The tariff burden is customs deposits as a percentage of goods imports (FRED ``BOPGIMP``,
-also millions of dollars), both summed over the trailing three months.
+also millions of dollars). Duties are paid about 10 working days after release, or on the
+periodic monthly statement in the following month, so most of month m's duties arrive in
+month m+1. Deposits are therefore shifted back one month (deposits of m+1 pair with imports
+of m) before both sides are summed over three months.
 """
 from __future__ import annotations
 
@@ -105,12 +108,16 @@ def _month_start(series: pd.Series) -> pd.Series:
 
 
 def tariff_burden_series(customs_m: pd.Series, imports_m: pd.Series) -> pd.Series:
-    """100 x trailing 3-month customs sum / trailing 3-month goods imports sum, in percent.
+    """100 x 3-month customs sum / 3-month goods imports sum, in percent, customs shifted back a month.
 
-    Both inputs are monthly in millions of dollars. A window with a missing month on either
-    side has no value. The result is indexed by the last month of each window (first of month).
+    Both inputs are monthly in millions of dollars. Customs deposits dated month m+1 are paired
+    with imports of month m, so the value for month m (the last month of the window) sums
+    deposits of months m-1..m+1 over imports of months m-2..m and is scorable only once
+    deposits for m+1 are complete. A window with a missing month on either side has no value.
+    The result is indexed by month m (first of month).
     """
     customs, imports = _month_start(customs_m), _month_start(imports_m)
+    customs.index = customs.index - pd.DateOffset(months=1)
     months = config.TARIFF_BURDEN_MONTHS
     both = customs.index.intersection(imports.index)
     if both.empty:
