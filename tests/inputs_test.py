@@ -257,8 +257,8 @@ def test_latest_month_uses_whichever_surveys_have_it(monkeypatch):
     Env(monkeypatch, surveys=surveys)
     _, meta = InputsProvider().fetch_current()
     pp = [i for i in meta["inputs"] if i["name"] == "prices_paid"][0]
-    assert pp["as_of"] == "2026-10-31"                  # Philly alone reports October: z = 4.0
-    assert pp["score"] == pytest.approx(0.0)
+    assert pp["as_of"] == TODAY.isoformat()             # October is still in progress: as of today, not Oct 31
+    assert pp["score"] == pytest.approx(0.0)                  # Philly alone reports October: z = 4.0
 
 
 def test_survey_missing_leaves_the_others(monkeypatch):
@@ -267,7 +267,41 @@ def test_survey_missing_leaves_the_others(monkeypatch):
     Env(monkeypatch, surveys=surveys)
     _, meta = InputsProvider().fetch_current()
     assert [i for i in meta["inputs"] if i["name"] == "prices_paid"][0]["score"] == pytest.approx(40.0)
-    assert "Empire" in meta["description"] or "empire" in meta["source"].lower()
+    assert "The Empire State Fed manufacturing survey reports the share of firms paying higher prices;" \
+        in meta["description"]
+
+
+def test_description_grammar_for_two_and_three_surveys(monkeypatch):
+    surveys = _surveys()
+    del surveys["dallas"]
+    Env(monkeypatch, surveys=surveys)
+    _, meta = InputsProvider().fetch_current()
+    assert "The Philadelphia and Empire State Fed manufacturing surveys report the share of firms paying " \
+        "higher prices;" in meta["description"]
+    Env(monkeypatch)
+    _, meta = InputsProvider().fetch_current()
+    assert "The Philadelphia, Empire State, and Dallas Fed manufacturing surveys report the share of firms " \
+        "paying higher prices;" in meta["description"]
+
+
+def test_as_of_is_never_after_today(monkeypatch):
+    # October survey value (month ends Oct 31) and an official metal month ending after today.
+    surveys = _surveys(end="2026-10-01")
+    Env(monkeypatch, surveys=surveys, copper=_monthly(10000.0, end="2026-10-01"),
+        aluminum=_monthly(3000.0, end="2026-10-01"))
+    _, meta = InputsProvider().fetch_current()
+    by = {i["name"]: i for i in meta["inputs"]}
+    assert by["prices_paid"]["as_of"] == TODAY.isoformat()
+    assert by["copper_monthly"]["as_of"] == TODAY.isoformat()
+    assert by["copper_monthly"]["status"] == "live"
+    assert all(i["as_of"] <= TODAY.isoformat() for i in meta["inputs"])
+    assert meta["as_of"] == TODAY.isoformat()
+
+
+def test_as_of_clamp_keeps_older_months_unchanged(monkeypatch):
+    Env(monkeypatch)                                          # September everywhere
+    _, meta = InputsProvider().fetch_current()
+    assert {i["as_of"] for i in meta["inputs"]} == {"2026-09-30"}
 
 
 def test_all_surveys_missing_blends_metals_only(monkeypatch):
@@ -396,3 +430,20 @@ def test_history_all_missing_raises(monkeypatch):
 def test_history_survives_cpi_failure_with_prices_paid_only(monkeypatch):
     Env(monkeypatch, cpi=ValueError("down"))
     assert InputsProvider().fetch_history(90)[pd.Timestamp(TODAY)] == pytest.approx(40.0, abs=0.1)
+
+
+@pytest.mark.parametrize("entry", [
+    {"series": "CPIAUCSL", "value": CPI},                           # date missing
+    {"series": "CPIAUCSL", "date": "2025-12-01"},                   # value missing
+    {"series": "CPIAUCSL", "date": "", "value": CPI},               # blank date
+    {"series": "CPIAUCSL", "date": "2025-12-01", "value": float("nan")},
+    None,
+])
+def test_cpi_reference_missing_or_malformed_raises_runtime_error(monkeypatch, entry):
+    Env(monkeypatch)
+    anchors = {**ANCHORS, "cpi_reference": entry}
+    monkeypatch.setattr(config, "SCORE_ANCHORS", anchors)
+    with pytest.raises(RuntimeError, match="no anchor for cpi_reference"):
+        InputsProvider().fetch_current()
+    with pytest.raises(RuntimeError, match="no anchor for cpi_reference"):
+        InputsProvider().fetch_history(90)

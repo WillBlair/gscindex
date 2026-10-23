@@ -38,7 +38,7 @@ import pandas as pd
 import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
-from data.providers.prices import clean_prices, cpi_ratios, cpi_reference
+from data.providers.prices import clean_prices, cpi_ratios, cpi_reference, cpi_reference_date
 from data.providers.readings import (
     InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import markets
@@ -254,7 +254,7 @@ class EnergyProvider(BaseProvider):
                 f"price costs extra points.{spike_note} {context}"
             ).strip(),
             "calculation": (
-                f"Per leg: price x CPI ratio (to {config.SCORE_ANCHORS['cpi_reference']['date']} dollars), log, "
+                f"Per leg: price x CPI ratio (to {cpi_reference_date()} dollars), log, "
                 "then mapped through anchors (healthiest 5% of pre-2020 = 100, pre-2020 median = 80, worst "
                 "monthly average = 0). Weights " + ", ".join(
                     f"{_LEG_LABELS[k]} {w:.0%}" for k, w in config.ENERGY_LEG_WEIGHTS.items())

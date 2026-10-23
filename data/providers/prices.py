@@ -18,12 +18,26 @@ def clean_prices(series: pd.Series) -> pd.Series:
     return series[~series.index.duplicated(keep="last")]
 
 
-def cpi_reference() -> float:
-    """The anchors' CPI reference value; a missing one is a RuntimeError, not a KeyError."""
+def _cpi_entry() -> tuple[float, str]:
+    """(value, date) of the anchors' CPI reference; either one missing or malformed is a RuntimeError."""
     try:
-        return float(config.SCORE_ANCHORS["cpi_reference"]["value"])
-    except (KeyError, TypeError, ValueError):
+        entry = config.SCORE_ANCHORS["cpi_reference"]
+        value, day = float(entry["value"]), str(entry["date"]).strip()
+    except (KeyError, TypeError, ValueError, AttributeError):
         raise RuntimeError("no anchor for cpi_reference") from None
+    if not (math.isfinite(value) and value > 0 and day):
+        raise RuntimeError("no anchor for cpi_reference")
+    return value, day
+
+
+def cpi_reference() -> float:
+    """The anchors' CPI reference value."""
+    return _cpi_entry()[0]
+
+
+def cpi_reference_date() -> str:
+    """The anchors' CPI reference month, for the calculation text."""
+    return _cpi_entry()[1]
 
 
 def cpi_ratios(fetch: Callable[[str], pd.Series], cpi_ref: float) -> pd.Series:

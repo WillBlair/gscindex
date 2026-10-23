@@ -321,3 +321,17 @@ def test_runtime_fred_fetch_is_trimmed_not_full_history(monkeypatch):
     fetch.assert_called_once_with("DCOILBRENTEU", lookback_days=config.ENERGY_FRED_LOOKBACK_DAYS)
     assert config.ENERGY_FRED_LOOKBACK_DAYS <= 4 * 365
     assert not hasattr(energy, "fetch_fred_full")
+
+
+@pytest.mark.parametrize("entry", [
+    {"series": "CPIAUCSL", "value": CPI},                           # date missing: used to be a bare KeyError
+    {"series": "CPIAUCSL", "date": "2025-12-01"},
+    {"series": "CPIAUCSL", "date": "", "value": CPI},
+])
+def test_energy_cpi_reference_missing_or_malformed_raises_runtime_error(monkeypatch, entry):
+    Env(monkeypatch)
+    monkeypatch.setattr(config, "SCORE_ANCHORS", {**ANCHORS, "cpi_reference": entry})
+    with pytest.raises(RuntimeError, match="no anchor for cpi_reference"):
+        EnergyProvider().fetch_current()
+    with pytest.raises(RuntimeError, match="no anchor for cpi_reference"):
+        EnergyProvider().fetch_history(90)

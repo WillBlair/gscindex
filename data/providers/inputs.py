@@ -34,7 +34,7 @@ import pandas as pd
 import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
-from data.providers.prices import clean_prices, cpi_ratios, cpi_reference
+from data.providers.prices import clean_prices, cpi_ratios, cpi_reference, cpi_reference_date
 from data.providers.readings import (
     InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import fed_surveys, markets
@@ -116,7 +116,7 @@ class InputsProvider(BaseProvider):
             if composite.empty:
                 raise ValueError("no survey has a usable value")
             month, z = composite.index[-1], float(composite.iloc[-1])
-            as_of = period_end(month.date(), "M")
+            as_of = min(period_end(month.date(), "M"), today)    # a month still in progress is as of today
             latest = {name: float(s[month]) for name, s in surveys.items()
                       if name in stats and month in s.index and math.isfinite(s[month])}
             ids = ", ".join(f"{_SURVEY_LABELS.get(n, n)} {fed_surveys.PRICES_PAID_SERIES[n]}" for n in latest)
@@ -143,6 +143,7 @@ class InputsProvider(BaseProvider):
             official, month = float(monthly.iloc[-1]), monthly.index[-1].date()
             official_date = period_end(month, "M")
             value, as_of, mode = markets.scale_live(official, official_date, symbol, unit_factor=factor)
+            as_of = min(as_of, today)
             name = leg if mode == "live" else f"{leg}_monthly"
             if mode == "live":
                 source = f"{label} ({series_id}, {symbol}: live, scaled from the {official_date:%b %Y} average)"
@@ -196,8 +197,8 @@ class InputsProvider(BaseProvider):
             names = " and ".join(survey_names) if len(survey_names) < 3 else (
                 ", ".join(survey_names[:-1]) + ", and " + survey_names[-1])
             sentences.append(
-                f"The {names} Fed manufacturing survey{'s' if len(survey_names) > 1 else ''} report the share "
-                "of firms paying higher prices; each is compared with its own 2004-2019 range and the "
+                f"The {names} Fed manufacturing {'surveys report' if len(survey_names) > 1 else 'survey reports'} "
+                "the share of firms paying higher prices; each is compared with its own 2004-2019 range and the "
                 f"results are averaged ({pp.raw_value.split(':')[0]}).")
         for leg in _METALS:
             reading, value = metals[leg]
@@ -219,7 +220,7 @@ class InputsProvider(BaseProvider):
                 "Prices paid: each survey's value minus its 2004-2019 mean, over its sd, averaged over the "
                 "surveys reporting that month, then mapped through anchors (healthiest 5% of pre-2020 history "
                 "= 100, pre-2020 median = 80, worst monthly average on record = 0). Copper and aluminum: price "
-                f"x CPI ratio (to {config.SCORE_ANCHORS['cpi_reference']['date']} dollars), log, same anchors. "
+                f"x CPI ratio (to {cpi_reference_date()} dollars), log, same anchors. "
                 f"Weights {weight_text}, renormalized over available inputs."),
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             "as_of": oldest_as_of(readings).isoformat(),
