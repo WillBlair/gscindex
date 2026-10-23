@@ -452,7 +452,7 @@ def test_map_caption_counts_drawn_ports():
 
 def test_chokepoint_panel_shows_bars_colors_and_source():
     traffic = {
-        "as_of": "2026-10-18", "recent_days": 7, "global": "same month in 2022-2023",
+        "as_of": "2026-10-18", "recent_days": 7, "baseline": "same month in 2022-2023",
         "source": "IMF PortWatch",
         "chokepoints": [
             {"name": "Hormuz", "recent_per_day": 3.7, "normal_per_day": 98.1, "pct_of_normal": 4},
@@ -599,15 +599,35 @@ def test_readout_below_coverage_says_not_enough_data():
     readout = term.build_readout(snap, "aerospace")
     value = next(c for c in walk(readout) if "v" in str(getattr(c, "className", "")).split())
     assert text_of(value) == "Not enough data"
-    tier = next(c for c in walk(readout) if getattr(c, "className", None) == "tier")
-    assert text_of(tier) == ""
+    # No tier line and no "vs yesterday" line; the sparkline and chokepoints still render.
+    classes = _class_names(readout)
+    assert "tier" not in classes and "chg" not in classes
+    assert {"spk", "choke"} <= classes
     text = text_of(readout)
+    assert "vs yesterday" not in text
     for label in ("Healthy", "Stable", "Stressed", "Critical", "No live score"):
         assert label not in text
     # The table marks the two missing categories and shows no index number.
     table = term.build_category_table(snap, "aerospace")
     assert "excluded" in text_of(cells(_row_for(table, "aero_flow"))[0])
     assert text_of(cells(_body(table)[-1])[3]).strip() == "–"
+
+
+def test_aero_index_change_hidden_when_yesterday_has_fewer_categories():
+    snap = snapshot()
+    snap["daily_history"]["scores"]["aero_flow"][-2] = None
+    chg = next(c for c in walk(term.build_readout(snap, "aerospace")) if getattr(c, "className", None) == "chg")
+    assert text_of(chg.children[0]) == "–"
+    index_row = cells(_body(term.build_category_table(snap, "aerospace"))[-1])
+    assert text_of(index_row[5]).strip() == "–" and text_of(index_row[6]).strip() == "–"
+    assert text_of(index_row[4]).strip() != "–"  # yesterday's index itself still shows
+
+
+def test_readout_keeps_chokepoints_below_the_sparkline():
+    from pathlib import Path
+    css = Path(__file__).resolve().parents[1].joinpath("assets", "terminal.css").read_text()
+    assert ".read .spk { margin-top: 14px; color: var(--amber); grid-row: 5;" in css
+    assert ".read .choke { grid-row: 6; grid-column: 1; }" in css
 
 
 def test_sector_stored_fallback_row_shows_its_suffix():

@@ -373,6 +373,23 @@ def test_sector_yesterday_needs_coverage():
     assert td.index_history(snap, "semiconductor", 7)[-3] is None
 
 
+def test_sector_change_needs_the_same_categories_on_both_days():
+    snap = _sector_snapshot()
+    scores = snap["daily_history"]["scores"]
+    # 4 categories today and 4 stored yesterday: the change is shown.
+    summary = td.index_summary(snap, "aerospace")
+    assert summary["change"] == pytest.approx(71.3 - summary["yday"])
+    # 4 today, 3 yesterday: yesterday's index still shows, the change does not.
+    scores["aero_flow"][-2] = None
+    summary = td.index_summary(snap, "aerospace")
+    assert summary["yday"] is not None
+    assert summary["change"] is None
+    # 3 today (aero_flow excluded) and the same 3 yesterday: comparable again.
+    del snap["current_scores"]["aero_flow"]
+    summary = td.index_summary(snap, "aerospace")
+    assert summary["change"] == pytest.approx(71.3 - summary["yday"])
+
+
 def test_sector_below_coverage_today_has_no_index_or_tier():
     snap = _sector_snapshot()
     snap["sectors"]["semiconductor"] = _sector_block(None, excluded_categories=SEMIS[:2])

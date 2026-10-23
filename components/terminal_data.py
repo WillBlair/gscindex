@@ -175,12 +175,20 @@ def index_summary(data: dict, profile_key: str) -> dict:
 
     Sector: today is the snapshot's sector index (None below coverage, or in a snapshot
     without sectors); yesterday is that day's stored sector mean under the coverage rule.
+    The change is shown only when the same categories are present on both days, so it
+    never compares indexes built from different category sets.
     """
     key = tab_key(profile_key)
     if key != DEFAULT_TAB:
+        today_date = _today_utc(data)
+        yesterday = today_date - timedelta(days=1)
+        scores = data.get("current_scores") or {}
+        cats = SECTORS[key]["weights"]
         today = _finite(sector_block(data, key).get("index"))
-        yday = _sector_day(data, key, _today_utc(data) - timedelta(days=1))
-        change = today - yday if today is not None and yday is not None else None
+        yday = _sector_day(data, key, yesterday)
+        same_set = ({c for c in cats if _finite(scores.get(c)) is not None}
+                    == {c for c in cats if _stored(data, c, yesterday) is not None})
+        change = today - yday if today is not None and yday is not None and same_set else None
         return {"today": today, "yday": yday, "change": change,
                 "tier": tier_for(today) if today is not None else None}
     rows = [r for r in category_rows(data, profile_key) if not r["is_excluded"]]

@@ -202,26 +202,29 @@ def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:
     summary = index_summary(data, profile_key)
     tier = summary["tier"]
     color = tier["color"] if tier else DIM
+    title = html.Div([html.Span(f"{_tab_name(profile_key)} index"), html.Span(_stamp(data))], className="ttl")
+    trend = html.Div([
+        html.Div(f"{days} days", className="dim spk-label"),
+        sparkline(index_history(data, profile_key, days), 268, 46, AMBER),
+    ], className="spk")
     if tab_key(profile_key) != DEFAULT_TAB and summary["today"] is None:
-        # Fewer sector categories than the coverage minimum: no number and no tier.
-        value = html.Div("Not enough data", className="v v-empty", style={"color": color})
-        tier_text = ""
-    else:
-        value = html.Div(fmt(summary["today"]), className="v num", style={"color": color})
-        tier_text = tier["label"] if tier else "No live score"
+        # Fewer sector categories than the coverage minimum: no number, no tier, no change.
+        return html.Section([
+            title,
+            html.Div("Not enough data", className="v v-empty", style={"color": color}),
+            trend,
+            build_chokepoints(data.get("chokepoints")),
+        ], className="pane read")
     return html.Section([
-        html.Div([html.Span(f"{_tab_name(profile_key)} index"), html.Span(_stamp(data))], className="ttl"),
-        value,
-        html.Div(tier_text, className="tier", style={"color": color}),
+        title,
+        html.Div(fmt(summary["today"]), className="v num", style={"color": color}),
+        html.Div(tier["label"] if tier else "No live score", className="tier", style={"color": color}),
         html.Div([
             html.Span(signed(summary["change"]), className=change_class(summary["change"])),
             " vs yesterday ",
             html.Span(fmt(summary["yday"]), className="num"),
         ], className="chg"),
-        html.Div([
-            html.Div(f"{days} days", className="dim spk-label"),
-            sparkline(index_history(data, profile_key, days), 268, 46, AMBER),
-        ], className="spk"),
+        trend,
         build_chokepoints(data.get("chokepoints")),
     ], className="pane read")
 

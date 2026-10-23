@@ -198,3 +198,8 @@ class FabUtilizationProvider(_SemisProvider):
     @staticmethod
     def _raw_text(value: float, month: pd.Timestamp) -> str:
         return f"{value:.1f}% ({month:%b %Y})"
+
+
+# Categories built from BOJ data, which must carry config.BOJ_CREDIT wherever they are shown.
+BOJ_CATEGORIES: frozenset[str] = frozenset(
+    p.category for p in (MemoryPricesProvider, LogicPricesProvider, FabUtilizationProvider) if p.credits_boj)

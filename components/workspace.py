@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from components.terminal_data import sector_block, tab_key, tab_weights
 from config import BOJ_CREDIT, CATEGORY_LABELS, DEFAULT_TAB, SECTORS
 from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
+from data.providers.semis import BOJ_CATEGORIES
 
 
 class _PlainText(HTMLParser):
@@ -80,7 +81,8 @@ def _csv_status(available, cat, meta, flags):
 _CSV_CREDITS = {"chokepoints": PORTWATCH_CREDIT, "physical": PORTWATCH_CREDIT}
 # The Global export keeps its pre-tab profile name so its file is unchanged.
 _GLOBAL_PROFILE_LABEL = "Baseline (Global)"
-# Every Semis row carries the Bank of Japan credit line and its reuse terms.
+# Rows built from BOJ data (the providers' ``credits_boj`` flag) carry the Bank of Japan credit
+# line and its reuse terms.
 SEMIS_CSV_TERMS = (BOJ_CREDIT + " Commercial reuse of the memory and logic scores requires the "
                    "Bank of Japan's permission.")
 
@@ -101,7 +103,7 @@ def _inputs_cell(meta):
 def snapshot_csv(data, key):
     """A tab-scoped export with provenance, data date (as_of) and freshness status.
 
-    Sector exports add an ``inputs`` column; Semis rows carry the BOJ credit and terms.
+    Sector exports add an ``inputs`` column; rows built from BOJ data carry the BOJ credit and terms.
     """
     key = tab_key(key)
     sector = key != DEFAULT_TAB
@@ -118,7 +120,7 @@ def snapshot_csv(data, key):
         score = data.get("current_scores", {}).get(cat)
         meta = data.get("category_metadata", {}).get(cat, {})
         available = finite_score(score)
-        credit = SEMIS_CSV_TERMS if key == "semiconductor" else _CSV_CREDITS.get(cat, "")
+        credit = SEMIS_CSV_TERMS if cat in BOJ_CATEGORIES else _CSV_CREDITS.get(cat, "")
         row = [cell(data.get("last_updated_utc")), cell(label), CATEGORY_LABELS.get(cat, cat),
                score if available else "", weight, round(score * weight, 3) if available else "",
                _csv_status(available, cat, meta, flags), cell(meta.get("as_of")),

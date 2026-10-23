@@ -198,6 +198,7 @@ button { font: inherit; color: inherit; }
 .range .dash-options-list-option { padding: 2px 6px; font-size: 11px; }
 /* Chokepoint traffic (IMF PortWatch) under the index line */
 .choke { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--grid); }
+.read .choke { grid-row: 6; grid-column: 1; }  /* stays under the sparkline when the tier and change lines are hidden */
 .choke-ttl { margin-bottom: 8px; }
 .choke-row { display: grid; grid-template-columns: 10.4em 1fr 44px; gap: 10px; align-items: center; padding: 4px 0; font-size: clamp(12px, 0.8vw, 14px); }
 .choke-name { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

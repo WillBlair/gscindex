@@ -367,9 +367,12 @@ def test_csv_semis_has_boj_terms(snapshot):
     meta["semis_fab_utilization"].update(as_of="2026-06-30", is_stale=True)
     rows = list(csv.DictReader(io.StringIO(snapshot_csv(snapshot, "semiconductor"))))
     assert [r["category"] for r in rows] == [config.CATEGORY_LABELS[c] for c in SECTORS["semiconductor"]["weights"]]
-    assert all(r["credit"] == SEMIS_TERMS for r in rows)
     assert all(r["profile"] == "Semiconductor" for r in rows)
     by_cat = {r["category"]: r for r in rows}
+    # Only the rows built from BOJ data carry the credit; Fab Utilization is Fed G.17 data.
+    assert by_cat["Memory Prices"]["credit"] == SEMIS_TERMS
+    assert by_cat["Logic Chip Prices"]["credit"] == SEMIS_TERMS
+    assert by_cat["Fab Utilization"]["credit"] == ""
     memory = by_cat["Memory Prices"]
     assert memory["as_of"] == "2026-08-31" and memory["status"] == "measured"
     assert memory["inputs"] == "boj_memory 72.3 as of 2026-08-31 (live)"
