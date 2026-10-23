@@ -33,7 +33,7 @@ from config import (
     HISTORY_DAYS,
 )
 from data import database
-from data.ports_data import MAJOR_PORTS
+from data.ports_data import MAJOR_PORTS, keyword_in_text
 
 from data.providers.chokepoints import ChokepointsProvider
 from data.providers.energy import EnergyProvider
@@ -178,155 +178,6 @@ def _empty_history(dates: pd.DatetimeIndex, name: str) -> pd.Series:
 
 _DIRECT_PENALTY: dict[str, float] = {"high": 30, "medium": 15, "low": 5}
 
-# ---------------------------------------------------------------------------
-# Regional risk profiles — per-port macro sensitivity
-# ---------------------------------------------------------------------------
-# Each region overrides the default equal-weight macro blend with weights that
-# reflect real-world exposure.  This means a tariff spike hurts Chinese ports
-# far more than it hurts Rotterdam, creating genuine per-port differentiation.
-#
-# Keys are category names; values are relative weights (normalised at runtime).
-# "vulnerability" is a fixed 0–15 pt structural penalty for ports in
-# chronically disrupted areas (piracy corridors, congestion, conflict zones).
-
-_REGION_PROFILES: dict[str, dict] = {
-    "us_gulf": {
-        "weights": {"energy": 0.35, "trucking": 0.30, "supply_chain": 0.15, "tariffs": 0.10, "geopolitical": 0.10},
-        "vulnerability": 0,
-    },
-    "us_east": {
-        "weights": {"supply_chain": 0.25, "trucking": 0.25, "energy": 0.20, "tariffs": 0.15, "geopolitical": 0.15},
-        "vulnerability": 0,
-    },
-    "us_west": {
-        "weights": {"tariffs": 0.30, "supply_chain": 0.25, "trucking": 0.20, "energy": 0.15, "geopolitical": 0.10},
-        "vulnerability": 2,  # chronic congestion
-    },
-    "canada": {
-        "weights": {"supply_chain": 0.25, "energy": 0.25, "trucking": 0.20, "tariffs": 0.15, "geopolitical": 0.15},
-        "vulnerability": 0,
-    },
-    "latin_america": {
-        "weights": {"geopolitical": 0.25, "supply_chain": 0.25, "energy": 0.20, "tariffs": 0.15, "trucking": 0.15},
-        "vulnerability": 3,
-    },
-    "panama": {
-        "weights": {"supply_chain": 0.30, "geopolitical": 0.25, "energy": 0.20, "tariffs": 0.15, "trucking": 0.10},
-        "vulnerability": 5,  # drought / capacity constraints
-    },
-    "north_europe": {
-        "weights": {"energy": 0.35, "supply_chain": 0.25, "geopolitical": 0.20, "tariffs": 0.10, "trucking": 0.10},
-        "vulnerability": 0,
-    },
-    "med_europe": {
-        "weights": {"geopolitical": 0.30, "energy": 0.25, "supply_chain": 0.20, "tariffs": 0.15, "trucking": 0.10},
-        "vulnerability": 2,
-    },
-    "uk": {
-        "weights": {"energy": 0.25, "supply_chain": 0.25, "tariffs": 0.20, "geopolitical": 0.15, "trucking": 0.15},
-        "vulnerability": 1,
-    },
-    "east_europe": {
-        "weights": {"geopolitical": 0.40, "energy": 0.25, "supply_chain": 0.15, "tariffs": 0.10, "trucking": 0.10},
-        "vulnerability": 5,  # conflict proximity
-    },
-    "china": {
-        "weights": {"tariffs": 0.35, "geopolitical": 0.25, "supply_chain": 0.20, "energy": 0.10, "trucking": 0.10},
-        "vulnerability": 4,  # tariff / decoupling risk
-    },
-    "taiwan": {
-        "weights": {"geopolitical": 0.40, "tariffs": 0.25, "supply_chain": 0.20, "energy": 0.10, "trucking": 0.05},
-        "vulnerability": 8,  # cross-strait tension
-    },
-    "japan_korea": {
-        "weights": {"supply_chain": 0.25, "tariffs": 0.25, "energy": 0.20, "geopolitical": 0.20, "trucking": 0.10},
-        "vulnerability": 1,
-    },
-    "southeast_asia": {
-        "weights": {"supply_chain": 0.25, "geopolitical": 0.25, "tariffs": 0.20, "energy": 0.15, "trucking": 0.15},
-        "vulnerability": 2,
-    },
-    "south_asia": {
-        "weights": {"geopolitical": 0.25, "supply_chain": 0.25, "energy": 0.20, "tariffs": 0.15, "trucking": 0.15},
-        "vulnerability": 3,
-    },
-    "persian_gulf": {
-        "weights": {"geopolitical": 0.35, "energy": 0.30, "supply_chain": 0.15, "tariffs": 0.10, "trucking": 0.10},
-        "vulnerability": 5,  # strait of Hormuz risk
-    },
-    "red_sea": {
-        "weights": {"geopolitical": 0.45, "energy": 0.20, "supply_chain": 0.15, "tariffs": 0.10, "trucking": 0.10},
-        "vulnerability": 10,  # Houthi attacks / active conflict zone
-    },
-    "east_africa": {
-        "weights": {"geopolitical": 0.35, "supply_chain": 0.25, "energy": 0.15, "tariffs": 0.15, "trucking": 0.10},
-        "vulnerability": 6,  # piracy corridor
-    },
-    "west_africa": {
-        "weights": {"geopolitical": 0.30, "energy": 0.25, "supply_chain": 0.20, "tariffs": 0.15, "trucking": 0.10},
-        "vulnerability": 5,
-    },
-    "south_africa": {
-        "weights": {"supply_chain": 0.25, "energy": 0.25, "geopolitical": 0.20, "tariffs": 0.15, "trucking": 0.15},
-        "vulnerability": 3,
-    },
-    "oceania": {
-        "weights": {"supply_chain": 0.25, "tariffs": 0.20, "energy": 0.20, "geopolitical": 0.15, "trucking": 0.20},
-        "vulnerability": 0,
-    },
-}
-
-# Energy and Inland Freight (diesel) were merged into a single "energy" fuel-cost
-# category. The per-region profiles above still list a legacy "trucking" weight;
-# fold it into "energy" once at import so the macro blend keeps summing to 1.0
-# and never references a category that no longer exists.
-for _profile in _REGION_PROFILES.values():
-    _weights = _profile["weights"]
-    if "trucking" in _weights:
-        _weights["energy"] = _weights.get("energy", 0.0) + _weights.pop("trucking")
-
-# Port name → region key
-_PORT_REGION: dict[str, str] = {
-    "Houston":       "us_gulf",
-    "New York":      "us_east",
-    "Los Angeles":   "us_west",
-    "Savannah":      "us_east",
-    "Vancouver":     "canada",
-    "Colon":         "panama",
-    "Manzanillo":    "latin_america",
-    "Santos":        "latin_america",
-    "Buenos Aires":  "latin_america",
-    "Rotterdam":     "north_europe",
-    "Hamburg":       "north_europe",
-    "Antwerp":       "north_europe",
-    "Felixstowe":    "uk",
-    "Piraeus":       "med_europe",
-    "Algeciras":     "med_europe",
-    "Gdansk":        "east_europe",
-    "Shanghai":      "china",
-    "Hong Kong":     "china",
-    "Qingdao":       "china",
-    "Busan":         "japan_korea",
-    "Tokyo":         "japan_korea",
-    "Kaohsiung":     "taiwan",
-    "Singapore":     "southeast_asia",
-    "Laem Chabang":  "southeast_asia",
-    "Port Klang":    "southeast_asia",
-    "Mumbai":        "south_asia",
-    "Chennai":       "south_asia",
-    "Colombo":       "south_asia",
-    "Dubai":         "persian_gulf",
-    "Jeddah":        "red_sea",
-    "Durban":        "south_africa",
-    "Mombasa":       "east_africa",
-    "Djibouti":      "red_sea",
-    "Lagos":         "west_africa",
-    "Port Said":     "red_sea",
-    "Sydney":        "oceania",
-    "Melbourne":     "oceania",
-}
-
-
 def _severity_label(severity: float) -> str:
     """Human-readable label for an alert severity score.
 
@@ -388,97 +239,85 @@ def _match_news_to_ports(
             continue
 
         for name, _lat, _lon, direct_kw in MAJOR_PORTS:
-            if any(kw in text for kw in direct_kw):
+            if any(keyword_in_text(kw, text) for kw in direct_kw):
                 port_news.setdefault(name, []).append(alert)
 
     return port_news
 
 
 def _derive_map_markers(
-    current_scores: dict[str, float],
+    composite: float | None,
     alerts: list[dict],
     weather_provider: WeatherProvider,
     port_summaries: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Build a map marker for every major shipping port.
+    """Build a map marker for every major shipping port that has an input.
 
-    Each port's score is computed from **real data only** with four components:
+    Port score = ``0.6 * composite + 0.4 * local weather`` minus one penalty:
 
-        1. **Local weather** (40%) — real-time conditions at the port's
-           exact lat/lon, fetched in one batched Open-Meteo call.
-        2. **Regional macro** (60%) — weighted average of non-weather
-           categories, with weights tuned per-region (e.g. Chinese ports
-           weight tariffs heavily, Red Sea ports weight geopolitical risk).
-        3. **Structural vulnerability** (0–10 pts) — fixed penalty for
-           ports in chronically disrupted zones (piracy, conflict, drought).
-        4. **News penalty** (0–60 pts) — Claude-scored articles matched
-           via two-tier keywords with garbage pre-filtered.
+        1. **Composite** (60%) — the index composite, the same for every port.
+        2. **Local weather** (40%) — real-time conditions at the port's exact
+           lat/lon, fetched in one batched Open-Meteo call. Without a weather
+           reading the port scores on the composite alone.
+        3. **Penalty** — the larger of the news penalty (Claude-scored
+           headlines matched to the port by keyword, capped at 50) and the AI
+           port summary's ``disruption_penalty`` (0–50).
+
+    With no composite a port scores on local weather alone; a port with neither
+    is left off the map. No input is ever replaced by a made-up constant.
     """
     markers: list[dict] = []
 
     # ── Batch-fetch real weather for all 37 ports (1 HTTP call) ──
     port_coords = [(name, lat, lon) for name, lat, lon, _ in MAJOR_PORTS]
-    batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
-
-    # ── Default macro weights (fallback for unmapped ports) ──────
-    non_weather_cats = ["energy", "supply_chain", "tariffs", "geopolitical"]
-    default_weights = {cat: 0.25 for cat in non_weather_cats}
+    try:
+        batch_weather = weather_provider.fetch_batch_port_weather(port_coords)
+    except Exception as exc:
+        logger.warning("Port weather unavailable, map uses the composite alone: %s", exc)
+        batch_weather = {}
 
     # ── Match news to ports ──────────────────────────────────────
     port_news = _match_news_to_ports(alerts)
 
     for name, lat, lon, _direct_kw in MAJOR_PORTS:
-        # ── Local weather score (real, unique per port) ──────────
         wx = batch_weather.get(name, {})
         local_weather = wx.get("score")
-        weather_summary = wx.get("summary", "Weather data unavailable")
+        weather_summary = wx.get("summary", "")
 
-        # ── Per-port macro score (region-specific weighting) ─────
-        region = _PORT_REGION.get(name)
-        profile = _REGION_PROFILES.get(region, {}) if region else {}
-        macro_weights = profile.get("weights", default_weights)
-        vulnerability = profile.get("vulnerability", 0)
-
-        regional_macro = sum(
-            current_scores.get(cat, 50) * w
-            for cat, w in macro_weights.items()
-        )
-
-        # ── Composite: 40% local weather + 60% regional macro ───
-        # Without a weather reading the port scores on regional macro alone.
-        if local_weather is None:
-            composite = regional_macro
+        if composite is None and local_weather is None:
+            continue
+        if composite is None:
+            base = local_weather
+        elif local_weather is None:
+            base = composite
         else:
-            composite = local_weather * 0.40 + regional_macro * 0.60
-
-        # ── Structural vulnerability penalty ─────────────────────
-        composite -= vulnerability
+            base = composite * 0.60 + local_weather * 0.40
 
         # ── News penalty ─────────────────────────────────────────
         matched = port_news.get(name, [])
-        
+
         raw_penalties = []
         news_lines: list[str] = []
 
         for article in matched:
-            severity = article.get("severity", "low")
+            severity = article.get("severity") or "low"
             sentiment = article.get("sentiment", 0)
             title = article.get("title", "Unknown event")
             description = article.get("body", "")
-            
+
             wrapped_title = _wrap_text(title, max_chars=40)
-            
+
             # Show a brief snippet of the description so users see WHY it's red
             short_desc = description[:100] + "..." if len(description) > 100 else description
             wrapped_desc = _wrap_text(short_desc, max_chars=45) if short_desc else ""
-            
+
             label = _severity_label(sentiment)
 
             penalty = _DIRECT_PENALTY.get(severity, 2)
             raw_penalties.append(penalty)
 
             sev_tag = severity.upper()
-            
+
             if wrapped_desc:
                 news_lines.append(
                     f"<b>[{sev_tag}]</b> {wrapped_title}<br>"
@@ -510,58 +349,28 @@ def _derive_map_markers(
             ai_data = {}
         ai_summary = ai_data.get("summary", "")
         ai_penalty = float(ai_data.get("disruption_penalty", 0.0))
-        
-        # Override the news penalty if the AI analyst gives a specific high penalty
+
+        # One penalty, from whichever source is larger (never summed)
         final_penalty = max(news_penalty, ai_penalty)
 
         # ── Final score ──────────────────────────────────────────
-        score = round(max(0.0, min(100.0, composite - final_penalty)), 1)
+        score = round(max(0.0, min(100.0, base - final_penalty)), 1)
         tier = get_health_tier(score)
 
         # ── Build hover tooltip (transparent about data sources) ─
-        region_label = (region or "global").replace("_", " ").title()
-
         lines: list[str] = [
             f"Score: {score:.0f}/100 — <b>{tier['label']}</b>",
             "────────────",
-            f"<b>Region:</b> {region_label} (macro: {regional_macro:.0f})",
         ]
-        if vulnerability > 0:
-            lines.append(f"<b>Structural risk:</b> -{vulnerability} pts (zone vulnerability)")
-        # Why this port scores what it does, from measured data only: the two
-        # regional categories that pull its score down the most (weight x
-        # shortfall from 100), plus today's weather reading at the port.
-        drags = sorted(
-            ((w * (100 - current_scores.get(c, 50)), c) for c, w in macro_weights.items()),
-            reverse=True,
-        )[:2]
-        drag_text = ", ".join(
-            f"{CATEGORY_LABELS.get(c, c.title())} ({current_scores.get(c, 50):.0f})"
-            for d, c in drags if d > 0
-        )
-        if drag_text:
-            lines.append(f"<b>Main drags:</b> {drag_text}")
+        if composite is not None:
+            lines.append(f"<b>Composite:</b> {composite:.0f}")
         if local_weather is not None:
-            lines.append(f"<b>Weather:</b> {weather_summary} ({local_weather:.0f})")
-
+            lines.append(f"<b>Weather:</b> {weather_summary or 'Local conditions'} ({local_weather:.0f})")
+        if final_penalty > 0:
+            source = "AI port summary" if ai_penalty > news_penalty else "news"
+            lines.append(f"<b>Penalty:</b> -{final_penalty:.1f} pts ({source})")
         if ai_summary:
-            wrapped_summary = _wrap_text(ai_summary, max_chars=45)
-            lines.append(f"<b>AI Status:</b> <i>{wrapped_summary}</i>")
-            if ai_penalty > 0:
-                lines.append(f"<b>AI Penalty:</b> -{ai_penalty:.1f} pts")
-        else:
-            # Fallback to global context if no AI summary (baseline categories only;
-            # chip and aero signals say nothing about a port)
-            critical = [k for k in CATEGORY_WEIGHTS if k != "weather" and current_scores.get(k, 100) < 40]
-            stressed = [k for k in CATEGORY_WEIGHTS if k != "weather" and 40 <= current_scores.get(k, 100) < 60]
-            if critical:
-                names = ", ".join(CATEGORY_LABELS[c] for c in critical)
-                lines.append(f"<b>Global alert:</b> {names} at critical levels")
-            elif stressed:
-                names = ", ".join(CATEGORY_LABELS[s] for s in stressed[:3])
-                lines.append(f"<b>Global:</b> {names} slightly elevated")
-            else:
-                lines.append("<b>Global:</b> All macro indicators healthy")
+            lines.append(f"<b>AI Status:</b> <i>{_wrap_text(ai_summary, max_chars=45)}</i>")
 
         if news_lines:
             lines.append("────────────")
@@ -921,7 +730,7 @@ def aggregate_data(status_callback=None) -> dict:
 
     # Map markers (port weather is fetched here, for the map only)
     try:
-        map_markers = _derive_map_markers(current_scores, alerts, _WEATHER, port_summaries)
+        map_markers = _derive_map_markers(composite, alerts, _WEATHER, port_summaries)
     except Exception as e:
         logger.error("Map marker generation failed: %s", e)
         map_markers = []

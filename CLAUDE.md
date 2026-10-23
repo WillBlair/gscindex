@@ -383,9 +383,7 @@ the current score; charts must render unmeasured history as a gap.
 
 ### Map Markers
 
-Per port: 40% local weather score + 60% regional macro score (region-specific category weights; regional macro alone if weather is missing), minus a structural vulnerability penalty (0–10 pts), minus `max(news penalty, AI penalty)`. The news penalty is the largest matched-article penalty (high 30, medium 15, low 5) plus 20% of the rest, capped at 50; the AI penalty is Claude's per-port `disruption_penalty`, clamped 0–50. 37 ports total. Generated in `_derive_map_markers()`.
-
-Region profiles still list a legacy `trucking` weight; it is folded into `energy` at import.
+Per port: 0.6 x the index composite + 0.4 x the local weather score (composite alone if weather is missing; weather alone if there is no composite; no marker if both are missing), minus `max(news penalty, AI penalty)`. No region profiles and no structural vulnerability penalty (chokepoint risk is already in the composite). The news penalty is the largest matched-article penalty (high 30, medium 15, low 5) plus 20% of the rest, capped at 50; the AI penalty is Claude's per-port `disruption_penalty`, clamped 0–50. 37 ports total. Generated in `_derive_map_markers()`.
 
 ### Post-Processing
 
@@ -582,6 +580,5 @@ All tunable values live in `config.py`. Never put magic numbers in provider or c
 
 - ~~Some providers use hardcoded fallback scores~~ — now configurable via `DEFAULT_FALLBACK_SCORES` in `config.py`.
 - `_KEY_MIGRATIONS` in app.py maps legacy category names ("ports"→"supply_chain", "shipping"→"trucking"). `trucking` is no longer a category, so the second mapping is dead. This should live in a migration module.
-- `_REGION_PROFILES` in the aggregator still lists `trucking` weights, folded into `energy` at import.
 - The `supply_chain.py` module docstring says `GSCPI * 25`; the code uses `GSCPI_SCORE_SCALE` (12.5).
 - ~~Weather provider has 14 hubs hardcoded~~ — now derived from `ports_data.MAJOR_PORTS` (37 ports).

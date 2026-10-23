@@ -6,18 +6,22 @@ Definitions for the 37 major global shipping ports tracked by the dashboard.
 Each entry contains:
     - name: Port city name
     - lat, lon: Coordinates for weather lookups and map markers
-    - direct_keywords: Terms that match this port specifically (full penalty)
-    - regional_keywords: Broader terms for the region (half penalty)
+    - keywords: Lowercase terms that tie a headline to this port (full penalty).
+      Matching is on word boundaries, with an optional plural "s", through
+      ``keyword_in_text`` (so "oman" does not match "woman").
 """
 
 from __future__ import annotations
+
+import re
+from functools import lru_cache
 
 MAJOR_PORTS: list[tuple[str, float, float, list[str]]] = [
     # ── North America ───────────────────────────────────────
     ("Houston",       29.76,  -95.37,
      ["houston", "gulf coast port"]),
     ("New York",      40.68,  -74.04,
-     ["new york port", "newark port", "port authority", "boston port", "east coast port"]),
+     ["new york port", "newark port", "port authority of new york", "boston port", "east coast port"]),
     ("Los Angeles",   33.75, -118.27,
      ["los angeles", "long beach", "san pedro", "west coast port"]),
     ("Savannah",      32.08,  -81.09,
@@ -82,7 +86,7 @@ MAJOR_PORTS: list[tuple[str, float, float, list[str]]] = [
      ["jeddah", "red sea"]),
     # ── Africa ──────────────────────────────────────────────
     ("Durban",       -29.86,   31.02,
-     ["durban", "cape town", "south africa"]),
+     ["durban", "cape town", "south africa", "south african"]),
     ("Mombasa",       -4.04,   39.67,
      ["mombasa"]),
     ("Djibouti",      11.59,   43.15,
@@ -90,10 +94,20 @@ MAJOR_PORTS: list[tuple[str, float, float, list[str]]] = [
     ("Lagos",          6.45,    3.39,
      ["lagos", "apapa"]),
     ("Port Said",     31.26,   32.30,
-     ["port said", "suez canal", "suez", "red sea", "casablanca", "morocco"]),
+     ["port said", "suez canal", "suez", "red sea"]),
     # ── Oceania ─────────────────────────────────────────────
     ("Sydney",       -33.86,  151.20,
      ["sydney port"]),
     ("Melbourne",    -37.81,  144.96,
      ["melbourne port"]),
 ]
+
+
+@lru_cache(maxsize=None)
+def _keyword_pattern(keyword: str) -> re.Pattern[str]:
+    return re.compile(rf"\b{re.escape(keyword)}s?\b")
+
+
+def keyword_in_text(keyword: str, text: str) -> bool:
+    """True when ``keyword`` appears in lowercase ``text`` as whole words (plural "s" allowed)."""
+    return _keyword_pattern(keyword).search(text) is not None

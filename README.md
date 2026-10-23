@@ -72,7 +72,7 @@ Health tiers: **Healthy** (80–100), **Stable** (60–79), **Stressed** (40–5
 
 - **Index readout**: score, health tier, same-profile change versus yesterday, and a 7, 30 or 90 day trend
 - **Category table**: weight, score bar with yesterday's tick, change, effect on the index, 30-day sparkline, source, and a hover or tap detail per category
-- **World map**: 37 ports scored by local weather (40%) + regional macro (60%), minus structural risk and news or AI disruption penalties, with port conditions on hover
+- **World map**: 37 ports scored by the index composite (60%) + local weather (40%), minus one news or AI disruption penalty, with port conditions on hover
 - **Headlines**: supply-chain articles scored by Claude severity (VADER when Claude is unavailable), sorted by severity then recency, with search and filters
 - **AI briefing**: Claude-generated summary (optional; cached ~24h)
 - **Market indicators**: crude oil, natural gas, copper, gold, VIX via yfinance
