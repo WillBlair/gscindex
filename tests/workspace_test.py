@@ -258,6 +258,13 @@ def test_headlines_list_every_alert_by_severity_then_newest_and_filter(terminal_
     assert count == "3 of 12"
 
 
+def test_headline_count_names_how_alerts_were_scored(terminal_app, monkeypatch):
+    monkeypatch.setitem(terminal_app._DATA_CACHE, "news_scoring", "Claude (stale)")
+    news = _callback(terminal_app.app, "news-results.children")
+    _, count = news("", "all", "all", 0)
+    assert count == "12 tracked · Claude (stale)"
+
+
 def test_initial_headlines_use_the_same_order(terminal_app):
     from components.layout import build_layout
     layout = build_layout(terminal_app._DATA_CACHE)

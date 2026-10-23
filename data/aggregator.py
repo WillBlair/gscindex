@@ -38,11 +38,7 @@ from data.ports_data import MAJOR_PORTS
 from data.providers.chokepoints import ChokepointsProvider
 from data.providers.energy import EnergyProvider
 from data.providers.freight import FreightProvider
-from data.providers.geopolitical import (
-    GeopoliticalProvider,
-    _is_irrelevant_article,
-    fetch_supply_chain_news,
-)
+from data.providers.geopolitical import GeopoliticalProvider
 from data.providers.inputs import InputsProvider
 from data.providers.physical import PhysicalProvider
 from data.providers.supply_chain import SupplyChainProvider
@@ -50,6 +46,7 @@ from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
 from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
+from data.news_alerts import _is_irrelevant_article, fetch_supply_chain_news, scoring_label
 from data.port_analyst import generate_port_summaries
 from data.portwatch import fetch_chokepoint_traffic
 from data.register import run_register_cycle
@@ -333,9 +330,8 @@ _PORT_REGION: dict[str, str] = {
 def _severity_label(severity: float) -> str:
     """Human-readable label for an alert severity score.
 
-    Alert ``sentiment`` values are on the severity scale (roughly -6..0,
-    VADER compound x 6 or Claude severity_score) — NOT raw VADER compound.
-    Thresholds match ``_score_to_severity`` in the geopolitical provider.
+    Alert ``sentiment`` values are Claude severity scores (-10..+10).
+    Thresholds match ``_score_to_severity`` in ``data.news_alerts``.
     """
     if severity <= -4.0:
         return "Severe"
@@ -380,7 +376,9 @@ def _match_news_to_ports(
     for alert in alerts:
         # For Port Risk Scoring, ONLY consider negative news.
         # Neutral/Positive news is fine for the feed, but shouldn't penalize port scores.
-        if alert.get("sentiment", 0) >= -0.05:
+        # Unscored headlines (no Claude severity) never penalize a port.
+        sentiment = alert.get("sentiment")
+        if not isinstance(sentiment, (int, float)) or sentiment >= -0.05:
             continue
 
         text = f"{alert.get('title', '')} {alert.get('body', '')}".lower()
@@ -413,7 +411,7 @@ def _derive_map_markers(
            weight tariffs heavily, Red Sea ports weight geopolitical risk).
         3. **Structural vulnerability** (0–10 pts) — fixed penalty for
            ports in chronically disrupted zones (piracy, conflict, drought).
-        4. **News penalty** (0–60 pts) — VADER-scored articles matched
+        4. **News penalty** (0–60 pts) — Claude-scored articles matched
            via two-tier keywords with garbage pre-filtered.
     """
     markers: list[dict] = []
@@ -743,7 +741,8 @@ def aggregate_data(status_callback=None) -> dict:
         ``"stale_categories"``    – categories whose metadata says ``is_stale``
         ``"fallback_categories"`` – categories serving a stored or fallback value
         ``"map_markers"``         – list[dict]
-        ``"alerts"``              – list[dict]
+        ``"alerts"``              – list[dict] (severity None when unscored)
+        ``"news_scoring"``        – "Claude", "Claude (stale)", "Unscored" or "" (news failed)
         ``"disruptions"``         – list[dict]
         ``"briefing"``            – str
         ``"provider_errors"``     – dict[str, str]
@@ -828,14 +827,16 @@ def aggregate_data(status_callback=None) -> dict:
             category_history[cat] = _align_history_to_dates(hist_series, dates, score)
 
         # B. Process News (AI analysis takes 20-40s — old 5s timeout killed it every time).
-        # The news score is display-only now; it never reaches a category.
+        # News is display-only; it never reaches a category.
         alerts = []
         briefing = ""
         full_report = ""
+        news_scoring = ""
         try:
             if status_callback:
                 status_callback("Analyzing news feeds (AI)...")
-            _news_score, alerts, briefing, full_report = future_news.result(timeout=240)
+            alerts, briefing, full_report = future_news.result(timeout=240)
+            news_scoring = scoring_label()
         except Exception as e:
             logger.warning("News fetch timed out or failed: %s", e)
 
@@ -976,6 +977,7 @@ def aggregate_data(status_callback=None) -> dict:
         "composite": composite,
         "map_markers": map_markers,
         "alerts": alerts,
+        "news_scoring": news_scoring,
         "briefing": briefing,
         "full_report": full_report,
         "disruptions": disruptions,

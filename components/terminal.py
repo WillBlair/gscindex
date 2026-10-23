@@ -32,8 +32,9 @@ SEVERITY = {
     "medium": ("MED", TIER_COLORS["Stressed"]),
     "low": ("LOW", DIM),
 }
+# Headlines Claude has not scored (no API key) show a dash and sort last.
+UNSCORED = (DASH, DIM)
 _SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
-_EXTRA_CATEGORY_LABELS = {"shipping": "Shipping", "ports": "Ports"}
 
 
 # --- formatting ------------------------------------------------------------------
@@ -304,11 +305,12 @@ def _clean_source(source) -> str:
 
 def _category_label(cat) -> str:
     cat = str(cat or "")
-    return CATEGORY_LABELS.get(cat) or _EXTRA_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
+    return CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
 
 
 def build_headlines(alerts: list[dict], limit: int | None = 10) -> html.Table:
-    """Most severe first (HIGH, MED, LOW), newest first within a severity. ``limit=None`` keeps all."""
+    """Most severe first (HIGH, MED, LOW, then unscored), newest first within a severity.
+    ``limit=None`` keeps all."""
     ordered = sorted(select_news(alerts or []), key=lambda a: _SEVERITY_RANK.get(a.get("severity"), 3))[:limit]
     head = html.Thead(html.Tr([
         html.Th("Sev"), html.Th("Category", className="hide-s"), html.Th("Headline"),
@@ -319,14 +321,15 @@ def build_headlines(alerts: list[dict], limit: int | None = 10) -> html.Table:
     else:
         body = []
         for alert in ordered:
-            label, color = SEVERITY.get(alert.get("severity"), SEVERITY["low"])
+            label, color = SEVERITY.get(alert.get("severity"), UNSCORED)
             title = plain_text(alert.get("title")) or "Untitled"
             url = safe_url(alert.get("url"))
             headline = (html.A(title, href=url, target="_blank", rel="noopener noreferrer")
                         if url else html.Span(title))
             stamp = alert.get("timestamp")
             body.append(html.Tr([
-                html.Td(label, className="sev", style={"color": color}),
+                html.Td(label, className="sev", style={"color": color},
+                        title=None if alert.get("severity") in SEVERITY else "Unscored"),
                 html.Td(_category_label(alert.get("category")), className="hide-s dim"),
                 html.Td(headline, className="h"),
                 html.Td(_clean_source(alert.get("source")), className="hide-s dim"),

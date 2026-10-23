@@ -24,8 +24,8 @@ AI_CACHE_TTL_SECONDS: int = int(os.environ.get("AI_CACHE_TTL_SECONDS", "86400"))
 # re-sending the full prompt every 5-minute refresh cycle.
 AI_FAILURE_RETRY_SECONDS: int = int(os.environ.get("AI_FAILURE_RETRY_SECONDS", "3600"))
 
-# Bounds on model output that feeds scores. The prompts document these
-# ranges; the code enforces them so one bad value cannot swing a category.
+# Bounds on model output. The prompts document these ranges; the code enforces
+# them so one bad value cannot swing a headline severity or a port.
 AI_SEVERITY_MAX: float = 10.0      # per-article severity is clamped to +/- this
 PORT_PENALTY_MAX: float = 50.0     # per-port disruption_penalty is clamped to 0..this
 
@@ -40,11 +40,14 @@ PORT_WEB_SEARCH_MAX_USES: int = int(os.environ.get("PORT_WEB_SEARCH_MAX_USES", "
 # run is pending. Freshness of the AI analysis is tracked inside the payload.
 NEWS_CACHE_MAX_AGE_SECONDS: int = 7 * 86400
 
-# Re-score geopolitical alerts from live RSS between full AI runs (no API cost).
-NEWS_RSS_REFRESH_SECONDS: int = int(os.environ.get("NEWS_RSS_REFRESH_SECONDS", "3600"))
+# Claude scores headlines it has not seen yet this often (incremental; earlier
+# severities are kept). Web search, the briefing and the full report stay on the
+# daily AI_CACHE_TTL_SECONDS run. News is display-only; it feeds no score.
+NEWS_AI_REFRESH_SECONDS: int = int(os.environ.get("NEWS_AI_REFRESH_SECONDS", "21600"))
+NEWS_MAX_ALERTS: int = 60          # headlines kept, newest by published time
 
 # Shared disk cache key for RSS/AI news payload (alerts, briefing, report).
-NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v18"
+NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v19"
 
 # FRED inverse/direct scoring uses a trailing window (not full 5yr history).
 # Avoids COVID-era spikes from pinning "normal" prices in the middle of the scale.

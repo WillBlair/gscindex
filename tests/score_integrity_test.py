@@ -15,23 +15,17 @@ from config import AI_CACHE_TTL_SECONDS, PORT_PENALTY_MAX
 
 class SeverityClampTests(unittest.TestCase):
     def test_out_of_range_severity_is_clamped(self):
-        from data.providers.geopolitical import _clamp_severity
+        from data.news_alerts import _clamp_severity
 
         self.assertEqual(_clamp_severity(-60), -10.0)
         self.assertEqual(_clamp_severity(25), 10.0)
         self.assertEqual(_clamp_severity("-3.5"), -3.5)
         self.assertEqual(_clamp_severity(None), 0.0)
 
-    def test_single_extreme_article_cannot_take_whole_deduction(self):
-        from data.providers.geopolitical import _clamp_severity, _risk_score_from_alerts
-
-        alerts = [{"title": "Bad", "sentiment": _clamp_severity(-60.0)}]
-        self.assertGreaterEqual(_risk_score_from_alerts(alerts), 90.0)
-
 
 class FallbackBriefingTests(unittest.TestCase):
     def test_fallback_briefing_states_headlines_plainly_without_repeating_a_category(self):
-        from data.providers.geopolitical import _build_fallback_briefing
+        from data.news_alerts import _build_fallback_briefing
 
         alerts = [
             {"title": "Ships struck near Hormuz", "category": "energy", "severity": "high", "sentiment": -9, "source": "gCaptain"},
@@ -50,33 +44,14 @@ class FallbackBriefingTests(unittest.TestCase):
 
 class NewsCacheClockTests(unittest.TestCase):
     def test_refresh_due_uses_payload_timestamp(self):
-        from data.providers.geopolitical import _ai_refresh_due
+        from data.news_alerts import _due
 
         now = time.time()
-        self.assertTrue(_ai_refresh_due({}, now))
-        self.assertFalse(_ai_refresh_due({"ai_generated_at": now - 60}, now))
+        self.assertTrue(_due({}, "ai_generated_at", AI_CACHE_TTL_SECONDS, now))
+        self.assertFalse(_due({"ai_generated_at": now - 60}, "ai_generated_at", AI_CACHE_TTL_SECONDS, now))
         self.assertTrue(
-            _ai_refresh_due({"ai_generated_at": now - AI_CACHE_TTL_SECONDS - 1}, now)
+            _due({"ai_generated_at": now - AI_CACHE_TTL_SECONDS - 1}, "ai_generated_at", AI_CACHE_TTL_SECONDS, now)
         )
-
-    def test_rss_refresh_relabels_scoring_as_vader(self):
-        from data.providers import geopolitical as geo
-
-        articles = [
-            {
-                "title": "Port strike shuts terminal",
-                "description": "Dock workers walk out, container terminal closed",
-                "url": "https://example.com/a",
-                "source": "Test",
-                "published": "2026-10-22",
-            }
-        ]
-        cached = {"score": 90.0, "alerts": [], "briefing": "x", "scoring": geo.SCORING_CLAUDE}
-        with mock.patch("data.rss_fetcher.fetch_rss_articles", return_value=articles):
-            refreshed = geo._refresh_cached_news_from_rss(cached)
-        self.assertIsNotNone(refreshed)
-        self.assertEqual(refreshed["scoring"], geo.SCORING_VADER)
-        self.assertIn("alerts_refreshed_at", refreshed)
 
 
 class PortPenaltyTests(unittest.TestCase):
@@ -189,7 +164,7 @@ class GscpiParsingTests(unittest.TestCase):
 
 class NewsRelevanceTests(unittest.TestCase):
     def test_hobby_and_collectible_stories_are_irrelevant(self):
-        from data.providers.geopolitical import _is_irrelevant_article
+        from data.news_alerts import _is_irrelevant_article
 
         self.assertTrue(_is_irrelevant_article("el nino delays magic: the gathering trading cards"))
         self.assertTrue(_is_irrelevant_article("pokemon cards sell out"))
@@ -200,14 +175,14 @@ class NewsRelevanceTests(unittest.TestCase):
         self.assertTrue(_is_irrelevant_article("toy-maker opens new studio"))
 
     def test_consumer_goods_story_with_supply_chain_anchor_is_relevant(self):
-        from data.providers.geopolitical import _is_irrelevant_article
+        from data.news_alerts import _is_irrelevant_article
 
         self.assertFalse(_is_irrelevant_article("US tariffs on Chinese toys raise import costs"))
         self.assertFalse(_is_irrelevant_article("Video game console shipments held at Long Beach port"))
         self.assertFalse(_is_irrelevant_article("Chip shortage hits video game console production"))
 
     def test_anchor_matches_whole_words_only(self):
-        from data.providers.geopolitical import _is_irrelevant_article
+        from data.news_alerts import _is_irrelevant_article
 
         self.assertTrue(_is_irrelevant_article("pokemon cards are important to support fans"))
 
@@ -216,10 +191,10 @@ class NewsRelevanceTests(unittest.TestCase):
 
         self.assertIn("consumer product shortages, launches or delivery delays", SYSTEM_PROMPT.lower())
 
-    def test_briefing_cache_key_is_v18(self):
+    def test_briefing_cache_key_is_v19(self):
         from config import NEWS_BRIEFING_CACHE_KEY
 
-        self.assertEqual(NEWS_BRIEFING_CACHE_KEY, "newsapi_briefing_v18")
+        self.assertEqual(NEWS_BRIEFING_CACHE_KEY, "newsapi_briefing_v19")
 
 
 if __name__ == "__main__":

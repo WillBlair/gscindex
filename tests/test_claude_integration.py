@@ -83,14 +83,14 @@ def test_news_analysis() -> tuple[dict, str]:
     logger.info("TESTING: News Analysis via Claude API")
     logger.info("=" * 60)
     
-    from data.providers.geopolitical import fetch_supply_chain_news
+    from data.news_alerts import fetch_supply_chain_news, scoring_label
     
     start = datetime.now()
-    news_score, alerts, briefing, full_report = fetch_supply_chain_news()
+    alerts, briefing, full_report = fetch_supply_chain_news()
     elapsed = (datetime.now() - start).total_seconds()
     
     logger.info("✓ News analysis complete in %.2fs", elapsed)
-    logger.info("  • Geopolitical score: %.1f", news_score)
+    logger.info("  • Scoring: %s", scoring_label())
     logger.info("  • Articles analyzed: %d", len(alerts))
     
     if briefing:
@@ -107,12 +107,12 @@ def test_news_analysis() -> tuple[dict, str]:
         logger.info("┌─ Sample Alerts ─────────────────────────────────────")
         for alert in alerts[:3]:
             title = alert.get("title", "No title")[:60]
-            severity = alert.get("severity", "unknown")
-            sentiment = alert.get("sentiment", 0)
-            logger.info("│ [%s] %s (sentiment: %.2f)", severity.upper(), title, sentiment)
+            severity = alert.get("severity_label") or "unscored"
+            sentiment = alert.get("sentiment")
+            logger.info("│ [%s] %s (severity: %s)", severity.upper(), title, sentiment)
         logger.info("└─────────────────────────────────────────────────────\n")
     
-    return {"score": news_score, "alerts": len(alerts)}, briefing
+    return {"alerts": len(alerts)}, briefing
 
 
 def test_map_marker_generation() -> list[dict]:

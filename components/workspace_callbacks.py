@@ -66,6 +66,8 @@ def register_workspace_callbacks(app, get_snapshot):
         alerts = data.get("alerts", [])
         selected = select_news(alerts, query, severity or "all", category or "all")
         count = f"{len(alerts)} tracked" if len(selected) == len(alerts) else f"{len(selected)} of {len(alerts)}"
+        if alerts and data.get("news_scoring"):
+            count += f" · {data['news_scoring']}"
         return build_headlines(selected, limit=None), count
 
     @app.callback(Output("snapshot-download", "data"), Input("export-btn", "n_clicks"),

@@ -84,6 +84,7 @@ def harness(monkeypatch):
         monkeypatch.setattr(
             aggregator, "fetch_supply_chain_news",
             news or mock.Mock(side_effect=RuntimeError("off")))
+        monkeypatch.setattr(aggregator, "scoring_label", lambda: "Claude (stale)")
         monkeypatch.setattr(aggregator, "_fetch_market_data", lambda: {})
         monkeypatch.setattr(aggregator, "generate_port_summaries", lambda: {})
         monkeypatch.setattr(aggregator, "fetch_chokepoint_traffic", lambda: None)
@@ -266,8 +267,8 @@ def test_no_score_explanation_key(harness):
 def test_disruptions_use_one_impact_scale(harness):
     run, _ = harness
     news = mock.Mock(return_value=(
-        99.0,
-        [{"title": "Strait closed", "severity": "high", "sentiment": -7.5, "category": "energy"}],
+        [{"title": "Strait closed", "severity": "high", "sentiment": -7.5, "category": "energy"},
+         {"title": "Unscored story", "severity": None, "sentiment": None, "category": "other"}],
         "", "",
     ))
     data = run(news=news)
@@ -276,7 +277,9 @@ def test_disruptions_use_one_impact_scale(harness):
                   and d["event"] != "Strait closed")
     assert energy["impact_score"] == pytest.approx(100 - _SCORES["energy"])
     assert by_event["Strait closed"]["impact_score"] == pytest.approx(75.0)
-    # The news score never overrides the geopolitical category.
+    assert "Unscored story" not in by_event
+    assert data["news_scoring"] == "Claude (stale)"
+    # News never overrides the geopolitical category.
     assert data["current_scores"]["geopolitical"] == _SCORES["geopolitical"]
 
 
