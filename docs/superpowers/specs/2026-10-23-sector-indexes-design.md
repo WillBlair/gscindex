@@ -175,6 +175,25 @@ All inputs are US government data, in the public domain.
 - A local preview shows all three tabs at desktop and at 375 px.
 - A production dry run of the rebuild completes before any write. The write happens after Will's "push it" (he approved the write workflow for v2; repeat the dry-run summary to him).
 
+## Settled after the builder check
+
+1. **Memory zero point: the plain v2 rule, no override.** The worst month through 2025 is +57.4% YoY (2025-12).
+   - The tariff override existed because an in-sample record made the current regime look normal. That doesn't apply here: today's +316% is far past any reference and should read 0 ("worse than any month on record").
+   - The category reads 0 whenever YoY is above +57%. That is accepted and disclosed on /docs.
+   - The reference readings (2021-12 ≈ 30, 2023-03 ≈ 99) stay the targets.
+2. **Licensing in the API.**
+   - Global data stays `"license": "CC-BY-4.0"`.
+   - The `sectors.semiconductor` block carries its own `terms` field. It credits the Bank of Japan (the verbatim credit line) and states that commercial reuse of the memory and logic scores requires the Bank of Japan's permission.
+   - The aerospace and fab-utilization data are US government data, so their terms are CC-BY-4.0 with credit.
+   - /docs repeats this.
+3. **Isolation from Global is complete.** Sector categories never appear in:
+   - the global `disruptions` list
+   - the top-level `categories` of `/api/v1/latest` (they appear only under `sectors`)
+   - the global `degraded`, `fallback_categories` or `stale_categories`
+   - the HTTP status logic of `/health`
+
+   A sector outage never makes `/health` return 503. It is reported only in that sector's block.
+
 ## Judgment calls (Will can override)
 
 - Semis has 3 categories, not 4 (no defensible fourth). All categories within a sector have equal weight.
