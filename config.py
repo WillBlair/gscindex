@@ -122,6 +122,10 @@ CATEGORY_LABELS: dict[str, str] = {
     "aero_orders":         "Aircraft Orders",
     "aero_production":     "Aero Production",
     "aero_ppi":            "Aircraft PPI",
+    # Sector index categories (SECTORS below; never part of the global composite)
+    "semis_memory_prices":   "Memory Prices",
+    "semis_logic_prices":    "Logic Chip Prices",
+    "semis_fab_utilization": "Fab Utilization",
 }
 
 # Display names for the canonical input keys in a category's ``inputs`` metadata
@@ -146,6 +150,9 @@ INPUT_LABELS: dict[str, str] = {
     "aluminum_monthly": "Aluminum (monthly)",
     "hazards":          "Natural hazards",
     "mississippi":      "Mississippi River stage",
+    "boj_memory":       "Memory chip import prices (BOJ)",
+    "boj_logic":        "Logic chip import prices (BOJ)",
+    "fab_util_3344":    "Semiconductor capacity utilization",
 }
 
 # ---------------------------------------------------------------------------
@@ -279,6 +286,9 @@ CATEGORY_COLORS: dict[str, str] = {
     "aero_orders":         "#7a6e8a",
     "aero_production":     "#5f8a72",
     "aero_ppi":            "#a07a62",
+    "semis_memory_prices":   "#8b7fc7",
+    "semis_logic_prices":    "#4aa3b8",
+    "semis_fab_utilization": "#4fae9a",
 }
 
 # ---------------------------------------------------------------------------
@@ -385,6 +395,9 @@ FRESHNESS: dict[str, tuple[int, int]] = {
     "prices_paid":      (60, 150),
     "hazards":          (3, 9),
     "mississippi":      (3, 9),
+    "boj_memory":       (75, 150),
+    "boj_logic":        (75, 150),
+    "fab_util_3344":    (75, 150),
 }
 
 # Live Yahoo scaling (data/sources/markets.py): the move since the official date must stay
@@ -403,6 +416,8 @@ PUBLICATION_LAG_DAYS: dict[str, int] = {
     "tpu":             7,
     "rail_volume":     5,
     "chokepoint_flow": 4,
+    "boj_cgpi":        12,   # Bank of Japan Corporate Goods Price Index, about 12 days after month end
+    "g17":             16,   # Fed G.17 industrial production, mid-month for the prior month
 }
 
 # How long a category whose provider failed to fetch may show its last stored daily score
@@ -530,3 +545,53 @@ KAUB_STORE_INTERVAL_SECONDS = 3600
 # SCORE_ANCHORS["waterways"]["mississippi_record_low"] (both computed in Task 12).
 # Sanity bounds on source values; a unit or datum change falls outside and counts as missing.
 MISSISSIPPI_STL_PLAUSIBLE_FT: tuple[float, float] = (-15.0, 50.0)
+
+# ---------------------------------------------------------------------------
+# Sector indexes (Semis, Aero)
+# ---------------------------------------------------------------------------
+# Each sector has its own categories and equal weights. Sector categories never enter the
+# global composite, its disruptions, degraded flags or /health status. A sector index is shown
+# only while at least ``min_categories`` of its categories have a score.
+SECTORS: dict[str, dict] = {
+    "semiconductor": {
+        "label": "Semis",
+        "title": "Semiconductor",
+        "weights": {
+            "semis_memory_prices":   1 / 3,
+            "semis_logic_prices":    1 / 3,
+            "semis_fab_utilization": 1 / 3,
+        },
+        "min_categories": 2,
+    },
+    "aerospace": {
+        "label": "Aero",
+        "title": "Aerospace",
+        "weights": {
+            "aero_throughput":  1 / 4,
+            "aero_flow":        1 / 4,
+            "aero_mill_prices": 1 / 4,
+            "aero_forge_cast":  1 / 4,
+        },
+        "min_categories": 3,
+    },
+}
+
+for _key, _sector in SECTORS.items():
+    if abs(sum(_sector["weights"].values()) - 1.0) > 1e-9:
+        raise ValueError(f"SECTORS[{_key!r}] weights must sum to 1.0")
+
+# A sector category with no fresh inputs is excluded after this many days (monthly sources).
+SECTOR_DROP_AFTER_DAYS: int = 150
+
+# Seconds the aggregator waits for each sector provider, counted from the start of its cycle.
+SECTOR_PROVIDER_TIMEOUT_SECONDS: float = 60
+
+# Credit line required by the Bank of Japan Time-Series Data Search API terms. It appears in the
+# description of every category that uses BOJ data and in the API output.
+BOJ_CREDIT: str = (
+    "This service uses the API provided by the 'Bank of Japan Time-Series Data Search.' "
+    "The Bank of Japan does not guarantee the content of the service.")
+
+# Runtime FRED window for the Fed G.17 capacity utilization series: the latest month, the
+# history tail and the publication lag, never the full history.
+SEMIS_FRED_LOOKBACK_DAYS = 3 * 365
