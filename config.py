@@ -51,29 +51,6 @@ NEWS_BRIEFING_CACHE_KEY: str = "newsapi_briefing_v18"
 FRED_SCORE_LOOKBACK_DAYS: int = int(os.environ.get("FRED_SCORE_LOOKBACK_DAYS", "730"))
 
 # ---------------------------------------------------------------------------
-# GSCPI score calibration
-# ---------------------------------------------------------------------------
-# GSCPI is a z-score (0 = average pressure). We map it to 0-100 health via
-#   score = 50 - GSCPI * GSCPI_SCORE_SCALE   (clipped 0-100)
-# Scale 12.5 means the index zeroes out at +4 sigma — GSCPI's real historical
-# extreme (Dec-2021 COVID peak was ~+4.3). The previous scale of 25 zeroed out
-# at only +2 sigma, which collapsed moderate-but-not-crisis readings (e.g.
-# +1.8 sigma) to a near-zero "Critical" score and overstated severity.
-GSCPI_SCORE_SCALE: float = float(os.environ.get("GSCPI_SCORE_SCALE", "12.5"))
-
-# ---------------------------------------------------------------------------
-# Daily proxy blend weights (Fix 2: supplement frozen monthly series)
-# ---------------------------------------------------------------------------
-# GSCPI (supply_chain) is a monthly NY Fed series that can sit flat for weeks.
-# Blend in a genuinely daily proxy so the composite moves day to day instead
-# of only on print days.
-#   supply_chain = (1 - SUPPLY_CHAIN_PROXY_WEIGHT) * GSCPI + SUPPLY_CHAIN_PROXY_WEIGHT * BDRY_proxy
-# Kept as a minority blend (25-30%) so the well-vetted monthly print still
-# anchors the score; the proxy just adds daily texture between prints.
-# If the proxy fetch fails, providers fall back to 100% monthly (no crash).
-SUPPLY_CHAIN_PROXY_WEIGHT: float = float(os.environ.get("SUPPLY_CHAIN_PROXY_WEIGHT", "0.30"))
-
-# ---------------------------------------------------------------------------
 # Port disruption blend weight (aggregate port_analyst signal -> geopolitical)
 # ---------------------------------------------------------------------------
 # generate_port_summaries() (data/port_analyst.py) already produces a

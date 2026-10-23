@@ -14,7 +14,6 @@ from datetime import datetime
 import pandas as pd
 import requests
 
-from config import GSCPI_SCORE_SCALE
 from data.cache import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
@@ -139,13 +138,3 @@ def latest_published_gscpi(series: pd.Series) -> tuple[float, pd.Timestamp]:
         eligible = series
     date = eligible.index[-1]
     return float(eligible.iloc[-1]), date
-
-
-def gscpi_to_score(value: float) -> float:
-    """Map GSCPI z-score to 0–100 health (lower pressure → higher score).
-
-    Uses ``GSCPI_SCORE_SCALE`` (default 12.5) so the index zeroes out at the
-    real historical extreme (~+4 sigma) rather than the previous +2 sigma,
-    which over-penalized moderate elevations.
-    """
-    return float(max(0.0, min(100.0, 50.0 - value * GSCPI_SCORE_SCALE)))
