@@ -126,6 +126,10 @@ CATEGORY_LABELS: dict[str, str] = {
     "semis_memory_prices":   "Memory Prices",
     "semis_logic_prices":    "Logic Chip Prices",
     "semis_fab_utilization": "Fab Utilization",
+    "aero_throughput":       "Aero Throughput",
+    "aero_flow":             "Delivery Flow",
+    "aero_mill_prices":      "Mill Prices",
+    "aero_forge_cast":       "Forgings & Castings",
 }
 
 # Display names for the canonical input keys in a category's ``inputs`` metadata
@@ -153,6 +157,13 @@ INPUT_LABELS: dict[str, str] = {
     "boj_memory":       "Memory chip import prices (BOJ)",
     "boj_logic":        "Logic chip import prices (BOJ)",
     "fab_util_3344":    "Semiconductor capacity utilization",
+    "aero_caputl":           "Aerospace capacity utilization",
+    "aero_inv_ship":         "Aircraft inventory to shipments",
+    "ppi_ti_mill":           "Titanium mill shapes PPI",
+    "ppi_ni_mill":           "Nickel alloy mill shapes PPI",
+    "ppi_ti_forge":          "Titanium forgings PPI",
+    "ppi_nonferrous_forge":  "Nonferrous forgings PPI",
+    "ppi_steel_invest_cast": "Steel investment castings PPI",
 }
 
 # ---------------------------------------------------------------------------
@@ -289,6 +300,10 @@ CATEGORY_COLORS: dict[str, str] = {
     "semis_memory_prices":   "#8b7fc7",
     "semis_logic_prices":    "#4aa3b8",
     "semis_fab_utilization": "#4fae9a",
+    "aero_throughput":       "#e8854a",
+    "aero_flow":             "#6f8fd8",
+    "aero_mill_prices":      "#b9c04a",
+    "aero_forge_cast":       "#c9708f",
 }
 
 # ---------------------------------------------------------------------------
@@ -398,6 +413,13 @@ FRESHNESS: dict[str, tuple[int, int]] = {
     "boj_memory":       (75, 150),
     "boj_logic":        (75, 150),
     "fab_util_3344":    (75, 150),
+    "aero_caputl":           (75, 150),
+    "aero_inv_ship":         (75, 150),
+    "ppi_ti_mill":           (75, 150),
+    "ppi_ni_mill":           (75, 150),
+    "ppi_ti_forge":          (75, 150),
+    "ppi_nonferrous_forge":  (75, 150),
+    "ppi_steel_invest_cast": (75, 150),
 }
 
 # Live Yahoo scaling (data/sources/markets.py): the move since the official date must stay
@@ -418,6 +440,8 @@ PUBLICATION_LAG_DAYS: dict[str, int] = {
     "chokepoint_flow": 4,
     "boj_cgpi":        12,   # Bank of Japan Corporate Goods Price Index, about 12 days after month end
     "g17":             16,   # Fed G.17 industrial production, mid-month for the prior month
+    "census_m3":       35,   # Census M3 manufacturers' shipments, inventories and orders
+    "bls_ppi":         15,   # BLS Producer Price Index, mid-month for the prior month
 }
 
 # How long a category whose provider failed to fetch may show its last stored daily score
@@ -595,3 +619,7 @@ BOJ_CREDIT: str = (
 # Runtime FRED window for the Fed G.17 capacity utilization series: the latest month, the
 # history tail and the publication lag, never the full history.
 SEMIS_FRED_LOOKBACK_DAYS = 3 * 365
+
+# Runtime FRED window for the Aero series: 13 months for a year-over-year change, 3 months of
+# shipments, the history tail and the publication lag, never the full history.
+AERO_FRED_LOOKBACK_DAYS = 3 * 365

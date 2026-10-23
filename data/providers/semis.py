@@ -30,40 +30,24 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-import numpy as np
 import pandas as pd
 
 import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, monthly_daily, no_inputs_error, oldest_as_of,
-    period_end, safe_score)
+    InputReading, blend_inputs, finite_series, freshness_status, inputs_metadata, monthly_daily, no_inputs_error,
+    oldest_as_of, period_end, safe_score, yoy_percent)
 from data.sources import boj
 from scoring.anchors import get_anchor, score_raw
 
 logger = logging.getLogger(__name__)
 
-_YOY_MONTHS = 12
 _BOJ_CATEGORY = "Corporate Goods Price Index (2020 base), import price index, contract-currency basis"
 
 
 def _today() -> date:
     return datetime.now(timezone.utc).date()
-
-
-def _finite(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
-
-
-def _yoy_percent(levels: pd.Series) -> pd.Series:
-    """Year-over-year % of a monthly index, comparing each month with the same month a year
-    earlier by date (a missing month cannot shift the comparison). A month whose base is
-    missing or not positive has no value."""
-    levels = _finite(levels).sort_index()
-    base = levels.reindex(levels.index - pd.DateOffset(months=_YOY_MONTHS)).to_numpy()
-    base = np.where(base > 0, base, np.nan)
-    return _finite(pd.Series((levels.to_numpy() / base - 1.0) * 100.0, index=levels.index))
 
 
 class _SemisProvider(BaseProvider):
@@ -147,7 +131,7 @@ class _BojProvider(_SemisProvider):
     code: str = ""
 
     def _monthly(self) -> pd.Series:
-        return _yoy_percent(boj.fetch_series(self.code))
+        return yoy_percent(boj.fetch_series(self.code))
 
     @staticmethod
     def _raw_text(value: float, month: pd.Timestamp) -> str:
@@ -209,7 +193,7 @@ class FabUtilizationProvider(_SemisProvider):
 
     def _monthly(self) -> pd.Series:
         raw = fetch_fred_series(self.series_id, lookback_days=config.SEMIS_FRED_LOOKBACK_DAYS)
-        return _finite(raw).sort_index()
+        return finite_series(raw).sort_index()
 
     @staticmethod
     def _raw_text(value: float, month: pd.Timestamp) -> str:

@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
+import numpy as np
 import pandas as pd
 
 import config
@@ -120,3 +121,21 @@ def monthly_daily(scores: pd.Series, lag_days: int, drop_after: int, today: date
     dated = dated[~dated.index.duplicated(keep="last")]
     full = pd.date_range(dated.index.min().normalize(), pd.Timestamp(today), freq="D")
     return dated.reindex(full).ffill(limit=max(drop_after - lag_days, 0))
+
+
+def finite_series(series: pd.Series) -> pd.Series:
+    """The series' finite numeric values only (NaN, inf and non-numbers dropped)."""
+    return pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+
+
+_YOY_MONTHS = 12
+
+
+def yoy_percent(levels: pd.Series) -> pd.Series:
+    """Year-over-year % of a monthly index, comparing each month with the same month a year
+    earlier by date (a missing month cannot shift the comparison). A month whose base is
+    missing or not positive has no value."""
+    levels = finite_series(levels).sort_index()
+    base = levels.reindex(levels.index - pd.DateOffset(months=_YOY_MONTHS)).to_numpy()
+    base = np.where(base > 0, base, np.nan)
+    return finite_series(pd.Series((levels.to_numpy() / base - 1.0) * 100.0, index=levels.index))
