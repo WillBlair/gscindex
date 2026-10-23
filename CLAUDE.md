@@ -92,7 +92,7 @@ data/
     fed_surveys.py        # Philadelphia, Empire, Dallas prices paid (FRED); delivery times (context)
     gdacs.py              # GDACS Orange/Red events, hazard_score
     waterways.py          # Mississippi at St. Louis (USGS), Kaub (stored only)
-    boj.py                # Bank of Japan API: CGPI series parser (raises on empty/reshaped replies), 24 h cached fetch
+    boj.py                # Bank of Japan API: CGPI series parser (raises on empty/reshaped replies), 24 h cache, 6 h failure cache
   providers/
     base.py               # Abstract BaseProvider interface
     readings.py           # InputReading, period_end, freshness_status, blend_inputs, inputs_metadata, monthly_daily, yoy_percent
@@ -369,8 +369,8 @@ return max(0.0, min(100.0, score))
 
 Sector FRED reads use `SEMIS_FRED_LOOKBACK_DAYS` / `AERO_FRED_LOOKBACK_DAYS` (3 years). History is each month's score dated by period end + publication lag, carried forward until past its drop window (`readings.monthly_daily`).
 
-**Bank of Japan API** (`data/sources/boj.py`): `GET https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=json&lang=en&db=PR01&startDate=200001&code=<CODE>`, one request per series, cached 24 h (`boj_<code>_v1`). BOJ asks for light use: never poll it more often, never lower the TTL. `parse_series` raises on any HTTP 200 that is not the full monthly series asked for (STATUS ≠ 200, wrong `SERIES_CODE`, missing `VALUES`, non-null `NEXTPOSITION`); a failed reply is not cached. Terms (`https://www.stat-search.boj.or.jp/info/api_notice_en.pdf`):
-- The credit line `config.BOJ_CREDIT` must appear verbatim wherever BOJ-derived scores are shown (/docs, the category hover, the CSV, the API terms).
+**Bank of Japan API** (`data/sources/boj.py`): `GET https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=json&lang=en&db=PR01&startDate=200001&code=<CODE>`, one request per series. A good reply is reused for `BOJ_CACHE_SECONDS` (24 h, `boj_<code>_v1`). A request error or unusable reply is re-raised and recorded for `BOJ_FAILURE_RETRY_SECONDS` (6 h, `boj_<code>_failed_v1`); until then every call raises `RuntimeError` without contacting BOJ, so an outage is not retried every 5-minute cycle (the category serves its stored fallback). Both results are also kept in memory (`boj._MEMORY`), so `fetch_history` reuses the series `fetch_current` just fetched even if the disk write fails. The disk cache is lost on a Render deploy, so a cold start can add a request: access is normally, not strictly, once a day. BOJ asks for light use: never poll it more often, never lower either TTL. `parse_series` raises on any HTTP 200 that is not the full monthly series asked for (STATUS ≠ 200, wrong `SERIES_CODE`, missing `VALUES`, non-null `NEXTPOSITION`); such a reply is never cached as data. Terms (`https://www.stat-search.boj.or.jp/info/api_notice_en.pdf`):
+- The credit line `config.BOJ_CREDIT` must appear verbatim wherever BOJ-derived scores are shown (/docs, the category hover, the CSV, the API terms). `config.BOJ_COMMERCIAL_NOTE` is the one reuse sentence that follows it in the API terms, the Semis CSV rows and /docs; never retype it.
 - Commercial use (ads, a paid API or paid tier) needs the Bank of Japan's permission IN ADVANCE. Ask before monetizing the site in any way.
 - BOJ asks to be told about services built on its API; Will sends that notice (draft: `docs/superpowers/plans/2026-10-23-boj-api-notice-email.md`).
 
@@ -424,7 +424,7 @@ reconstruct_dashboard_state(data)    # Rebuilds Pandas types from JSON
 | St. Louis gauge | per-window key (`stl_stage_v1_<start>`) | 6 hours |
 | Weather (port batch, map) | `weather_batch_ports_v3` | 4 hours |
 | Market data pane | `raw_market_data_v2` | 1 hour |
-| Bank of Japan series (Semis) | `boj_<code>_v1` | 24 hours (BOJ terms: keep access light; a bad reply is not cached) |
+| Bank of Japan series (Semis) | `boj_<code>_v1` / `boj_<code>_failed_v1` | `BOJ_CACHE_SECONDS` 24 hours; after a failure no request for `BOJ_FAILURE_RETRY_SECONDS` 6 hours (BOJ terms: keep access light) |
 | News payload (alerts, briefing, report) | `NEWS_BRIEFING_CACHE_KEY` (`newsapi_briefing_v19`) | usable up to `NEWS_CACHE_MAX_AGE_SECONDS` (7 days); RSS re-read every `NEWS_RSS_REFRESH_SECONDS` (1 h; new headlines appended unscored, no Claude call), incremental scoring every `NEWS_AI_REFRESH_SECONDS` (6 h; also scores those unscored headlines), full run (web search, briefing, report) every `AI_CACHE_TTL_SECONDS` (24 h), tracked inside the payload |
 | Port summaries | `ai_port_summaries_v6` | `AI_CACHE_TTL_SECONDS` (24 hours) |
 | Disruption register score | `disruption_register_v1` | `AI_CACHE_TTL_SECONDS` (24 hours) |
@@ -590,7 +590,7 @@ GET  /healthz                    # Alias for /health
         "semiconductor": {"index": 50.2, "tier": "Stressed", "coverage": 3, "min_categories": 2, "degraded": False,
                           "fallback_categories": [], "excluded_categories": [], "stale_categories": [],
                           "categories": {...},   # same category objects, sector weights
-                          "terms": "<BOJ_CREDIT> Commercial reuse of the memory and logic chip price scores requires the Bank of Japan's permission. ..."},
+                          "terms": "<BOJ_CREDIT> <BOJ_COMMERCIAL_NOTE> Fab utilization is Federal Reserve G.17 data, ..."},
         "aerospace": {..., "terms": "CC-BY-4.0. Credit: Federal Reserve Board (G.17) ..., U.S. Census Bureau (M3) ..., U.S. Bureau of Labor Statistics (PPI) ..."},
     },
     "meta": {"source": "Global Supply Chain Index", "license": "CC-BY-4.0", "documentation": "https://gscindex.com/docs",
@@ -719,7 +719,7 @@ All tunable values live in `config.py`; generated anchors live in `data/score_an
 - **Don't put WEI or BDRY back in the supply chain score** — WEI is a GDP-growth nowcast with no defensible sign (high growth coincided with the 2021 stress peak); BDRY double-counts the Baltic Dry Index inside GSCPI. Context only.
 - **PortWatch credit** — "Sources: UN Global Platform; IMF PortWatch" must appear wherever its data does, and the API must stay free.
 - **Sector isolation** — a sector category must never reach the composite, the global `disruptions`, the global degraded / fallback / stale / excluded lists, the top-level API `categories` or the `/health` status. Filter by `CATEGORY_WEIGHTS` when adding any global reader.
-- **Bank of Japan terms** — keep the 24 h cache (no extra polling), keep `config.BOJ_CREDIT` verbatim on every BOJ-derived output, and get BOJ's permission before any commercial use (ads, paid API, paid tier). The memory and logic scores are not CC-BY-4.0 for commercial reuse.
+- **Bank of Japan terms** — keep the 24 h cache and the 6 h failure cache (no extra polling), keep `config.BOJ_CREDIT` verbatim on every BOJ-derived output, and get BOJ's permission before any commercial use (ads, paid API, paid tier). The memory and logic scores are not CC-BY-4.0 for commercial reuse.
 - **Retired keys** — never reuse a `RETIRED_CATEGORIES` key; old `chip_*` / `aero_metals|orders|production|ppi` rows must never feed a sector tab.
 - **Paid tests**: `RUN_LIVE_CLAUDE=1` makes billed Claude calls and writes the cache.
 
@@ -727,7 +727,6 @@ All tunable values live in `config.py`; generated anchors live in `data/score_an
 
 - `_KEY_MIGRATIONS` in app.py still maps the legacy category name "ports" → "supply_chain". This should live in a migration module.
 - `FRED_SCORE_LOOKBACK_DAYS` and the percentile helpers in `fred_client.py` (`normalize_series_inverse` / `_direct`) are no longer used by any provider; only `tests/fred_download_test.py` and the research script `aero/compute_proposed.py` call them.
-- `CATEGORY_LABELS` still lists the retired `chip_*` and old `aero_*` labels.
 - The Global CSV's profile column still reads "Baseline (Global)" so the Global export stayed byte-identical.
 - `data/port_analyst.aggregate_disruption_score()` is no longer called (the port-disruption blend into geopolitical was removed); only a test uses it.
 - `index_history` does not renormalize past days under an exclusion, so the sparkline's previous point can differ from "yesterday" in the readout on degraded days.

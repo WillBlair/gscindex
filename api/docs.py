@@ -767,7 +767,9 @@ def _sector_cards(sector: str) -> str:
                       "year of data."),
             ("Anchors", _anchors("boj_memory") + "."),
             ("Updates", f"The Bank of Japan publishes about {lag['boj_cgpi']} days after the month ends. "
-                        f"The site asks for each series at most once a day. The input is {_fresh('boj_memory')}."),
+                        "The site normally asks for each series about once a day, and waits "
+                        f"{config.BOJ_FAILURE_RETRY_SECONDS / 3600:g} hours after a failed request. The input is "
+                        f"{_fresh('boj_memory')}."),
         ],
         "semis_logic_prices": [
             ("Source", "Bank of Japan Corporate Goods Price Index, import price index for MOS logic "
@@ -881,9 +883,9 @@ def _sector_section() -> str:
                                   "glut or a demand collapse reads as healthy. In March 2023, during a memory "
                                   "glut, Memory Prices read 99."),
         ("Memory at 0", f"Memory Prices reads 0 whenever its year-over-year change is {memory_zero}, the "
-                        "worst month on record through 2025. In the September 2026 data memory import prices "
-                        "were up 316% on a year earlier, so the category reads 0. It cannot show how much "
-                        "further past the record prices go."),
+                        "worst month on record through 2025, and it cannot show how far past that record "
+                        "prices go. For example, in the September 2026 data, memory chip import prices were "
+                        "up 316% on a year earlier, so the category read 0."),
         ("Utilization", "Fab Utilization does not separate spare capacity from weak demand. Low utilization "
                         "because orders fell reads as healthy. Aero Throughput has the opposite problem: low "
                         "utilization from weak orders reads as supply trouble."),
@@ -896,10 +898,10 @@ def _sector_section() -> str:
                      "a regular schedule."),
     ])
     credits = (
-        f"<p>Credits. {config.BOJ_CREDIT} Commercial reuse of the memory and logic chip price scores requires "
-        "the Bank of Japan's permission. Fab utilization and the aerospace inputs are US government data from "
-        "the Federal Reserve Board (G.17), the Census Bureau (M3) and the Bureau of Labor Statistics "
-        "(Producer Price Index), released here under CC-BY-4.0 like the global index.</p>")
+        f"<p>Credits. {config.BOJ_CREDIT} {config.BOJ_COMMERCIAL_NOTE} Fab utilization and the aerospace "
+        "inputs are US government data from the Federal Reserve Board (G.17), the Census Bureau (M3) and "
+        "the Bureau of Labor Statistics (Producer Price Index), released here under CC-BY-4.0 like the "
+        "global index.</p>")
     return "\n".join([
         '<div class="section-heading"><span class="section-num">5.</span><h2>Sector indexes</h2></div>',
         '<hr class="section-rule">',

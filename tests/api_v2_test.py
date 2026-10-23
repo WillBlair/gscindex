@@ -274,6 +274,8 @@ def test_semis_terms_boj_verbatim(client, monkeypatch):
     assert _BOJ_CREDIT_VERBATIM in terms
     assert "Commercial reuse of the memory and logic" in terms
     assert "requires the Bank of Japan's permission" in terms
+    import config
+    assert config.BOJ_COMMERCIAL_NOTE in terms
     # Fab utilization is Federal Reserve data, not BOJ data.
     assert "Federal Reserve" in terms and "CC-BY-4.0" in terms
     assert "—" not in terms
@@ -315,3 +317,29 @@ def test_health_sectors_block_and_status_unaffected(monkeypatch):
         "aerospace": {"degraded": True, "coverage": 0},
     }
     assert body["fallback_categories"] == [] and body["excluded_categories"] == []
+
+
+def test_boj_commercial_note_is_identical_in_api_csv_and_docs(client, monkeypatch):
+    """One wording everywhere: the API terms, the Semis CSV rows and /docs all render the
+    config constant verbatim."""
+    import csv
+    import io
+
+    import config
+    from api import docs
+    from components.workspace import snapshot_csv
+
+    note = config.BOJ_COMMERCIAL_NOTE
+    assert note.startswith("Commercial reuse") and "Bank of Japan's permission" in note
+    monkeypatch.setattr(cache, "get_cached_dashboard", _sector_snapshot)
+    terms = client.get("/api/v1/latest").get_json()["sectors"]["semiconductor"]["terms"]
+    assert terms.startswith(config.BOJ_CREDIT + " " + note)
+
+    rows = list(csv.DictReader(io.StringIO(snapshot_csv(_sector_snapshot(), "semiconductor"))))
+    boj_rows = [r for r in rows if r["category"] in ("Memory Prices", "Logic Chip Prices")]
+    assert len(boj_rows) == 2 and all(r["credit"] == config.BOJ_CREDIT + " " + note for r in boj_rows)
+
+    app = Flask(__name__)
+    app.register_blueprint(docs.docs_bp)
+    page = app.test_client().get("/docs").get_data(as_text=True)
+    assert note in page

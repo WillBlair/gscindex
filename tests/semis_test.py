@@ -97,27 +97,122 @@ def test_boj_parse_monthly_index():
     assert series.dtype == float
 
 
+@pytest.fixture(autouse=True)
+def _fresh_boj_memory():
+    """The source keeps the last result per series in memory; every test starts empty."""
+    boj._MEMORY.clear()
+    yield
+    boj._MEMORY.clear()
+
+
+class _Disk:
+    """Stand-in for data.cache: entries expire by the ttl the caller passes, on a fake clock."""
+
+    def __init__(self, clock):
+        self.clock, self.store = clock, {}
+
+    def get(self, key, ttl):
+        hit = self.store.get(key)
+        return hit[1] if hit and self.clock[0] - hit[0] <= ttl else None
+
+    def set(self, key, value):
+        self.store[key] = (self.clock[0], value)
+
+
+def _boj_patches(disk, clock, response):
+    return (mock.patch.object(boj, "get_cached", disk.get), mock.patch.object(boj, "set_cached", disk.set),
+            mock.patch.object(boj, "_now", lambda: clock[0]),
+            mock.patch.object(boj.requests, "get", return_value=response))
+
+
+def _response(body):
+    response = mock.Mock(status_code=200)
+    response.json.return_value = body
+    return response
+
+
 def test_boj_fetch_caches_good_reply_and_not_a_bad_one():
-    store = {}
+    clock = [1_000_000.0]
+    disk = _Disk(clock)
     code = "PRCG20_2500850005"
-    good = mock.Mock(status_code=200)
-    good.json.return_value = _payload(code)
-    bad = mock.Mock(status_code=200)
-    bad.json.return_value = {"STATUS": 400, "MESSAGE": "bad"}
-    with mock.patch.object(boj, "get_cached", lambda k, ttl: store.get(k)), \
-            mock.patch.object(boj, "set_cached", lambda k, v: store.__setitem__(k, v)), \
-            mock.patch.object(boj.requests, "get", return_value=bad) as get:
+    bad, good = _response({"STATUS": 400, "MESSAGE": "bad"}), _response(_payload(code))
+    a, b, c, get_patch = _boj_patches(disk, clock, bad)
+    with a, b, c, get_patch as get:
         with pytest.raises(ValueError):
             boj.fetch_series(code)
-        assert store == {}
+        assert list(disk.store) == [f"boj_{code}_failed_v1"]       # the failure marker, no data
+        clock[0] += config.BOJ_FAILURE_RETRY_SECONDS + 1
         get.return_value = good
         first = boj.fetch_series(code)
         second = boj.fetch_series(code)          # served from the cache
     assert get.call_count == 2
-    assert list(store) == [f"boj_{code}_v1"]
+    assert f"boj_{code}_v1" in disk.store
     pd.testing.assert_series_equal(first, second)
     assert get.call_args.kwargs["params"]["code"] == code
     assert get.call_args.args[0] == boj.API_URL
+
+
+def test_boj_failure_is_not_retried_for_six_hours():
+    """After a failed fetch BOJ is not called again until BOJ_FAILURE_RETRY_SECONDS have passed,
+    in this process or after a restart (the marker is on disk)."""
+    assert config.BOJ_FAILURE_RETRY_SECONDS >= 6 * 3600
+    clock = [1_000_000.0]
+    disk = _Disk(clock)
+    code = "PRCG20_2500850004"
+    a, b, c, get_patch = _boj_patches(disk, clock, None)
+    with a, b, c, get_patch as get:
+        get.side_effect = boj.requests.ConnectionError("down")
+        with pytest.raises(boj.requests.ConnectionError):
+            boj.fetch_series(code)
+        assert get.call_count == 1
+
+        clock[0] += config.BOJ_FAILURE_RETRY_SECONDS - 60      # every 5-minute cycle until then
+        with pytest.raises(RuntimeError, match="not retried"):
+            boj.fetch_series(code)
+        boj._MEMORY.clear()                                     # a restart keeps the disk marker
+        with pytest.raises(RuntimeError, match="not retried"):
+            boj.fetch_series(code)
+        assert get.call_count == 1
+
+        clock[0] += 120                                         # past the retry window
+        get.side_effect = None
+        get.return_value = _response(_payload(code))
+        assert not boj.fetch_series(code).empty
+        assert get.call_count == 2
+
+
+def test_boj_history_reuses_the_series_fetch_current_just_read(anchors):
+    """fetch_history must not make its own request for the series fetch_current just fetched,
+    even when the disk cache is unavailable."""
+    levels = _levels(yoy_pct=5)
+    body = _payload(dates=[int(f"{d:%Y%m}") for d in levels.index], values=levels.tolist())
+
+    def broken_disk(*_args):
+        raise OSError("read-only disk")
+
+    with mock.patch.object(boj, "get_cached", lambda k, ttl: None), \
+            mock.patch.object(boj, "set_cached", broken_disk), \
+            mock.patch.object(boj.requests, "get", return_value=_response(body)) as get:
+        provider = semis.MemoryPricesProvider()
+        score, _ = provider.fetch_current()
+        history = provider.fetch_history(90)
+    assert get.call_count == 1
+    assert history.notna().any() and score == pytest.approx(history.dropna().iloc[-1], abs=0.1)
+
+
+def test_reshaped_reply_does_not_become_data_on_the_retry(anchors):
+    """A reshaped 200 reply is a failure too: marked, never cached as data, never scored."""
+    clock = [1_000_000.0]
+    disk = _Disk(clock)
+    a, b, c, get_patch = _boj_patches(disk, clock, _response(_payload(code="WRONG")))
+    with a, b, c, get_patch as get:
+        provider = semis.MemoryPricesProvider()
+        with pytest.raises(RuntimeError):
+            provider.fetch_current()
+        with pytest.raises(RuntimeError):
+            provider.fetch_current()
+    assert get.call_count == 1
+    assert list(disk.store) == ["boj_PRCG20_2500850005_failed_v1"]
 
 
 # ------------------------------------------------------------------ memory and logic

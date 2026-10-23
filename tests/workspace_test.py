@@ -15,7 +15,7 @@ from components.terminal_data import TIER_COLORS, index_summary
 import config
 from config import BOJ_CREDIT, CATEGORY_WEIGHTS, SECTORS, TABS
 
-SEMIS_TERMS = BOJ_CREDIT + " Commercial reuse of the memory and logic scores requires the Bank of Japan's permission."
+SEMIS_TERMS = BOJ_CREDIT + " " + config.BOJ_COMMERCIAL_NOTE
 
 
 @pytest.fixture

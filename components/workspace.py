@@ -9,7 +9,7 @@ from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
 from components.terminal_data import sector_block, tab_key, tab_weights
-from config import BOJ_CREDIT, CATEGORY_LABELS, DEFAULT_TAB, SECTORS
+from config import BOJ_COMMERCIAL_NOTE, BOJ_CREDIT, CATEGORY_LABELS, DEFAULT_TAB, SECTORS
 from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 from data.providers.semis import BOJ_CATEGORIES
 
@@ -83,8 +83,7 @@ _CSV_CREDITS = {"chokepoints": PORTWATCH_CREDIT, "physical": PORTWATCH_CREDIT}
 _GLOBAL_PROFILE_LABEL = "Baseline (Global)"
 # Rows built from BOJ data (the providers' ``credits_boj`` flag) carry the Bank of Japan credit
 # line and its reuse terms.
-SEMIS_CSV_TERMS = (BOJ_CREDIT + " Commercial reuse of the memory and logic scores requires the "
-                   "Bank of Japan's permission.")
+SEMIS_CSV_TERMS = BOJ_CREDIT + " " + BOJ_COMMERCIAL_NOTE
 
 
 def _inputs_cell(meta):

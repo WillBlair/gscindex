@@ -190,7 +190,11 @@ def test_docs_sector_limitations_and_credits(body):
     memory = config.SCORE_ANCHORS["inputs"]["boj_memory"]
     # Disclosed limitations (spec settled item 1 and the anchor rulings).
     assert "glut" in section and "demand collapse" in section
-    assert f"above {memory['worst']:+.1f}%" in section and "316%" in section
+    assert f"above {memory['worst']:+.1f}%" in section
+    # The current-data example is dated, so it does not go stale.
+    assert ("For example, in the September 2026 data, memory chip import prices were up 316% on a year "
+            "earlier, so the category read 0.") in section
+    assert "so the category reads 0" not in section
     assert "does not separate" in section
     assert "1972" in section and "1948" in section
     # Credits: the BOJ line verbatim, and the US government sources.

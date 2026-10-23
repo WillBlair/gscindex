@@ -105,16 +105,6 @@ CATEGORY_LABELS: dict[str, str] = {
     "geopolitical":        "Geopolitical Risk",
     "inputs":              "Input Costs",
     "physical":            "Physical Disruption",
-    # Semiconductor-specific categories (industry profile mode)
-    "chip_fab_util":       "Fab Utilization",
-    "chip_memory_prices":  "Memory Prices",
-    "chip_lead_times":     "Lead Times",
-    "chip_wafer_prices":   "Wafer Prices",
-    # Aerospace-specific categories (industry profile mode)
-    "aero_metals":         "Aero Metals",
-    "aero_orders":         "Aircraft Orders",
-    "aero_production":     "Aero Production",
-    "aero_ppi":            "Aircraft PPI",
     # Sector index categories (SECTORS below; never part of the global composite)
     "semis_memory_prices":   "Memory Prices",
     "semis_logic_prices":    "Logic Chip Prices",
@@ -197,14 +187,6 @@ CATEGORY_COLORS: dict[str, str] = {
     "geopolitical":        "#22d3ee",
     "inputs":              "#fb923c",
     "physical":            "#a3e635",
-    "chip_fab_util":       "#5f8f9c",
-    "chip_memory_prices":  "#7d7394",
-    "chip_lead_times":     "#5a8f86",
-    "chip_wafer_prices":   "#9c6b7a",
-    "aero_metals":         "#6a8494",
-    "aero_orders":         "#7a6e8a",
-    "aero_production":     "#5f8a72",
-    "aero_ppi":            "#a07a62",
     "semis_memory_prices":   "#8b7fc7",
     "semis_logic_prices":    "#4aa3b8",
     "semis_fab_utilization": "#4fae9a",
@@ -536,6 +518,17 @@ RETIRED_CATEGORIES: frozenset[str] = frozenset({
 BOJ_CREDIT: str = (
     "This service uses the API provided by the 'Bank of Japan Time-Series Data Search.' "
     "The Bank of Japan does not guarantee the content of the service.")
+
+# The reuse condition that follows BOJ_CREDIT wherever the BOJ-derived scores are published (API
+# terms, Semis CSV rows, /docs). One wording, used verbatim everywhere.
+BOJ_COMMERCIAL_NOTE: str = (
+    "Commercial reuse of the memory and logic chip price scores requires the Bank of Japan's permission.")
+
+# Bank of Japan API access (data/sources/boj.py). BOJ asks users to keep access light: a good reply
+# is reused for BOJ_CACHE_SECONDS, and after a failed or unusable reply the series is not requested
+# again for BOJ_FAILURE_RETRY_SECONDS (the category serves its stored fallback meanwhile).
+BOJ_CACHE_SECONDS: int = 24 * 3600
+BOJ_FAILURE_RETRY_SECONDS: int = 6 * 3600
 
 # Runtime FRED window for the Fed G.17 capacity utilization series: the latest month, the
 # history tail and the publication lag, never the full history.

@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from config import BOJ_CREDIT, CATEGORY_WEIGHTS, METHODOLOGY_VERSION, SECTORS
+from config import BOJ_COMMERCIAL_NOTE, BOJ_CREDIT, CATEGORY_WEIGHTS, METHODOLOGY_VERSION, SECTORS
 from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 from scoring import snapshot_composite
 
@@ -72,9 +72,8 @@ def category_objects(data: dict, weights: dict[str, float] = CATEGORY_WEIGHTS) -
 # government data, released like the global index under CC-BY-4.0 with credit.
 SECTOR_TERMS: dict[str, str] = {
     "semiconductor": (
-        f"{BOJ_CREDIT} Commercial reuse of the memory and logic chip price scores requires the Bank of "
-        "Japan's permission. Fab utilization is Federal Reserve G.17 data, CC-BY-4.0 with credit to the "
-        "Federal Reserve Board."),
+        f"{BOJ_CREDIT} {BOJ_COMMERCIAL_NOTE} Fab utilization is Federal Reserve G.17 data, CC-BY-4.0 "
+        "with credit to the Federal Reserve Board."),
     "aerospace": (
         "CC-BY-4.0. Credit: Federal Reserve Board (G.17 capacity utilization), U.S. Census Bureau (M3 "
         "shipments and inventories) and U.S. Bureau of Labor Statistics (Producer Price Index), via FRED."),

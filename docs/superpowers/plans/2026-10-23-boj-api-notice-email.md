@@ -17,7 +17,7 @@ The site uses the Bank of Japan Time-Series Data Search API for two series from 
 - PRCG20_2500850005 (MOS memory integrated circuits)
 - PRCG20_2500850004 (MOS logic integrated circuits)
 
-The year-over-year change of each series is one of the scores in the site's semiconductor index. The site requests each series about once a day and caches the reply for 24 hours, so it sends only a few requests a day.
+The year-over-year change of each series is one of the scores in the site's semiconductor index. The site normally requests each series about once a day and keeps the reply for 24 hours. After a failed request it waits 6 hours before trying again.
 
 Your credit line appears on the methodology page (https://gscindex.com/docs), in the description of each score that uses the data, in the CSV download and in the public API output.
 
