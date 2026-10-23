@@ -47,6 +47,7 @@ from data.providers.aerospace import AeroMetalsProvider
 from data.providers.silicon_analysts import ChipFabUtilProvider
 from data.port_analyst import generate_port_summaries
 from data.portwatch import fetch_chokepoint_traffic
+from data.register import run_register_cycle
 from scoring import get_health_tier
 from data.runtime import RefreshTasks
 
@@ -720,6 +721,7 @@ def aggregate_data(status_callback=None) -> dict:
         future_market = executor.submit_once("market", _fetch_market_data)
         future_port_summaries = executor.submit_once("port_summaries", generate_port_summaries)
         future_chokepoints = executor.submit_once("chokepoints", fetch_chokepoint_traffic)
+        future_register = executor.submit_once("register", run_register_cycle)
 
         # -------------------------------------------------------------------
         # 2. Collect Results (with Timeout)
@@ -833,6 +835,13 @@ def aggregate_data(status_callback=None) -> dict:
             port_summaries = future_port_summaries.result(timeout=240) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
+
+        # E. Claude disruption register (shadow: stored as geo_register, not weighted)
+        register_score = None
+        try:
+            register_score = future_register.result(timeout=240)
+        except Exception as e:
+            logger.warning("Disruption register timed out or failed: %s", e)
     finally:
         # Do not block forever on a hung upstream call.
         # Running jobs remain tracked and are reused on the next refresh.
@@ -1039,6 +1048,8 @@ def aggregate_data(status_callback=None) -> dict:
             cat: score for cat, score in current_scores.items()
             if cat not in fallback_categories
         }
+        if isinstance(register_score, float):
+            measured_scores["geo_register"] = register_score
         record_daily_scores(composite, measured_scores)
         set_cached_dashboard(result)
         logger.info("Dashboard state persisted to disk (JSON/Safe).")

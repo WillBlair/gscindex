@@ -480,3 +480,12 @@ TARIFFS_FRED_LOOKBACK_DAYS = 3 * 365
 GPR_MEAN_DAYS = 30               # trailing days averaged in the daily GPR index
 GPR_MIN_PERIODS = 20             # fewest observations a 30-day mean may rest on
 GEO_REGISTER_WEIGHT = 0.0        # share of the geopolitical score taken from the stored register
+
+# Claude disruption register (data/register.py): ongoing disruptions stay counted until
+# Claude finds evidence they are resolved. Score = 100 - min(100, factor x sum(severity x share)).
+REGISTER_WEB_SEARCH_MAX_USES: int = int(os.environ.get("REGISTER_WEB_SEARCH_MAX_USES", "8"))
+REGISTER_MAX_ARTICLES = 50       # RSS articles shown to Claude per register run
+REGISTER_MAX_OPEN_EVENTS = 25    # open events kept per run, highest severity first
+REGISTER_MAX_EVIDENCE = 5        # evidence URLs kept per event
+REGISTER_SEVERITY_MAX = 10.0     # severity is clamped to 0..this
+REGISTER_SCORE_FACTOR = 0.3      # points per unit of severity x trade share %

@@ -8,6 +8,7 @@ Tables:
     daily_scores          — one composite score per calendar day
     daily_category_scores — one score per category per calendar day
                             (the real measurement history behind trend charts)
+    disruption_events     — the Claude disruption register (data/register.py)
 """
 
 import os
@@ -134,6 +135,22 @@ def init_db():
                         PRIMARY KEY (send_date, email)
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS disruption_events (
+                        id TEXT PRIMARY KEY,
+                        title TEXT,
+                        region TEXT,
+                        corridors TEXT,
+                        severity REAL,
+                        trade_share_pct REAL,
+                        trade_share_basis TEXT,
+                        opened DATE,
+                        updated DATE,
+                        closed DATE NULL,
+                        evidence TEXT,
+                        rationale TEXT
+                    )
+                """)
                 cursor.execute(
                     "ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS unsubscribed_at "
                     "TIMESTAMP WITH TIME ZONE"
@@ -174,6 +191,22 @@ def init_db():
                         email TEXT NOT NULL,
                         sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (send_date, email)
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS disruption_events (
+                        id TEXT PRIMARY KEY,
+                        title TEXT,
+                        region TEXT,
+                        corridors TEXT,
+                        severity REAL,
+                        trade_share_pct REAL,
+                        trade_share_basis TEXT,
+                        opened DATE,
+                        updated DATE,
+                        closed DATE NULL,
+                        evidence TEXT,
+                        rationale TEXT
                     )
                 """)
                 columns = {row[1] for row in cursor.execute("PRAGMA table_info(subscribers)")}
@@ -622,5 +655,102 @@ def get_daily_category_scores(days: int) -> dict:
     except Exception as e:
         logger.error(f"Failed to fetch daily category scores: {e}")
         return empty
+    finally:
+        conn.close()
+
+
+_EVENT_COLUMNS = (
+    "id", "title", "region", "corridors", "severity", "trade_share_pct",
+    "trade_share_basis", "opened", "updated", "closed", "evidence", "rationale",
+)
+
+
+def _iso_day(value) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)[:10]
+
+
+def _json_list(text) -> list:
+    import json
+
+    try:
+        value = json.loads(text) if text else []
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
+
+
+def load_open_disruption_events() -> list[dict]:
+    """Return the register's open events (``closed`` is NULL), highest severity first.
+
+    Returns [] when no database is configured. A failed query raises, so the
+    register never mistakes a read error for "no open disruptions".
+    """
+    conn = get_connection()
+    if not conn:
+        return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT {', '.join(_EVENT_COLUMNS)} FROM disruption_events "
+            "WHERE closed IS NULL ORDER BY severity DESC, id ASC"
+        )
+        events = []
+        for row in cursor.fetchall():
+            event = dict(zip(_EVENT_COLUMNS, row))
+            event["corridors"] = _json_list(event["corridors"])
+            event["evidence"] = _json_list(event["evidence"])
+            event["severity"] = float(event["severity"] or 0.0)
+            event["trade_share_pct"] = float(event["trade_share_pct"] or 0.0)
+            for key in ("opened", "updated", "closed"):
+                event[key] = _iso_day(event[key])
+            events.append(event)
+        return events
+    except Exception as e:
+        logger.error("Failed to load disruption events: %s", e)
+        raise
+    finally:
+        conn.close()
+
+
+def upsert_disruption_events(events: list[dict]) -> None:
+    """Insert or replace register events by id. Lists are stored as JSON text.
+
+    No-op when no database is configured; a failed write raises.
+    """
+    import json
+
+    if not events:
+        return
+    conn = get_connection()
+    if not conn:
+        return
+    ph = "%s" if get_db_type() == "postgres" else "?"
+    updates = ", ".join(f"{col} = EXCLUDED.{col}" for col in _EVENT_COLUMNS[1:])
+    sql = (
+        f"INSERT INTO disruption_events ({', '.join(_EVENT_COLUMNS)}) "
+        f"VALUES ({', '.join([ph] * len(_EVENT_COLUMNS))}) "
+        f"ON CONFLICT (id) DO UPDATE SET {updates}"
+    )
+    try:
+        with conn:
+            cursor = conn.cursor()
+            for event in events:
+                cursor.execute(sql, (
+                    event["id"], event.get("title"), event.get("region"),
+                    json.dumps(list(event.get("corridors") or [])),
+                    float(event.get("severity") or 0.0), float(event.get("trade_share_pct") or 0.0),
+                    event.get("trade_share_basis"), _iso_day(event.get("opened")),
+                    _iso_day(event.get("updated")), _iso_day(event.get("closed")),
+                    json.dumps(list(event.get("evidence") or [])), event.get("rationale"),
+                ))
+    except Exception as e:
+        logger.error("Failed to upsert disruption events: %s", e)
+        raise
     finally:
         conn.close()
