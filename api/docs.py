@@ -884,8 +884,9 @@ def _sector_section() -> str:
                                   "glut or a demand collapse reads as healthy. In March 2023, during a memory "
                                   "glut, Memory Prices read 99."),
         ("Memory at 0", f"Memory Prices reads 0 whenever its year-over-year change is {memory_zero}, the "
-                        "worst month on record through 2025, and it cannot show how far past that record "
-                        "prices go. For example, in the September 2026 data, memory chip import prices were "
+                        "worst month on record through 2025. The score cannot go lower, so the category "
+                        "table tags it \"past record\" and its hover shows the current change next to the "
+                        "record. This applies to any input past its record. For example, in the September 2026 data, memory chip import prices were "
                         "up 316% on a year earlier, so the category read 0."),
         ("Utilization", "Fab Utilization does not separate spare capacity from weak demand. Low utilization "
                         "because orders fell reads as healthy. Aero Throughput has the opposite problem: low "

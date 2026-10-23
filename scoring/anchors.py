@@ -6,7 +6,9 @@ from ``data/score_anchors.json`` (config.SCORE_ANCHORS) and are in transformed u
 """
 from __future__ import annotations
 
+import calendar
 import math
+import re
 
 import config
 
@@ -65,3 +67,30 @@ def get_anchor(key: str) -> dict:
         return config.SCORE_ANCHORS["inputs"][key]
     except KeyError:
         raise RuntimeError(f"no anchor for {key}") from None
+
+
+def past_record(name: str, score: float | None) -> dict | None:
+    """Record details for an input scoring 0, i.e. at or past its worst month on record.
+
+    The score cannot go below 0, so the UI uses this to show the reading against the
+    record instead. Returns {"record": text, "when": "Dec 2025"} or None (not at the floor,
+    or no anchor). Nothing here changes a score.
+    """
+    if score is None or score > 0:
+        return None
+    anchor = ((config.SCORE_ANCHORS or {}).get("inputs") or {}).get(name)
+    if not anchor or "worst" not in anchor:
+        return None
+    worst = float(anchor["worst"])
+    if anchor.get("transform") in ("log", "log_real"):
+        worst = math.exp(worst)
+    record = config.RECORD_FORMATS.get(name, "{:g}").format(worst)
+    basis = str(anchor.get("worst_basis") or "")
+    months = re.findall(r"(\d{4})-(\d{2})", basis)
+    if months:
+        year, month = months[-1]
+        when = f"{calendar.month_abbr[int(month)]} {year}"
+    else:
+        year = re.search(r"\bin (\d{4})\b", basis)
+        when = year.group(1) if year else None
+    return {"record": record, "when": when}

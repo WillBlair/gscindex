@@ -46,3 +46,40 @@ def test_non_finite_x_raises():
     for bad in (float("nan"), float("inf"), float("-inf")):
         with pytest.raises(ValueError):
             anchored_score(bad, anchor)
+
+
+# --- past-record marker --------------------------------------------------------------------
+
+def _past_record_anchors(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "SCORE_ANCHORS", {"inputs": {
+        "boj_memory": {"transform": "identity", "direction": "lower_better", "best": -36.3,
+                       "normal": -11.8, "worst": 57.417894,
+                       "worst_basis": "worst monthly mean through 2025-12: 2025-12"},
+        "aero_inv_ship": {"transform": "log", "direction": "lower_better", "best": 1.25,
+                          "normal": 1.55, "worst": 2.7655,
+                          "worst_basis": "worst monthly mean through 2025-12: 2020-07"},
+    }})
+
+
+def test_past_record_only_at_the_floor(monkeypatch):
+    from scoring.anchors import past_record
+    _past_record_anchors(monkeypatch)
+    assert past_record("boj_memory", 0.0) == {"record": "+57% YoY", "when": "Dec 2025"}
+    assert past_record("boj_memory", 12.0) is None
+    assert past_record("boj_memory", None) is None
+    assert past_record("hazards", 0.0) is None  # no anchor, never marked
+
+
+def test_past_record_converts_log_anchors_back(monkeypatch):
+    from scoring.anchors import past_record
+    _past_record_anchors(monkeypatch)
+    assert past_record("aero_inv_ship", 0.0) == {"record": "15.9 months", "when": "Jul 2020"}
+
+
+def test_inputs_metadata_carries_past_record(monkeypatch):
+    from datetime import date
+    from data.providers.readings import InputReading, inputs_metadata
+    _past_record_anchors(monkeypatch)
+    meta = inputs_metadata([InputReading("boj_memory", 0.0, date(2026, 9, 30), "BOJ", "+316.2% YoY (Sep 2026)")])
+    assert meta[0]["past_record"] == {"record": "+57% YoY", "when": "Dec 2025"}

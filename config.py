@@ -525,6 +525,23 @@ BOJ_CREDIT: str = (
 
 # The reuse condition that follows BOJ_CREDIT wherever the BOJ-derived scores are published (API
 # terms, Semis CSV rows, /docs). One wording, used verbatim everywhere.
+# How each anchored input's record (its 0 anchor) is shown when a reading is past it.
+# The anchor is in transformed units: log and log_real anchors are converted back
+# with exp() first. Real prices are in December 2025 dollars (the CPI reference).
+RECORD_FORMATS: dict[str, str] = {
+    "boj_memory": "{:+.0f}% YoY", "boj_logic": "{:+.0f}% YoY",
+    "ppi_ti_mill": "{:+.1f}% YoY", "ppi_ni_mill": "{:+.1f}% YoY", "ppi_ti_forge": "{:+.1f}% YoY",
+    "ppi_nonferrous_forge": "{:+.1f}% YoY", "ppi_steel_invest_cast": "{:+.1f}% YoY",
+    "tsifrght": "{:+.1f}% YoY", "rail_volume": "{:+.1f}% YoY",
+    "tariff_burden": "{:.1f}% of imports", "gscpi": "{:+.2f} std devs", "prices_paid": "z {:+.2f}",
+    "fab_util_3344": "{:.1f}% utilization", "aero_caputl": "{:.1f}% utilization",
+    "aero_inv_ship": "{:.1f} months", "gpr": "GPR {:.0f}", "tpu": "TPU {:.0f}",
+    "brent": "${:.0f}/bbl (2025 dollars)", "ulsd": "${:.2f}/gal (2025 dollars)",
+    "ttf": "${:.2f}/MMBtu (2025 dollars)", "ttf_monthly": "${:.2f}/MMBtu (2025 dollars)",
+    "copper": "${:,.0f}/t (2025 dollars)", "copper_monthly": "${:,.0f}/t (2025 dollars)",
+    "aluminum": "${:,.0f}/t (2025 dollars)", "aluminum_monthly": "${:,.0f}/t (2025 dollars)",
+}
+
 BOJ_COMMERCIAL_NOTE: str = (
     "Commercial reuse of the memory and logic chip price scores requires the Bank of Japan's permission.")
 

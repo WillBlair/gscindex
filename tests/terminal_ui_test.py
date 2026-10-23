@@ -641,3 +641,18 @@ def test_sector_stored_fallback_row_shows_its_suffix():
     assert "is-fallback" in (row.className or "")
     assert "fallback" in text_of(cells(row)[0])
     assert "Last stored reading from 2026-10-20" in text_of(_tip_for(table, "semis_memory_prices"))
+
+
+def test_floored_row_is_tagged_past_record_and_hover_shows_both_values():
+    from components.terminal import _detail_lines, _row_tag
+    row = {"today": 0.0, "inputs": [{"name": "boj_memory", "score": 0.0, "as_of": "2026-09-30",
+                                     "status": "live", "raw_value": "+316.2% YoY (Sep 2026)",
+                                     "past_record": {"record": "+57% YoY", "when": "Dec 2025"}}]}
+    assert _row_tag(row) == "past record"
+    text = " ".join(str(d.children) for d in _detail_lines(row))
+    assert "now +316.2% YoY (Sep 2026)" in text and "past the record of +57% YoY (Dec 2025)" in text
+    # A category above 0 with one input past its record is not tagged; the hover still says so.
+    row["today"] = 37.3
+    assert _row_tag(row) is None
+    # Status tags still take priority.
+    assert _row_tag({**row, "today": 0.0, "is_stale": True}) == "stale"

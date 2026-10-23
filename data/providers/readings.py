@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 import config
-from scoring.anchors import score_raw
+from scoring.anchors import past_record, score_raw
 
 
 class InputsExpired(RuntimeError):
@@ -81,6 +81,7 @@ def inputs_metadata(readings: list[InputReading]) -> list[dict]:
             "status": r.status,
             "source": r.source,
             "raw_value": r.raw_value,
+            "past_record": past_record(r.name, r.score),
         }
         for r in readings
     ]

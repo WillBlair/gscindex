@@ -381,7 +381,14 @@ def _input_line(item: dict) -> str:
     label = INPUT_LABELS.get(name) or name.replace("_", " ").capitalize() or "Input"
     as_of = plain_text(item.get("as_of")) or DASH
     status = plain_text(item.get("status")) or DASH
-    return f"{label} {fmt(item.get('score'))} · as of {as_of} · {status}"
+    line = f"{label} {fmt(item.get('score'))} · as of {as_of} · {status}"
+    record = item.get("past_record")
+    if isinstance(record, dict) and record.get("record"):
+        # The score is at its floor; show how far past the record the reading is.
+        when = f" ({plain_text(record['when'])})" if record.get("when") else ""
+        now = plain_text(item.get("raw_value"))
+        line += (f" · now {now}," if now else " ·") + f" past the record of {plain_text(record['record'])}{when}"
+    return line
 
 
 def _detail_lines(row: dict) -> list:
@@ -413,13 +420,16 @@ def _detail_lines(row: dict) -> list:
 
 
 def _row_tag(row: dict) -> str | None:
-    """One status tag per row: excluded, else fallback, else stale."""
+    """One status tag per row: excluded, else fallback, else stale, else past record (score at 0
+    because an input is past its worst month on record)."""
     if row.get("is_excluded"):
         return "excluded"
     if row.get("is_fallback"):
         return "fallback"
     if row.get("is_stale"):
         return "stale"
+    if row.get("today") == 0 and any(isinstance(i, dict) and i.get("past_record") for i in row.get("inputs") or []):
+        return "past record"
     return None
 
 
@@ -461,7 +471,7 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
             html.Td(signed(row["change"]), className=f"r num {change_class(row['change'])}"),
             html.Td(signed(row["effect"], 2), className=f"r num {change_class(row['effect'])}"),
             html.Td(sparkline(row["history"], 110, 18, color), className="hide-s"),
-        ], className=f"is-{tag}" if tag else None))
+        ], className=f"is-{tag.replace(' ', '-')}" if tag else None))
 
     tier = summary["tier"]
     index_color = tier["color"] if tier else DIM
