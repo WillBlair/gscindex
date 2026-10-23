@@ -5,7 +5,7 @@ or production.
 """
 import csv
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -131,7 +131,8 @@ def test_write_exports_backup_then_upserts_without_deleting(sqlite_db, tmp_path)
     providers = _providers(missing={"physical": {gap}})
     backups = tmp_path / "backups"
 
-    result = rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups)
+    result = rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups,
+                         now=datetime(2026, 10, 22, 9, 0, 0, tzinfo=timezone.utc))
 
     cats, comp = _all_rows(sqlite_db)
     by_key = {(d, c): s for d, c, s in cats}
@@ -144,7 +145,8 @@ def test_write_exports_backup_then_upserts_without_deleting(sqlite_db, tmp_path)
     assert gap.isoformat() not in dict(comp)                                 # gap day: no composite row
     assert dict(comp)[d1.isoformat()] != 11.0
 
-    backup = backups / f"category_scores_pre_v2_{TODAY.isoformat()}.csv"
+    backup = result.backup_path
+    assert backup.parent == backups and backup.name == "category_scores_pre_v2_2026-10-22_090000.csv"
     with open(backup, newline="") as fh:
         saved = list(csv.reader(fh))
     assert saved[0] == ["date", "category", "score"]
@@ -224,3 +226,142 @@ def test_backtest_lookup_is_none_without_a_measurement():
     assert bt.lookup(s, date(2020, 4, 16)) is None
     assert bt.lookup(s, date(2008, 7, 15)) is None
     assert bt.lookup(None, date(2008, 7, 15)) is None
+
+
+# ---------------------------------------------------------------- backup safety (fix round 2)
+
+NOW1 = datetime(2026, 10, 22, 9, 0, 0, tzinfo=timezone.utc)
+NOW2 = datetime(2026, 10, 22, 9, 5, 0, tzinfo=timezone.utc)
+
+
+def test_second_write_same_day_keeps_the_first_backup(sqlite_db, tmp_path):
+    d1 = TODAY - timedelta(days=1)
+    _seed(sqlite_db, [(d1.isoformat(), "energy", 10.0)], [(d1.isoformat(), 11.0)])
+    backups = tmp_path / "backups"
+
+    first = rebuild.run(days=3, write=True, providers=_providers(), today=TODAY,
+                        backup_dir=backups, now=NOW1)
+    original = first.backup_path.read_text()
+    second = rebuild.run(days=3, write=True, providers=_providers(), today=TODAY,
+                         backup_dir=backups, now=NOW2)
+
+    assert first.backup_path != second.backup_path
+    assert first.backup_path.read_text() == original                  # untouched by the second run
+    assert f"{d1.isoformat()},energy,10.0" in original                # still the pre-v2 value
+    assert f"{d1.isoformat()},energy,52.0" in second.backup_path.read_text()   # second saw the v2 rows
+
+
+def test_backup_file_is_never_overwritten_even_at_the_same_second(sqlite_db, tmp_path):
+    backups = tmp_path / "backups"
+    rebuild.run(days=2, write=True, providers=_providers(), today=TODAY, backup_dir=backups, now=NOW1)
+    with pytest.raises(rebuild.BackupError, match="Nothing was written"):
+        rebuild.run(days=2, write=True, providers=_providers(), today=TODAY, backup_dir=backups, now=NOW1)
+
+
+def _spy_upserts(monkeypatch):
+    calls = []
+    monkeypatch.setattr(database, "upsert_scores_for_dates", lambda rows: calls.append(("cat", rows)) or len(rows))
+    monkeypatch.setattr(database, "upsert_composite_for_dates", lambda rows: calls.append(("comp", rows)) or len(rows))
+    return calls
+
+
+def test_export_failure_on_write_path_aborts_with_no_upsert(sqlite_db, tmp_path, monkeypatch):
+    class BrokenCursor:
+        def execute(self, *a, **k):
+            raise sqlite3.OperationalError("disk I/O error")
+
+    class BrokenConn:
+        def cursor(self):
+            return BrokenCursor()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(database, "init_db", lambda: None)
+    monkeypatch.setattr(database, "get_connection", lambda: BrokenConn())
+    calls = _spy_upserts(monkeypatch)
+    backups = tmp_path / "backups"
+
+    with pytest.raises(rebuild.BackupError, match="disk I/O error"):
+        rebuild.run(days=3, write=True, providers=_providers(), today=TODAY, backup_dir=backups, now=NOW1)
+    assert calls == []
+    assert not list(backups.glob("category_scores_pre_v2_*"))
+
+
+def test_export_category_rows_strict_raises_but_default_returns_empty(sqlite_db, monkeypatch):
+    class BrokenConn:
+        def cursor(self):
+            raise sqlite3.OperationalError("boom")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(database, "get_connection", lambda: BrokenConn())
+    assert database.export_category_rows(date(2026, 1, 1), ["energy"]) == []
+    with pytest.raises(sqlite3.OperationalError):
+        database.export_category_rows(date(2026, 1, 1), ["energy"], strict=True)
+
+
+def test_backup_count_mismatch_aborts_with_no_upsert(sqlite_db, tmp_path, monkeypatch):
+    d1 = TODAY - timedelta(days=1)
+    _seed(sqlite_db, [(d1.isoformat(), "energy", 10.0)], [(d1.isoformat(), 11.0)])
+    monkeypatch.setattr(database, "count_existing_rows", lambda keys: 99)
+    calls = _spy_upserts(monkeypatch)
+    backups = tmp_path / "backups"
+
+    with pytest.raises(rebuild.BackupError, match="Backup check failed"):
+        rebuild.run(days=3, write=True, providers=_providers(), today=TODAY, backup_dir=backups, now=NOW1)
+    assert calls == []
+    assert not list(backups.glob("category_scores_pre_v2_*"))
+
+
+def test_count_existing_rows_matches_the_export(sqlite_db):
+    d1, d2 = date(2026, 10, 1), date(2026, 10, 2)
+    _seed(sqlite_db, [(d1.isoformat(), "energy", 1.0), (d2.isoformat(), "energy", 2.0),
+                      (d1.isoformat(), "freight", 3.0)], [(d1.isoformat(), 4.0)])
+    keys = [(d1, "energy"), (d2, "energy"), (d1, "freight"), (d2, "freight"), (d1, "composite"), (d2, "composite")]
+    assert database.count_existing_rows(keys) == 4
+    assert database.count_existing_rows([]) == 0
+
+
+def test_write_refused_when_a_category_failed_unless_allow_partial(sqlite_db, tmp_path, monkeypatch):
+    providers = _providers()
+
+    def boom(days):
+        raise RuntimeError("source down")
+    providers["inputs"].fetch_history = boom
+    calls = _spy_upserts(monkeypatch)
+    backups = tmp_path / "backups"
+
+    with pytest.raises(rebuild.WriteRefused, match="inputs"):
+        rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups, now=NOW1)
+    assert calls == [] and not list(backups.glob("category_scores_pre_v2_*"))
+
+    result = rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups,
+                         now=NOW1, allow_partial=True)
+    assert result.failed_categories and calls          # the loaded categories were written
+    assert all(cat != "inputs" for kind, rows in calls if kind == "cat" for _, cat, _ in rows)
+
+
+def test_main_refuses_partial_write_without_flag(monkeypatch, sqlite_db):
+    providers = _providers()
+    providers["inputs"].fetch_history = lambda days: (_ for _ in ()).throw(RuntimeError("down"))
+    monkeypatch.setattr(rebuild, "default_providers", lambda: providers)
+    calls = _spy_upserts(monkeypatch)
+    assert rebuild.main(["--write", "--days", "3"]) == 2
+    assert calls == []
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "abc"])
+def test_days_must_be_a_positive_integer(bad, capsys):
+    with pytest.raises(SystemExit) as exc:
+        rebuild.main(["--days", bad])
+    assert exc.value.code == 2
+    assert "--days" in capsys.readouterr().err
+
+
+def test_backtest_refuses_to_run_against_postgres(monkeypatch):
+    from scripts import backtest_composite as bt
+    monkeypatch.setattr(database, "_resolve_db_config", lambda: ("postgres", "postgresql://x/y"))
+    monkeypatch.setattr(bt, "default_providers", lambda: pytest.fail("must not build providers"))
+    assert bt.main(["--no-save"]) == 2

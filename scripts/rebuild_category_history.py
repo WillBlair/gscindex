@@ -16,9 +16,12 @@ Default is a dry run: it reads the current rows, writes
 Nothing is written to the database.
 
 ``--write`` first exports the existing rows it will overwrite to
-``data/backups/category_scores_pre_v2_<date>.csv``, then upserts. It never deletes and never
-writes NaN. When the resolved database is Postgres it refuses unless the environment variable
-``CONFIRM_PROD_REBUILD=yes`` is set.
+``data/backups/category_scores_pre_v2_<date>_<HHMMSS>.csv`` (a new file each run, never
+overwritten), checks the export against a COUNT of the rows in the database, then upserts.
+It aborts if the export fails or does not match. It never deletes and never writes NaN.
+It refuses when any category failed to fetch unless ``--allow-partial`` is passed, and when
+the resolved database is Postgres unless the environment variable ``CONFIRM_PROD_REBUILD=yes``
+is set.
 """
 from __future__ import annotations
 
@@ -53,7 +56,11 @@ COMPOSITE = "composite"
 
 
 class WriteRefused(RuntimeError):
-    """``--write`` against Postgres without the explicit confirmation variable."""
+    """``--write`` refused: Postgres without the confirmation variable, or a failed category."""
+
+
+class BackupError(RuntimeError):
+    """The pre-rebuild export could not be made or verified, so nothing was written."""
 
 
 def default_providers() -> dict:
@@ -167,8 +174,9 @@ def write_dryrun_csv(result: RebuildResult, path: Path) -> None:
 
 
 def write_backup_csv(rows: list[tuple], path: Path) -> None:
+    """Write the pre-rebuild rows. Mode "x": an existing backup is never overwritten."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="") as fh:
+    with open(path, "x", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["date", "category", "score"])
         for d, cat, score in rows:
@@ -176,18 +184,33 @@ def write_backup_csv(rows: list[tuple], path: Path) -> None:
 
 
 def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = None,
-        today: date | None = None, backup_dir: Path | None = None) -> RebuildResult:
+        today: date | None = None, backup_dir: Path | None = None,
+        allow_partial: bool = False, now: datetime | None = None) -> RebuildResult:
     check_write_allowed(write)
-    today = today or datetime.now(timezone.utc).date()
+    now = now or datetime.now(timezone.utc)
+    today = today or now.date()
     backup_dir = Path(backup_dir) if backup_dir is not None else BACKUP_DIR
     providers = providers if providers is not None else default_providers()
 
     dates = _window(days, today)
     new, failed = build_new_scores(providers, days, today)
+    if write and failed and not allow_partial:
+        raise WriteRefused(
+            f"Refusing --write: {', '.join(sorted(failed))} failed to fetch, so the rebuild would "
+            "be partial and leave mixed-method rows. Fix the source, or pass --allow-partial to "
+            "write the categories that did load.")
     composite = compute_composites(new, dates)
 
+    if write and database.get_db_type() == "sqlite":
+        database.init_db()              # a fresh dev database has no tables yet
     keys = (*config.CATEGORY_WEIGHTS, COMPOSITE)
-    stored = database.export_category_rows(dates[0], list(keys))
+    # On the write path the read is strict: a query error must abort, never yield an empty backup.
+    try:
+        stored = database.export_category_rows(dates[0], list(keys), strict=write)
+    except Exception as exc:
+        if not write:
+            raise
+        raise BackupError(f"Could not read the existing rows for the backup ({exc}). Nothing was written.") from exc
     in_window = set(dates)
     old = {(d, cat): score for d, cat, score in stored if d in in_window}
 
@@ -201,11 +224,17 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
         cat_rows, comp_rows = result.category_rows(), result.composite_rows()
         touched = {(d, cat) for d, cat, _ in cat_rows} | {(d, COMPOSITE) for d, _ in comp_rows}
         existing = [r for r in stored if (r[0], r[1]) in touched]
-        result.backup_path = backup_dir / f"category_scores_pre_v2_{today.isoformat()}.csv"
-        write_backup_csv(existing, result.backup_path)
+        in_db = database.count_existing_rows(sorted(touched))
+        if in_db != len(existing):
+            raise BackupError(
+                f"Backup check failed: {len(existing)} rows exported but the database holds {in_db} "
+                "for the rows about to be overwritten. Nothing was written.")
+        result.backup_path = backup_dir / f"category_scores_pre_v2_{now:%Y-%m-%d_%H%M%S}.csv"
+        try:
+            write_backup_csv(existing, result.backup_path)
+        except OSError as exc:
+            raise BackupError(f"Could not write the backup {result.backup_path} ({exc}). Nothing was written.") from exc
         logger.info("Exported %d existing rows to %s", len(existing), result.backup_path)
-        if database.get_db_type() == "sqlite":
-            database.init_db()          # a fresh dev database has no tables yet
         n_cat = database.upsert_scores_for_dates(cat_rows)
         n_comp = database.upsert_composite_for_dates(comp_rows)
         if n_cat < 0 or n_comp < 0:
@@ -252,16 +281,29 @@ def summarize(result: RebuildResult) -> str:
     return "\n".join(lines)
 
 
+def _positive_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help="dates to rebuild, ending yesterday (default 92)")
+    parser.add_argument("--days", type=_positive_int, default=DEFAULT_DAYS,
+                        help="dates to rebuild, ending yesterday (default 92, at least 1)")
     parser.add_argument("--write", action="store_true", help="upsert the rebuilt rows (default is a dry run)")
+    parser.add_argument("--allow-partial", action="store_true",
+                        help="with --write, proceed even if some category failed to fetch")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     try:
-        result = run(days=args.days, write=args.write)
-    except WriteRefused as exc:
+        result = run(days=args.days, write=args.write, allow_partial=args.allow_partial)
+    except (WriteRefused, BackupError) as exc:
         logger.error("%s", exc)
         return 2
     print(summarize(result))

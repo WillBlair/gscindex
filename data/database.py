@@ -690,18 +690,22 @@ def _day(value) -> date:
     return date.fromisoformat(str(value)[:10])
 
 
-def export_category_rows(start: date, categories: list[str]) -> list[tuple]:
+def export_category_rows(start: date, categories: list[str], strict: bool = False) -> list[tuple]:
     """Stored ``(date, category, score)`` rows from ``start`` on, ascending by date then category.
 
     The pseudo-category ``"composite"`` reads ``daily_scores``; every other name reads
-    ``daily_category_scores``. Dates come back as ``date`` objects. Returns ``[]`` when no
-    database is configured or the query fails (the rebuild's dry run reads a database that
-    may not exist yet).
+    ``daily_category_scores``. Dates come back as ``date`` objects.
+
+    By default a missing database or a failed query returns ``[]`` (the rebuild's dry run
+    reads a database that may not exist yet). With ``strict=True`` both raise instead, so a
+    backup built from this read can never silently be empty.
     """
     names = [c for c in dict.fromkeys(categories) if c != "composite"]
     want_composite = "composite" in categories
     conn = get_connection()
     if not conn:
+        if strict:
+            raise RuntimeError("no database configured; cannot export rows")
         return []
 
     db_type = get_db_type()
@@ -720,11 +724,47 @@ def export_category_rows(start: date, categories: list[str]) -> list[tuple]:
             cursor.execute(f"SELECT date, score FROM daily_scores WHERE date >= {ph}", (start_arg,))
             rows += [(_day(d), "composite", float(v)) for d, v in cursor.fetchall()]
     except Exception as e:
+        if strict:
+            raise
         logger.error(f"Failed to export category rows: {e}")
         return []
     finally:
         conn.close()
     return sorted(rows, key=lambda r: (r[0], r[1]))
+
+
+def count_existing_rows(keys: list[tuple[date, str]]) -> int:
+    """How many of the ``(date, category)`` keys have a stored row (``"composite"`` is
+    ``daily_scores``). Raises on any database error: it exists to verify a backup."""
+    wanted = list(dict.fromkeys(keys))
+    if not wanted:
+        return 0
+    conn = get_connection()
+    if not conn:
+        raise RuntimeError("no database configured; cannot count rows")
+    db_type = get_db_type()
+    ph = "%s" if db_type == "postgres" else "?"
+    by_category: dict[str, list[date]] = {}
+    for day, category in wanted:
+        by_category.setdefault(category, []).append(day)
+    total = 0
+    try:
+        cursor = conn.cursor()
+        for category, days in by_category.items():
+            for i in range(0, len(days), 500):
+                chunk = days[i:i + 500]
+                marks = ", ".join([ph] * len(chunk))
+                args = [d if db_type == "postgres" else d.isoformat() for d in chunk]
+                if category == "composite":
+                    cursor.execute(f"SELECT COUNT(*) FROM daily_scores WHERE date IN ({marks})", args)
+                else:
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM daily_category_scores "
+                        f"WHERE category = {ph} AND date IN ({marks})", [category, *args])
+                total += int(cursor.fetchone()[0])
+    finally:
+        conn.close()
+    return total
 
 
 def _finite_rows(rows, width: int) -> list[tuple]:

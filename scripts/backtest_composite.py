@@ -15,8 +15,12 @@ Two composites are printed:
                         to sum to 1. NOT the index; shown only to see how a partial set reads.
 
 The runtime FRED windows in config are trimmed for production, so this script widens them for
-the run and restores them afterwards. Nothing is written to a database. The table is also
+the run and restores them afterwards. The table is also
 saved to data/backups/backtest_<date>.txt.
+
+No score or history rows are written, but ``PhysicalProvider.fetch_current`` records a Kaub
+gauge reading in the database. So the script refuses to run unless the resolved database is
+SQLite (the local dev file): run it with ``DATABASE_URL=`` set empty.
 """
 from __future__ import annotations
 
@@ -36,6 +40,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config  # noqa: E402
+from data import database  # noqa: E402
 from scoring.engine import compute_composite_index, renormalized_weights  # noqa: E402
 
 logger = logging.getLogger("backtest_composite")
@@ -160,6 +165,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-save", action="store_true", help="print only; do not write data/backups/backtest_<date>.txt")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+    if database.get_db_type() != "sqlite":
+        logger.error("Refusing to run: the resolved database is %s and fetch_current records a "
+                     "gauge reading in it. Run with DATABASE_URL= (empty) to use the local SQLite file.",
+                     database.get_db_type())
+        return 2
 
     today = datetime.now(timezone.utc).date()
     with widened_fred_windows():
