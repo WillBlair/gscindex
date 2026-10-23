@@ -559,3 +559,86 @@ def test_empty_history_in_window_counts_as_failed(history, sqlite_db, tmp_path, 
     result = rebuild.run(days=3, providers=providers, today=TODAY, backup_dir=backups, now=NOW1)
     assert "no finite values" in result.failed_categories["freight"]
     assert result.new["freight"].isna().all()
+
+
+# ---------------------------------------------------------------- --sectors-only (final review fix 1)
+
+def test_sectors_only_write_leaves_global_rows_and_composite_unchanged(sqlite_db, tmp_path, monkeypatch):
+    days = 3
+    window = [TODAY - timedelta(days=n) for n in range(1, days + 1)]
+    global_rows = [(d.isoformat(), cat, 40.0 + i) for d in window for i, cat in enumerate(config.CATEGORY_WEIGHTS)]
+    _seed(sqlite_db, global_rows + [(window[0].isoformat(), "aero_flow", 12.0)],
+          [(d.isoformat(), 33.0) for d in window])
+    before_cats, before_comp = _all_rows(sqlite_db)
+    providers = _providers()
+    for cat in config.CATEGORY_WEIGHTS:                 # a global fetch would fail the test
+        providers[cat].fetch_history = lambda days, cat=cat: pytest.fail(f"{cat} must not be fetched")
+    counted = []
+    real_count = database.count_existing_rows
+    monkeypatch.setattr(database, "count_existing_rows", lambda keys: counted.extend(keys) or real_count(keys))
+    backups = tmp_path / "backups"
+
+    result = rebuild.run(days=days, write=True, providers=providers, today=TODAY, backup_dir=backups,
+                         now=NOW1, sectors_only=True)
+
+    cats, comp = _all_rows(sqlite_db)
+    assert comp == before_comp                                                   # no composite rows written
+    global_after = [r for r in cats if r[1] in config.CATEGORY_WEIGHTS]
+    assert global_after == [r for r in before_cats if r[1] in config.CATEGORY_WEIGHTS]
+    by_key = {(d, c): s for d, c, s in cats}
+    n_global = len(config.CATEGORY_WEIGHTS)
+    for d in window:
+        for i, cat in enumerate(SECTOR_CATEGORIES):
+            assert by_key[(d.isoformat(), cat)] == pytest.approx(50.0 + n_global + i)
+    assert set(result.new) == set(SECTOR_CATEGORIES) and result.composite == {}
+    assert result.written == days * len(SECTOR_CATEGORIES)
+    assert counted and {c for _, c in counted} <= set(SECTOR_CATEGORIES)          # COUNT check: sector rows only
+
+    with open(result.backup_path, newline="") as fh:
+        saved = list(csv.reader(fh))[1:]
+    assert saved == [[window[0].isoformat(), "aero_flow", "12.0"]]               # backup: touched sector rows only
+    with open(result.csv_path, newline="") as fh:
+        in_csv = {r["category"] for r in csv.DictReader(fh)}
+    assert in_csv == set(SECTOR_CATEGORIES)
+    assert result.csv_path.name == f"rebuild_dryrun_sectors_{TODAY.isoformat()}.csv"
+    text = rebuild.summarize(result)
+    assert "composite" not in text and not any(f"\n{cat} " in text for cat in config.CATEGORY_WEIGHTS)
+    assert all(cat in text for cat in SECTOR_CATEGORIES)
+
+
+def test_sectors_only_failed_sector_blocks_write_but_global_failures_do_not(sqlite_db, tmp_path, monkeypatch):
+    providers = _providers()
+    providers["inputs"].fetch_history = lambda days: (_ for _ in ()).throw(RuntimeError("global down"))
+    calls = _spy_upserts(monkeypatch)
+    backups = tmp_path / "backups"
+    result = rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups,
+                         now=NOW1, sectors_only=True)
+    assert result.failed_categories == {}                      # global categories are not fetched at all
+    assert [kind for kind, _ in calls] == ["cat"]              # no composite upsert
+
+    calls.clear()
+    providers["aero_mill_prices"].fetch_history = lambda days: (_ for _ in ()).throw(RuntimeError("PPI down"))
+    with pytest.raises(rebuild.WriteRefused, match="aero_mill_prices"):
+        rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups, now=NOW2,
+                    sectors_only=True)
+    assert calls == []
+
+    result = rebuild.run(days=3, write=True, providers=providers, today=TODAY, backup_dir=backups,
+                         now=NOW2, sectors_only=True, allow_partial=True)
+    assert list(result.failed_categories) == ["aero_mill_prices"]
+    written = {c for kind, rows in calls if kind == "cat" for _, c, _ in rows}
+    assert written == set(SECTOR_CATEGORIES) - {"aero_mill_prices"}
+
+
+def test_main_passes_sectors_only(monkeypatch, sqlite_db, capsys):
+    seen = {}
+    real_run = rebuild.run
+
+    def fake_run(**kwargs):
+        seen.update(kwargs)
+        return real_run(providers=_providers(), today=TODAY, backup_dir=sqlite_db.parent, **kwargs)
+    monkeypatch.setattr(rebuild, "run", fake_run)
+    assert rebuild.main(["--sectors-only", "--days", "2"]) == 0
+    assert seen["sectors_only"] is True and seen["write"] is False
+    assert rebuild.rebuild_categories(sectors_only=True) == tuple(SECTOR_CATEGORIES)
+    assert "composite" not in capsys.readouterr().out.split("CSV:")[0]

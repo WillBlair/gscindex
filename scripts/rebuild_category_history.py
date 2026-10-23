@@ -3,6 +3,7 @@ Rebuild the stored daily category scores with the new methodology (v2).
 
     DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/rebuild_category_history.py
     ... scripts/rebuild_category_history.py --days 92 --write
+    ... scripts/rebuild_category_history.py --sectors-only --days 92 --write   (the sector backfill)
 
 For each weighted category, and for each sector category (the three Semis and four Aero
 categories in ``config.SECTORS``), the provider's own ``fetch_history`` supplies the real
@@ -14,15 +15,22 @@ Sector categories feed no composite: ``daily_scores`` is the global index only, 
 index is computed from its category rows when it is shown. The register (``geo_register``)
 and the retired industry categories (``chip_*``, ``aero_metals`` and the like) are not touched.
 
+``--sectors-only`` covers the seven sector categories alone: no global category is fetched or
+written and no ``daily_scores`` composite row is written, so the live-recorded global history
+stays exactly as it is. The backup, the COUNT check and the partial-write refusal then cover the
+sector rows only. The sector backfill uses this flag.
+
 Default is a dry run: it reads the current rows, writes
-``data/backups/rebuild_dryrun_<date>.csv`` (date, category, old, new) and prints a summary.
+``data/backups/rebuild_dryrun_<date>.csv`` (``rebuild_dryrun_sectors_<date>.csv`` with
+``--sectors-only``; columns date, category, old, new) and prints a summary.
 Nothing is written to the database.
 
 ``--write`` first exports the existing rows it will overwrite to
 ``data/backups/category_scores_pre_v2_<date>_<HHMMSS>.csv`` (a new file each run, never
 overwritten), checks the export against a COUNT of the rows in the database, then upserts.
 It aborts if the export fails or does not match. It never deletes and never writes NaN.
-It refuses when any category (global or sector) failed to fetch, or has no value in the window, unless ``--allow-partial`` is passed, and when
+It refuses when any rebuilt category (global or sector; sector only with ``--sectors-only``) failed
+to fetch, or has no value in the window, unless ``--allow-partial`` is passed, and when
 the resolved database is Postgres unless the environment variable ``CONFIRM_PROD_REBUILD=yes``
 is set.
 """
@@ -66,10 +74,11 @@ class BackupError(RuntimeError):
     """The pre-rebuild export could not be made or verified, so nothing was written."""
 
 
-def rebuild_categories() -> tuple[str, ...]:
-    """Every category the rebuild covers: the global weighted ones, then each sector's."""
-    sector = [cat for spec in config.SECTORS.values() for cat in spec["weights"]]
-    return (*config.CATEGORY_WEIGHTS, *sector)
+def rebuild_categories(sectors_only: bool = False) -> tuple[str, ...]:
+    """Every category the rebuild covers: the global weighted ones, then each sector's.
+    With ``sectors_only``, the sector categories alone."""
+    sector = tuple(cat for spec in config.SECTORS.values() for cat in spec["weights"])
+    return sector if sectors_only else (*config.CATEGORY_WEIGHTS, *sector)
 
 
 def default_providers() -> dict:
@@ -115,6 +124,16 @@ class RebuildResult:
     backup_path: Path | None = None
     written: int = 0
     failed_categories: dict[str, str] = field(default_factory=dict)
+    sectors_only: bool = False
+
+    @property
+    def categories(self) -> tuple[str, ...]:
+        return rebuild_categories(self.sectors_only)
+
+    @property
+    def keys(self) -> tuple[str, ...]:
+        """The stored keys this run covers: its categories, plus the composite unless sectors only."""
+        return self.categories if self.sectors_only else (*self.categories, COMPOSITE)
 
     def category_rows(self) -> list[tuple[date, str, float]]:
         return [(d, cat, float(v)) for cat, s in self.new.items() for d, v in s.items() if math.isfinite(v)]
@@ -141,8 +160,10 @@ def _history_on(series: pd.Series, dates: list[date]) -> pd.Series:
     return out.astype(float)
 
 
-def build_new_scores(providers: dict, days: int, today: date) -> tuple[dict[str, pd.Series], dict[str, str]]:
-    """Each rebuilt category's (global and sector) scores on the window, and why any category failed.
+def build_new_scores(providers: dict, days: int, today: date,
+                     sectors_only: bool = False) -> tuple[dict[str, pd.Series], dict[str, str]]:
+    """Each rebuilt category's (global and sector, or sector only) scores on the window, and why
+    any category failed.
 
     A history with no finite value inside the window counts as failed, the same as a raise:
     writing the other categories alone would leave mixed-method rows.
@@ -150,7 +171,7 @@ def build_new_scores(providers: dict, days: int, today: date) -> tuple[dict[str,
     dates = _window(days, today)
     new: dict[str, pd.Series] = {}
     failed: dict[str, str] = {}
-    for cat in rebuild_categories():
+    for cat in rebuild_categories(sectors_only):
         try:
             history = providers[cat].fetch_history(days + EXTRA_FETCH_DAYS)
             new[cat] = _history_on(history, dates)
@@ -184,7 +205,7 @@ def write_dryrun_csv(result: RebuildResult, path: Path) -> None:
         writer = csv.writer(fh)
         writer.writerow(["date", "category", "old", "new"])
         for d in result.dates:
-            for cat in (*rebuild_categories(), COMPOSITE):
+            for cat in result.keys:
                 old = result.old.get((d, cat))
                 new = result.composite.get(d) if cat == COMPOSITE else result.new[cat].get(d)
                 if old is None and (new is None or not math.isfinite(new)):
@@ -204,7 +225,8 @@ def write_backup_csv(rows: list[tuple], path: Path) -> None:
 
 def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = None,
         today: date | None = None, backup_dir: Path | None = None,
-        allow_partial: bool = False, now: datetime | None = None) -> RebuildResult:
+        allow_partial: bool = False, now: datetime | None = None,
+        sectors_only: bool = False) -> RebuildResult:
     check_write_allowed(write)
     now = now or datetime.now(timezone.utc)
     today = today or now.date()
@@ -212,17 +234,17 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
     providers = providers if providers is not None else default_providers()
 
     dates = _window(days, today)
-    new, failed = build_new_scores(providers, days, today)
+    new, failed = build_new_scores(providers, days, today, sectors_only)
     if write and failed and not allow_partial:
         raise WriteRefused(
             f"Refusing --write: {', '.join(sorted(failed))} failed to fetch or returned no values in "
             "the window, so the rebuild would be partial and leave mixed-method rows. Fix the source, "
             "or pass --allow-partial to write the categories that did load.")
-    composite = compute_composites(new, dates)
+    composite = {} if sectors_only else compute_composites(new, dates)
 
     if write and database.get_db_type() == "sqlite":
         database.init_db()              # a fresh dev database has no tables yet
-    keys = (*rebuild_categories(), COMPOSITE)
+    keys = rebuild_categories(sectors_only) if sectors_only else (*rebuild_categories(), COMPOSITE)
     # On the write path the read is strict: a query error must abort, never yield an empty backup.
     try:
         stored = database.export_category_rows(dates[0], list(keys), strict=write)
@@ -235,8 +257,10 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
 
     result = RebuildResult(
         dates=dates, old=old, new=new, composite=composite,
-        dates_without_composite=[d for d in dates if d not in composite], failed_categories=failed)
-    result.csv_path = backup_dir / f"rebuild_dryrun_{today.isoformat()}.csv"
+        dates_without_composite=[] if sectors_only else [d for d in dates if d not in composite],
+        failed_categories=failed, sectors_only=sectors_only)
+    scope = "sectors_" if sectors_only else ""
+    result.csv_path = backup_dir / f"rebuild_dryrun_{scope}{today.isoformat()}.csv"
     write_dryrun_csv(result, result.csv_path)
 
     if write:
@@ -255,7 +279,7 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
             raise BackupError(f"Could not write the backup {result.backup_path} ({exc}). Nothing was written.") from exc
         logger.info("Exported %d existing rows to %s", len(existing), result.backup_path)
         n_cat = database.upsert_scores_for_dates(cat_rows)
-        n_comp = database.upsert_composite_for_dates(comp_rows)
+        n_comp = 0 if sectors_only else database.upsert_composite_for_dates(comp_rows)
         if n_cat < 0 or n_comp < 0:
             raise RuntimeError("database upsert failed; see the log (the backup CSV was written first)")
         result.written = n_cat + n_comp
@@ -266,7 +290,7 @@ def summarize(result: RebuildResult) -> str:
     lines = [f"Window: {result.dates[0]} to {result.dates[-1]} ({len(result.dates)} dates, today excluded)"]
     lines.append(f"{'category':<24}{'new rows':>9}{'no old':>8}{'changed':>9}{'mean |delta|':>14}")
     total_new = total_changed = 0
-    for cat in (*rebuild_categories(), COMPOSITE):
+    for cat in result.keys:
         series = (pd.Series(result.composite).reindex(result.dates) if cat == COMPOSITE
                   else result.new[cat])
         new_rows = no_old = changed = 0
@@ -287,13 +311,17 @@ def summarize(result: RebuildResult) -> str:
         total_changed += changed + no_old
         mean = f"{sum(deltas) / len(deltas):.2f}" if deltas else "n/a"
         lines.append(f"{cat:<24}{new_rows:>9}{no_old:>8}{changed:>9}{mean:>14}")
-    lines.append("(composite is the global index only; the sector indexes have no stored rows of their own)")
+    if result.sectors_only:
+        lines.append("(--sectors-only: the global category rows and daily_scores are not touched)")
+    else:
+        lines.append("(composite is the global index only; the sector indexes have no stored rows of their own)")
     lines.append(f"Rows that would be written: {total_new}; of those, new or changed by 0.05+ points: {total_changed}")
     for cat, why in result.failed_categories.items():
         lines.append(f"FAILED {cat}: {why}")
-    gaps = result.dates_without_composite
-    lines.append(f"Dates without a composite: {len(gaps)} of {len(result.dates)}"
-                 + (f" ({gaps[0]} to {gaps[-1]})" if gaps else ""))
+    if not result.sectors_only:
+        gaps = result.dates_without_composite
+        lines.append(f"Dates without a composite: {len(gaps)} of {len(result.dates)}"
+                     + (f" ({gaps[0]} to {gaps[-1]})" if gaps else ""))
     unmatched = sum(1 for (d, cat) in result.old
                     if cat != COMPOSITE and not math.isfinite(result.new[cat].get(d, float("nan"))))
     unmatched += sum(1 for (d, cat) in result.old if cat == COMPOSITE and d not in result.composite)
@@ -318,11 +346,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true", help="upsert the rebuilt rows (default is a dry run)")
     parser.add_argument("--allow-partial", action="store_true",
                         help="with --write, proceed even if some category failed to fetch")
+    parser.add_argument("--sectors-only", action="store_true",
+                        help="rebuild the sector categories only; global category and composite rows "
+                             "are not touched (use this for the sector backfill)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     try:
-        result = run(days=args.days, write=args.write, allow_partial=args.allow_partial)
+        result = run(days=args.days, write=args.write, allow_partial=args.allow_partial,
+                     sectors_only=args.sectors_only)
     except (WriteRefused, BackupError) as exc:
         logger.error("%s", exc)
         return 2

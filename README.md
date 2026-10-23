@@ -249,7 +249,7 @@ gscindex/
 │   └── admin.py                # Admin routes
 ├── scripts/
 │   ├── compute_anchors.py      # Rebuilds data/score_anchors.json (a deliberate, versioned change; --sectors-only adds sector anchors)
-│   ├── rebuild_category_history.py  # Recomputes stored daily category scores, global and sector (dry run by default)
+│   ├── rebuild_category_history.py  # Recomputes stored daily category scores, global and sector (dry run by default; sector backfill: --sectors-only)
 │   ├── backtest_composite.py   # Prints the composite and the Semis and Aero indexes at past episodes
 │   ├── send_newsletter.py      # Cron job for email delivery
 │   └── refresh_fallback_snapshot.py  # Refreshes the committed cold-start snapshot
