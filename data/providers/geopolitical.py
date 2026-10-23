@@ -656,7 +656,7 @@ class GeopoliticalProvider(BaseProvider):
             "calculation": (
                 f"The {config.GPR_MEAN_DAYS}-day mean of the daily index is mapped on a log scale "
                 "through its anchors (healthiest 5% of pre-2020 history = 100, pre-2020 median = 80, "
-                "worst 30-day mean on record = 0)."
+                "the record monthly GPR, October 2001 = 0)."
                 + (f" Weights: GPR {weights[_GPR]:.0%}, disruption register {register_weight:.0%},"
                    " renormalized over the inputs available." if register_weight > 0 else "")),
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),

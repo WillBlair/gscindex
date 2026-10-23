@@ -155,22 +155,22 @@
     "rail_volume": {
       "transform": "identity",
       "direction": "higher_better",
-      "best": 5.062937,
-      "normal": -2.390929,
-      "worst": -21.635774,
-      "baseline": "2018-04 to 2019-12 (21 months); the dataset starts 2017-03-25, so the first 4-week YoY is 2018-04-14 and the baseline is 90 weeks, the whole pre-2020 history",
-      "worst_basis": "worst monthly mean through 2025-12: 2020-05",
+      "best": 8.109529,
+      "normal": 1.264477,
+      "worst": -21.842403,
+      "baseline": "2001-01 to 2019-12 (228 months); YoY % of FRED RAILFRTCARLOADSD11 + RAILFRTINTERMODALD11 (BTS monthly rail carloads plus intermodal containers and trailers, both unit counts built the same way from AAR weekly data, seasonally adjusted), summed then compared with the same month a year earlier. The provider scores the weekly STB EP 724 4-week-mean YoY of the same total against these anchors",
+      "worst_basis": "lowest monthly combined YoY through 2025-12: 2009-05",
       "generated": "2026-10-23",
-      "source": "STB EP 724 weekly carloads via USDA AgTransport, https://agtransport.usda.gov/resource/tb7q-kn5i.json"
+      "source": "anchors: FRED RAILFRTCARLOADSD11 + RAILFRTINTERMODALD11 (BTS); scored: STB EP 724 weekly carloads via USDA AgTransport, https://agtransport.usda.gov/resource/tb7q-kn5i.json"
     },
     "prices_paid": {
       "transform": "identity",
       "direction": "lower_better",
       "best": -1.513216,
       "normal": -0.015162,
-      "worst": 3.314777,
+      "worst": 2.892521,
       "baseline": "2004-01 to 2019-12 (192 months); z per survey against its own 2004-01..2019-12 mean and sample sd (Dallas starts 2004-06)",
-      "worst_basis": "worst monthly mean through 2025-12: 1974-03",
+      "worst_basis": "worst monthly composite z through 2025-12 among months where all three surveys report (2004-06 on): 2021-11",
       "generated": "2026-10-23",
       "source": "FRED PPCDFSA066MSFRBPHI, PPCDISA066MSFRBNY, PRMSAMFRBDAL"
     }

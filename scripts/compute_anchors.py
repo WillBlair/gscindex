@@ -54,6 +54,9 @@ ULSD_BACKFILL_FACTOR = 1.0824
 # TPU daily and monthly counts are treated as one scale when the overlap's mean ratio of the
 # monthly mean of the daily index to the monthly index is within this distance of 1.
 TPU_SCALE_TOLERANCE = 0.15
+# Rail anchors: BTS monthly carloads and intermodal units on FRED (2000+). The weekly STB data
+# the provider scores only starts in 2017, too short for a pre-2020 baseline.
+RAIL_CARLOADS, RAIL_INTERMODAL = "RAILFRTCARLOADSD11", "RAILFRTINTERMODALD11"
 
 PORTWATCH_SERVICES = "https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services"
 # Each dashboard port (data/ports_data.py name) -> its PortWatch portid. The PortWatch port of
@@ -99,7 +102,8 @@ SOURCES = {
     "tpu": "Caldara et al. TPU workbook, https://www.matteoiacoviello.com/tpu.htm",
     "gpr": "Caldara-Iacoviello GPR files, https://www.matteoiacoviello.com/gpr.htm",
     "tsifrght": "FRED TSIFRGHT (BTS Freight Transportation Services Index)",
-    "rail_volume": "STB EP 724 weekly carloads via USDA AgTransport, https://agtransport.usda.gov/resource/tb7q-kn5i.json",
+    "rail_volume": ("anchors: FRED RAILFRTCARLOADSD11 + RAILFRTINTERMODALD11 (BTS); scored: STB EP 724 "
+                    "weekly carloads via USDA AgTransport, https://agtransport.usda.gov/resource/tb7q-kn5i.json"),
     "prices_paid": "FRED PPCDFSA066MSFRBPHI, PPCDISA066MSFRBNY, PRMSAMFRBDAL",
 }
 
@@ -317,20 +321,48 @@ def build_tsifrght() -> dict:
     return compute_input_anchor(yoy, "identity", "higher_better", ("2001-01-01", "2019-12-31"))
 
 
+def combined_yoy(carloads: pd.Series, intermodal: pd.Series) -> pd.Series:
+    """YoY % of monthly carloads plus intermodal units, each month against the same month a year
+    earlier by date (a missing month is a gap, never a shifted comparison)."""
+    total = (_clean(carloads) + _clean(intermodal)).dropna()
+    base = total.reindex(total.index - pd.DateOffset(months=12))
+    yoy = (total / base.to_numpy() - 1.0) * 100.0
+    return yoy.replace([np.inf, -np.inf], np.nan).dropna()
+
+
 def build_rail() -> tuple[dict, str]:
+    """Anchors from the long BTS monthly rail series; the provider scores the weekly STB 4-week
+    YoY against them (the same quantity: carloads plus intermodal units, year over year)."""
+    from data.providers.fred_client import fetch_fred_full
     from data.sources import rail
+    yoy = combined_yoy(fetch_fred_full(RAIL_CARLOADS), fetch_fred_full(RAIL_INTERMODAL))
+    anchor = compute_input_anchor(yoy, "identity", "higher_better", ("2001-01-01", "2019-12-31"))
+    anchor["baseline"] += (f"; YoY % of FRED {RAIL_CARLOADS} + {RAIL_INTERMODAL} (BTS monthly rail "
+                           "carloads plus intermodal containers and trailers, both unit counts built "
+                           "the same way from AAR weekly data, seasonally adjusted), summed then "
+                           "compared with the same month a year earlier. The provider scores the "
+                           "weekly STB EP 724 4-week-mean YoY of the same total against these anchors")
+    anchor["worst_basis"] = (f"lowest monthly combined YoY through {WORST_THROUGH[:7]}: "
+                             f"{anchor['worst_basis'].split(': ')[-1]}")
     weekly = rail.fetch_rail_weekly()
-    yoy = rail.rail_yoy(weekly).dropna()
-    _latest("rail_volume", yoy, "identity", None, "{:+.1f}% YoY")
-    pre = yoy[yoy.index <= pd.Timestamp("2019-12-31")]
-    anchor = compute_input_anchor(yoy, "identity", "higher_better", ("2017-01-01", "2019-12-31"))
-    anchor["baseline"] += (f"; the dataset starts 2017-03-25, so the first 4-week YoY is "
-                           f"{pre.index[0]:%Y-%m-%d} and the baseline is {len(pre)} weeks, "
-                           "the whole pre-2020 history")
+    stb = rail.rail_yoy(weekly).dropna()
+    _latest("rail_volume", stb, "identity", None, "{:+.1f}% YoY")
+    both = pd.concat([stb.resample("MS").mean().rename("stb"), yoy.rename("bts")], axis=1, sort=True).dropna()
     latest, prior = float(weekly.iloc[-1]), weekly.iloc[-5:-1]
-    note = (f"Latest week {weekly.index[-1]:%Y-%m-%d}: {latest:,.0f} units vs prior 4-week mean "
-            f"{prior.mean():,.0f} ({latest / prior.mean() - 1:+.1%})")
+    note = (f"BTS vs STB YoY overlap {both.index[0]:%Y-%m}..{both.index[-1]:%Y-%m} ({len(both)} months): "
+            f"correlation {both['stb'].corr(both['bts']):.3f}, mean STB - BTS "
+            f"{(both['stb'] - both['bts']).mean():+.2f} pts. Latest STB week {weekly.index[-1]:%Y-%m-%d}: "
+            f"{latest:,.0f} units vs prior 4-week mean {prior.mean():,.0f} ({latest / prior.mean() - 1:+.1%})")
     return anchor, note
+
+
+def common_months(surveys: dict[str, pd.Series]) -> pd.DatetimeIndex:
+    """Months in which every survey has a value."""
+    months = None
+    for series in surveys.values():
+        idx = _clean(series).index
+        months = idx if months is None else months.intersection(idx)
+    return months.sort_values()
 
 
 def build_prices_paid() -> tuple[dict, dict]:
@@ -346,7 +378,16 @@ def build_prices_paid() -> tuple[dict, dict]:
         stats[name] = [round(float(base.mean()), 6), round(float(base.std(ddof=1)), 6)]
     composite = fed_surveys.prices_paid_composite(surveys, stats)
     _latest("prices_paid", composite, "identity", None, "z {:+.2f}")
-    anchor = compute_input_anchor(composite, "identity", "lower_better", ("2004-01-01", "2019-12-31"))
+    # Worst only where all three surveys report, so a single-survey month (Philadelphia alone
+    # before 2001) cannot set it.
+    full = composite[composite.index.isin(common_months(surveys))]
+    full = full[full.index <= pd.Timestamp(WORST_THROUGH)]
+    month = full.idxmax()
+    anchor = compute_input_anchor(
+        composite, "identity", "lower_better", ("2004-01-01", "2019-12-31"),
+        worst_override=float(full[month]),
+        worst_basis=(f"worst monthly composite z through {WORST_THROUGH[:7]} among months where all "
+                     f"three surveys report ({full.index[0]:%Y-%m} on): {month:%Y-%m}"))
     anchor["baseline"] += ("; z per survey against its own 2004-01..2019-12 mean and sample sd "
                            "(Dallas starts " + f"{_clean(surveys['dallas']).index[0]:%Y-%m})")
     return anchor, stats

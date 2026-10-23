@@ -230,6 +230,7 @@ def test_geo_metadata_contract(anchors, monkeypatch):
     assert meta["raw_value"] == "GPR 30-day mean 146"
     assert "newspaper" in meta["description"] and "pre-2020 median" in meta["description"]
     assert "log" in meta["calculation"] and "anchor" in meta["calculation"]
+    assert "record monthly GPR, October 2001 = 0" in meta["calculation"]
     assert meta["as_of"] == LAST.isoformat()
     assert meta["is_stale"] is False        # 3 days old against a 14-day stale window
     assert 0.0 <= score <= 100.0

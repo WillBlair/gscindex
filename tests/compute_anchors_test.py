@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.compute_anchors import compute_input_anchor
+from scripts.compute_anchors import combined_yoy, common_months, compute_input_anchor
 
 
 def _monthly(start, values):
@@ -89,3 +89,23 @@ def test_empty_baseline_raises():
     series = _monthly("2021-01-01", np.arange(1.0, 40.0))
     with pytest.raises(ValueError):
         compute_input_anchor(series, "identity", "lower_better", ("2000-01-01", "2019-12-31"))
+
+
+def test_combined_yoy_sums_both_series_and_compares_by_date():
+    carloads = _monthly("2000-01-01", [100.0] * 12 + [110.0] * 12)
+    intermodal = _monthly("2000-01-01", [100.0] * 12 + [130.0] * 12)
+    intermodal = intermodal.drop(pd.Timestamp("2001-03-01"))      # a missing month leaves a gap
+    yoy = combined_yoy(carloads, intermodal)
+    assert yoy.index[0] == pd.Timestamp("2001-01-01")
+    assert yoy[pd.Timestamp("2001-01-01")] == pytest.approx(20.0)  # (110 + 130) / 200 - 1
+    assert pd.Timestamp("2001-03-01") not in yoy.index
+    assert len(yoy) == 11
+
+
+def test_common_months_needs_every_survey():
+    surveys = {"philly": _monthly("1968-05-01", np.ones(700)),
+               "empire": _monthly("2001-07-01", np.ones(300)),
+               "dallas": _monthly("2004-06-01", np.ones(260))}
+    months = common_months(surveys)
+    assert months[0] == pd.Timestamp("2004-06-01")
+    assert months[-1] == min(s.index[-1] for s in surveys.values())
