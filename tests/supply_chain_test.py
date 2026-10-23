@@ -219,3 +219,12 @@ def test_history_missing_anchor_raises(monkeypatch):
     monkeypatch.setattr(config, "SCORE_ANCHORS", {"inputs": {}})
     with pytest.raises(RuntimeError, match="no anchor for gscpi"):
         _history(_gscpi([0.1]))
+
+
+def test_drop_window_raises_inputs_expired_and_fetch_failure_does_not():
+    from data.providers.readings import InputsExpired
+    with pytest.raises(InputsExpired):
+        _current(_gscpi([0.1, 0.2], last="2026-04"))
+    with pytest.raises(RuntimeError) as failure:
+        _current(None)
+    assert not isinstance(failure.value, InputsExpired)

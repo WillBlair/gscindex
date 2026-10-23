@@ -35,7 +35,7 @@ from data.gscpi_client import fetch_gscpi_series
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+    InputReading, InputsExpired, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import markets
 from scoring.anchors import get_anchor, score_raw
 
@@ -122,7 +122,7 @@ class SupplyChainProvider(BaseProvider):
             f"GSCPI {value:+.2f} ({month_end:%b %Y})", status)
         score, status = blend_inputs([reading], {_GSCPI: 1.0})
         if score is None:
-            raise RuntimeError(f"GSCPI for {month_end:%B %Y} is past its freshness drop window")
+            raise InputsExpired(f"GSCPI for {month_end:%B %Y} is past its freshness drop window")
 
         context = [c for c in (_wei_context(), _bdry_context()) if c]
         raw_value = " | ".join([reading.raw_value, *context])

@@ -41,3 +41,36 @@ def test_non_finite_score_is_normalized_to_missing_in_metadata():
     assert ok.score == 42.0 and ok.status == "live"
     stale = InputReading("a", 42.0, date(2026, 10, 1), "x", status="stale")
     assert stale.status == "stale"
+
+
+# ------------------------------------------------------------ InputsExpired vs fetch failure
+
+def _aged(name="a"):
+    """A reading that returned data but is past its drop window (status from freshness)."""
+    return InputReading(name, 70.0, date(2026, 1, 31), "x", status="missing")
+
+
+def _failed(name="b"):
+    return InputReading(name, None, None, "y", status="missing")
+
+
+def test_no_inputs_error_is_expired_when_inputs_aged_out():
+    from data.providers.readings import InputsExpired, no_inputs_error
+    exc = no_inputs_error([_aged("a"), _aged("b")], "no input")
+    assert isinstance(exc, InputsExpired) and isinstance(exc, RuntimeError)
+    assert str(exc) == "no input"
+
+
+def test_no_inputs_error_is_expired_when_the_inputs_with_data_aged_out():
+    # One input failed to fetch, the only one that returned data is past its window.
+    from data.providers.readings import InputsExpired, no_inputs_error
+    assert isinstance(no_inputs_error([_aged("a"), _failed("b")], "m"), InputsExpired)
+
+
+def test_no_inputs_error_is_plain_runtime_error_on_fetch_failures():
+    from data.providers.readings import InputsExpired, no_inputs_error
+    exc = no_inputs_error([_failed("a"), _failed("b")], "m")
+    assert type(exc) is RuntimeError and not isinstance(exc, InputsExpired)
+    # A non-finite value with a date is a parse failure, not an aged reading.
+    nan = InputReading("a", float("nan"), date(2026, 10, 1), "x")
+    assert not isinstance(no_inputs_error([nan], "m"), InputsExpired)

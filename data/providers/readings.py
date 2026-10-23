@@ -9,6 +9,11 @@ from datetime import date
 import config
 
 
+class InputsExpired(RuntimeError):
+    """Every input that returned data is past its drop window, so the category is excluded
+    at once; the aggregator does not serve a stored score, which would only be older data."""
+
+
 @dataclass
 class InputReading:
     name: str
@@ -80,3 +85,14 @@ def inputs_metadata(readings: list[InputReading]) -> list[dict]:
 def oldest_as_of(readings: list[InputReading]) -> date | None:
     dates = [r.as_of for r in _used(readings) if r.as_of is not None]
     return min(dates) if dates else None
+
+
+def no_inputs_error(readings: list[InputReading], message: str) -> RuntimeError:
+    """The error for a category with no usable input.
+
+    ``InputsExpired`` when at least one input returned data and every such input was dropped
+    for age (a dated, scored reading whose freshness status is missing); a plain
+    ``RuntimeError`` when every input failed to fetch or parse.
+    """
+    aged = [r for r in readings if r.as_of is not None and r.score is not None and r.status == "missing"]
+    return InputsExpired(message) if aged else RuntimeError(message)

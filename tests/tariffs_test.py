@@ -508,3 +508,10 @@ def test_tariffs_history_all_missing_raises(anchors):
 
 def test_nowcast_module_removed():
     assert importlib.util.find_spec("data.providers.tariff_news_nowcast") is None
+
+
+def test_tariffs_fetch_failures_are_not_inputs_expired(anchors):
+    from data.providers.readings import InputsExpired
+    with pytest.raises(RuntimeError) as failure:
+        _run(TariffsProvider().fetch_current, customs=None, imports=None, tpu_daily=None)
+    assert not isinstance(failure.value, InputsExpired)

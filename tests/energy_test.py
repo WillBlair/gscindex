@@ -335,3 +335,21 @@ def test_energy_cpi_reference_missing_or_malformed_raises_runtime_error(monkeypa
         EnergyProvider().fetch_current()
     with pytest.raises(RuntimeError, match="no anchor for cpi_reference"):
         EnergyProvider().fetch_history(90)
+
+
+def test_energy_fetch_failures_are_not_inputs_expired(monkeypatch):
+    from data.providers.readings import InputsExpired
+    err = ValueError("down")
+    Env(monkeypatch, brent=err, ulsd=err, ttf=err)
+    with pytest.raises(RuntimeError) as failure:
+        EnergyProvider().fetch_current()
+    assert not isinstance(failure.value, InputsExpired)
+
+
+def test_energy_aged_out_legs_raise_inputs_expired(monkeypatch):
+    from data.providers.readings import InputsExpired
+    old_end = TODAY - timedelta(days=60)                    # daily drop is 30 days
+    Env(monkeypatch, brent=_daily(lambda d: 80.0, end=old_end), ulsd=_daily(lambda d: 2.5, end=old_end),
+        ttf=_monthly(10.0, end="2026-03-01"))                     # monthly drop is 150 days
+    with pytest.raises(InputsExpired):
+        EnergyProvider().fetch_current()

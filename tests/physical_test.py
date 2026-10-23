@@ -686,3 +686,18 @@ def test_physical_history_blends_with_weights(anchors):
 def test_physical_history_all_missing_raises(anchors):
     with pytest.raises(RuntimeError):
         _run(lambda: PhysicalProvider().fetch_history(30))
+
+
+def test_physical_aged_out_gauges_raise_inputs_expired(anchors):
+    from data.providers.readings import InputsExpired
+    old = TODAY - timedelta(days=20)                                   # past the 9-day drop
+    with pytest.raises(InputsExpired):
+        _run(PhysicalProvider().fetch_current, gatun=_gatun_series(86.0, last=old),
+             river=_river_series(9.0, last=old))
+
+
+def test_physical_fetch_failures_are_not_inputs_expired(anchors):
+    from data.providers.readings import InputsExpired
+    with pytest.raises(RuntimeError) as failure:
+        _run(PhysicalProvider().fetch_current)
+    assert not isinstance(failure.value, InputsExpired)

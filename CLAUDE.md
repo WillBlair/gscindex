@@ -146,7 +146,8 @@ Background daemon thread (every 5 min)
     + news + market + port summaries + chokepoint traffic + disruption register
   → each provider has its own deadline (45 s; 150 s for freight and physical)
   → failed/timed-out category: last stored score while younger than CATEGORY_DROP_AFTER_DAYS
-    (flagged fallback + stale), otherwise excluded
+    (flagged fallback + stale), otherwise excluded; InputsExpired (every input past its drop
+    window) is excluded at once, no stored score
   → composite over present weighted categories, weights renormalized explicitly
   → Writes to _DATA_CACHE (memory, protected by _LOCK) + disk (atomic)
   → Writes daily scores and the dashboard snapshot to the database (each at most hourly)
@@ -235,8 +236,8 @@ Clipped to 0–100. `anchored_score` raises `ValueError` on non-finite input or 
 
 - Age is measured from the period END (`period_end`: month end for monthly, week-ending date for weekly, the day for daily). FRED dates monthly data on the 1st, so always convert.
 - Each input has `(stale_after_days, drop_after_days)`. Past stale → `status="stale"`; past drop → `"missing"`.
-- `blend_inputs` drops missing inputs and renormalizes the category's input weights; the category is stale if any used input is stale. All inputs missing → the provider raises `RuntimeError`.
-- `CATEGORY_DROP_AFTER_DAYS`: how long a failed category may show its last stored score before exclusion (supply_chain 150, chokepoints 42, energy 30, tariffs 150, geopolitical 42, freight 200, inputs 150, physical 9).
+- `blend_inputs` drops missing inputs and renormalizes the category's input weights; the category is stale if any used input is stale. All inputs missing → the provider raises `no_inputs_error(readings, msg)`: `InputsExpired` (a `RuntimeError` subclass) when at least one input returned data and every such input is past its drop window, otherwise a plain `RuntimeError` (fetch or parse failure).
+- `CATEGORY_DROP_AFTER_DAYS`: how long a category whose provider failed to fetch may show its last stored score before exclusion (an `InputsExpired` category is excluded at once) (supply_chain 150, chokepoints 42, energy 30, tariffs 150, geopolitical 42, freight 200, inputs 150, physical 9).
 - `PUBLICATION_LAG_DAYS` dates history by when the site could have known a value (gscpi 5, tsifrght 80, prices_paid 0, imf_monthly 35, dts 1, bopgimp 35, gpr 7, tpu 7, rail_volume 5, chokepoint_flow 4). The `gpr` and `tpu` entries are unused: GPR and TPU history use the files' own dates (no shift), because the file is the publication.
 
 ### Health Tiers (higher score = healthier)
@@ -342,7 +343,9 @@ return max(0.0, min(100.0, score))
 Provider failures never crash the app, and never produce a made-up score:
 ```python
 # data/aggregator.py
-stored = _recent_stored_score(cat, today)       # last daily_category_scores row younger than CATEGORY_DROP_AFTER_DAYS
+stored = None if cat in expired else _recent_stored_score(cat, today)
+# expired: the provider raised InputsExpired; otherwise the last daily_category_scores row
+# younger than CATEGORY_DROP_AFTER_DAYS
 if stored:
     current_scores[cat] = stored_score          # metadata: is_fallback, is_stale, stored_on
 else:

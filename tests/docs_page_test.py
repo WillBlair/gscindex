@@ -105,3 +105,11 @@ def test_docs_say_kaub_is_not_scored(body):
     text = _text(body)
     assert "Kaub is recorded, not scored" in text
     assert "until it has a year" not in text
+
+
+def test_docs_failed_category_step_separates_fetch_failure_from_expired_inputs(body):
+    text = _text(body)
+    assert "If every input fails to load, the category shows its last stored daily score" in text
+    assert ("If the inputs load but are all past their drop limits, the category is excluded "
+            "right away") in text
+    assert "If every input is missing, the category shows" not in text

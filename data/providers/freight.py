@@ -31,7 +31,7 @@ import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import rail
 from scoring.anchors import get_anchor, score_raw
 
@@ -150,7 +150,7 @@ class FreightProvider(BaseProvider):
 
         score, status = blend_inputs(readings, config.FREIGHT_WEIGHTS)
         if score is None:
-            raise RuntimeError("no freight input available: " + "; ".join(r.source for r in readings))
+            raise no_inputs_error(readings, "no freight input available: " + "; ".join(r.source for r in readings))
 
         used = [r for r in readings if r.status != "missing" and r.score is not None]
         sentences = ["This category measures goods moving, the demand side of freight: a contraction "

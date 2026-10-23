@@ -303,3 +303,14 @@ def test_fetch_history_empty_raises(anchors):
     a, b = _provider_with(pd.DataFrame(columns=["date", "portid", "n_total", "capacity"]))
     with a, b, pytest.raises(RuntimeError):
         ChokepointsProvider().fetch_history(30)
+
+
+def test_too_old_raises_inputs_expired_and_empty_rows_do_not(anchors):
+    from data.providers.readings import InputsExpired
+    a, b = _provider_with(_daily(date(2026, 10, 18), 20), today=date(2026, 12, 15))
+    with a, b, pytest.raises(InputsExpired):
+        ChokepointsProvider().fetch_current()
+    a, b = _provider_with(pd.DataFrame())
+    with a, b, pytest.raises(RuntimeError) as failure:
+        ChokepointsProvider().fetch_current()
+    assert not isinstance(failure.value, InputsExpired)

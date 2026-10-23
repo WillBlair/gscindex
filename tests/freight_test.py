@@ -359,3 +359,21 @@ def test_freight_history_blends_available_inputs(anchors):
 def test_freight_history_all_missing_raises(anchors):
     with pytest.raises(RuntimeError):
         _run(lambda: FreightProvider().fetch_history(30), tsi=None, weekly=None)
+
+
+def test_freight_aged_out_raises_inputs_expired(anchors):
+    from data.providers.readings import InputsExpired
+    old_tsi = _tsi(5.0, end="2026-02-01")                                  # past 200 days
+    old_rail = _rail_flat_then_step(0.0, end=TODAY - timedelta(days=60))   # past 45 days
+    with pytest.raises(InputsExpired):
+        _run(FreightProvider().fetch_current, tsi=old_tsi, weekly=old_rail)
+    # Rail failed to fetch; the only input that returned data aged out.
+    with pytest.raises(InputsExpired):
+        _run(FreightProvider().fetch_current, tsi=old_tsi, weekly=None)
+
+
+def test_freight_fetch_failures_are_not_inputs_expired(anchors):
+    from data.providers.readings import InputsExpired
+    with pytest.raises(RuntimeError) as failure:
+        _run(FreightProvider().fetch_current, tsi=None, weekly=None)
+    assert not isinstance(failure.value, InputsExpired)

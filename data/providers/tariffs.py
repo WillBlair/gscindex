@@ -30,7 +30,7 @@ import config
 from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
-    InputReading, freshness_status, inputs_metadata, oldest_as_of, period_end, blend_inputs)
+    InputReading, no_inputs_error, freshness_status, inputs_metadata, oldest_as_of, period_end, blend_inputs)
 from data.sources import tpu, treasury
 from scoring.anchors import get_anchor, score_raw
 
@@ -142,7 +142,7 @@ class TariffsProvider(BaseProvider):
 
         score, status = blend_inputs(readings, config.TARIFF_WEIGHTS)
         if score is None:
-            raise RuntimeError("no tariff input available: " + "; ".join(r.source for r in readings))
+            raise no_inputs_error(readings, "no tariff input available: " + "; ".join(r.source for r in readings))
 
         used = [r for r in readings if r.status != "missing" and r.score is not None]
         sentences = []

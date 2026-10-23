@@ -235,6 +235,46 @@ def test_stored_score_at_drop_limit_is_excluded(harness):
     assert data["current_scores"]["physical"] == 90.0
 
 
+class _ExpiredProvider(_Provider):
+    """Every input returned data, all of it past its drop window."""
+
+    def fetch_current(self):
+        from data.providers.readings import InputsExpired
+        raise InputsExpired("GSCPI for April 2026 is past its freshness drop window")
+
+
+def test_inputs_expired_is_excluded_not_served_from_storage(harness):
+    run, recorded = harness
+    providers = [(_ExpiredProvider if c == "supply_chain" else _Provider)(c) for c in CATEGORY_WEIGHTS]
+    lookups = []
+
+    def last(cat):
+        lookups.append(cat)
+        return (_today() - timedelta(days=1), 70.0)       # a fresh-dated row exists
+
+    data = run(providers, last=last)
+    assert data["excluded_categories"] == ["supply_chain"]
+    assert "supply_chain" not in data["current_scores"]
+    assert "supply_chain" not in data["fallback_categories"]
+    assert "supply_chain" not in lookups                  # storage is never consulted
+    meta = data["category_metadata"]["supply_chain"]
+    assert meta["is_fallback"] is False and meta["as_of"] is None
+    assert "drop window" in meta["description"]
+    assert "Last stored reading" not in meta["source"]
+    weights = renormalized_weights(CATEGORY_WEIGHTS, set(CATEGORY_WEIGHTS) - {"supply_chain"})
+    assert data["composite"] == pytest.approx(sum(w * _SCORES[c] for c, w in weights.items()))
+    assert "supply_chain" not in recorded["record"][0][1]
+
+
+def test_fetch_failure_still_uses_stored_fallback(harness):
+    run, _ = harness
+    providers = [_Provider(c, error="HTTP 503" if c == "supply_chain" else None) for c in CATEGORY_WEIGHTS]
+    data = run(providers, last=lambda cat: (_today() - timedelta(days=1), 70.0))
+    assert data["excluded_categories"] == []
+    assert data["current_scores"]["supply_chain"] == 70.0
+    assert "supply_chain" in data["fallback_categories"]
+
+
 def test_non_finite_score_goes_through_fallback_path(harness):
     run, _ = harness
     providers = [_Provider(c, score=float("nan") if c == "tariffs" else None)

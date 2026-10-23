@@ -36,7 +36,7 @@ from data.providers.base import BaseProvider
 from data.providers.fred_client import fetch_fred_series
 from data.providers.prices import clean_prices, cpi_ratios, cpi_reference, cpi_reference_date
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
+    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import fed_surveys, markets
 from scoring.anchors import get_anchor, score_raw
 
@@ -187,7 +187,7 @@ class InputsProvider(BaseProvider):
                    **{f"{leg}_monthly": config.INPUT_WEIGHTS[leg] for leg in _METALS}}
         score, status = blend_inputs(readings, weights)
         if score is None:
-            raise RuntimeError("no input cost input available: " + "; ".join(r.source for r in readings))
+            raise no_inputs_error(readings, "no input cost input available: " + "; ".join(r.source for r in readings))
 
         used = [r for r in readings if r.status != "missing" and r.score is not None]
         sentences = [

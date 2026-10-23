@@ -70,9 +70,10 @@ INDUSTRY_PROVIDER_CACHE_TTL: int = int(os.environ.get("INDUSTRY_PROVIDER_CACHE_T
 # ---------------------------------------------------------------------------
 
 # Methodology v2 (docs/superpowers/specs/2026-10-22-score-rebuild-design.md, section 2).
-# A category whose provider fails uses its last stored score while it is younger than
-# CATEGORY_DROP_AFTER_DAYS; beyond that it is excluded and the aggregator renormalizes the
-# remaining weights explicitly (scoring.engine.renormalized_weights). Weather is map-only.
+# A category whose provider fails to fetch uses its last stored score while it is younger
+# than CATEGORY_DROP_AFTER_DAYS; beyond that it is excluded and the aggregator renormalizes the
+# remaining weights explicitly (scoring.engine.renormalized_weights). A category whose inputs
+# are all past their FRESHNESS drop windows is excluded at once. Weather is map-only.
 CATEGORY_WEIGHTS: dict[str, float] = {
     "supply_chain":  0.20,  # NY Fed GSCPI, anchored
     "chokepoints":   0.15,  # IMF PortWatch transits through eight maritime corridors
@@ -403,7 +404,11 @@ PUBLICATION_LAG_DAYS: dict[str, int] = {
     "chokepoint_flow": 4,
 }
 
-# A category whose oldest used input is older than this is dropped from the composite.
+# How long a category whose provider failed to fetch may show its last stored daily score
+# (counted from the day the row was stored, flagged fallback and stale); after that it is
+# excluded from the composite. Inputs are dropped by their own FRESHNESS limits; when every
+# input that returned data is past its drop window the provider raises InputsExpired and the
+# category is excluded at once, with no stored score.
 CATEGORY_DROP_AFTER_DAYS: dict[str, int] = {
     "supply_chain": 150,
     "chokepoints":  42,

@@ -37,7 +37,7 @@ from data import database
 from data.ports_data import MAJOR_PORTS
 from data.providers.base import BaseProvider
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of)
+    InputReading, no_inputs_error, blend_inputs, freshness_status, inputs_metadata, oldest_as_of)
 from data.sources import gdacs, waterways
 
 logger = logging.getLogger(__name__)
@@ -153,8 +153,8 @@ class PhysicalProvider(BaseProvider):
 
         score, status = blend_inputs(readings, config.PHYSICAL_WEIGHTS)
         if score is None:
-            raise RuntimeError("no physical disruption input available: "
-                               + "; ".join(r.source for r in readings))
+            raise no_inputs_error(readings, "no physical disruption input available: "
+                                  + "; ".join(r.source for r in readings))
 
         used = [r for r in readings if r.status != "missing" and r.score is not None]
         sentences = []

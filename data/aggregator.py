@@ -9,7 +9,8 @@ This is the main entry point for data. It:
     2. Calls ``fetch_current()`` and ``fetch_history()`` on each, with a per-category timeout
     3. Handles provider failures explicitly: the last stored score while it is younger than
        ``CATEGORY_DROP_AFTER_DAYS`` (flagged fallback and stale), otherwise the category is
-       excluded and the remaining weights are renormalized
+       excluded and the remaining weights are renormalized. A provider whose inputs are all
+       past their drop windows (``InputsExpired``) is excluded at once, with no stored score
     4. Computes and stores the composite (``result["composite"]``)
     5. Assembles alerts from the RSS news pipeline and the port map
     6. Returns everything in the shape the layout expects
@@ -41,6 +42,7 @@ from data.providers.freight import FreightProvider
 from data.providers.geopolitical import GeopoliticalProvider
 from data.providers.inputs import InputsProvider
 from data.providers.physical import PhysicalProvider
+from data.providers.readings import InputsExpired
 from data.providers.supply_chain import SupplyChainProvider
 from data.providers.tariffs import TariffsProvider
 from data.providers.weather import WeatherProvider
@@ -440,18 +442,31 @@ def _stored_fallback_metadata(category: str, reason: str, day: date, score: floa
     }
 
 
-def _unavailable_metadata(category: str, reason: str) -> dict:
-    """Metadata for a category with no live score and no usable stored score."""
-    limit = config.CATEGORY_DROP_AFTER_DAYS.get(category)
-    stored = f"no stored score younger than {limit} days" if limit else "no stored fallback"
-    return {
-        "source": "Unavailable (provider failed)",
-        "raw_value": "—",
-        "raw_label": "No data",
-        "description": (
+def _unavailable_metadata(category: str, reason: str, expired: bool = False) -> dict:
+    """Metadata for a category with no live score and no usable stored score.
+
+    ``expired``: every input that returned data is past its drop window, so no stored
+    score is used (it would be older still).
+    """
+    if expired:
+        source = "Unavailable (data past its drop window)"
+        description = (
+            "Every input is past its drop window, so this category is left out of the "
+            f"composite. A stored score is not used because it would be older still. {reason}"
+        )
+    else:
+        limit = config.CATEGORY_DROP_AFTER_DAYS.get(category)
+        stored = f"no stored score younger than {limit} days" if limit else "no stored fallback"
+        source = "Unavailable (provider failed)"
+        description = (
             f"The live source failed and there is {stored}, so this category is left out "
             f"of the composite. Error: {reason}"
-        ),
+        )
+    return {
+        "source": source,
+        "raw_value": "—",
+        "raw_label": "No data",
+        "description": description,
         "calculation": "Not scored this cycle; the other weights are renormalized.",
         "updated": "Unavailable",
         "as_of": None,
@@ -463,7 +478,11 @@ def _unavailable_metadata(category: str, reason: str) -> dict:
 
 
 def _fetch_provider_data(provider) -> tuple[str, float | None, pd.Series | None, dict, str | None]:
-    """Fetch one provider safely. A failed provider returns score None and its error."""
+    """Fetch one provider safely. A failed provider returns score None and its error.
+
+    When every input is past its drop window (``InputsExpired``) the metadata is
+    ``{"inputs_expired": True}`` so the aggregator skips the stored fallback.
+    """
     cat = provider.category
     try:
         # Support both tuple (new) and float (legacy) returns
@@ -482,6 +501,9 @@ def _fetch_provider_data(provider) -> tuple[str, float | None, pd.Series | None,
         metadata.setdefault("is_fallback", False)
         metadata["is_stale"] = bool(metadata.get("is_stale", False))
         logger.info("Loaded %s: %.1f", cat, current_score)
+    except InputsExpired as exc:
+        logger.error("Provider %s inputs expired: %s", cat, exc)
+        return cat, None, None, {"inputs_expired": True}, str(exc)
     except Exception as exc:
         logger.error("Provider %s failed (current): %s", cat, exc)
         return cat, None, None, {}, str(exc)
@@ -566,6 +588,7 @@ def aggregate_data(status_callback=None) -> dict:
     category_metadata: dict[str, dict] = {}
     provider_errors: dict[str, str] = {}
     failed: dict[str, str] = {}  # category -> reason, for providers with no live score
+    expired: set[str] = set()  # failed because every input is past its drop window
 
     # Prepare the target date range for history alignment
     dates = pd.date_range(
@@ -605,6 +628,8 @@ def aggregate_data(status_callback=None) -> dict:
                 provider_errors[cat] = err
             if score is None:
                 failed[cat] = err or "Provider failed"
+                if meta.get("inputs_expired"):
+                    expired.add(cat)
                 continue
 
             current_scores[cat] = score
@@ -680,14 +705,16 @@ def aggregate_data(status_callback=None) -> dict:
 
 
     # -----------------------------------------------------------------------
-    # 3. Failed providers: last stored score while recent, otherwise excluded
+    # 3. Failed providers: last stored score while recent, otherwise excluded.
+    #    Expired inputs are excluded at once: the stored row is no newer than the data
+    #    that just aged out, so serving it would stretch the drop window.
     # -----------------------------------------------------------------------
     today = datetime.now(timezone.utc).date()
     excluded_categories: list[str] = []
     for cat in sorted(failed):
         reason = failed[cat]
         category_history[cat] = _empty_history(dates, cat)  # never filled for a failure
-        stored = _recent_stored_score(cat, today)
+        stored = None if cat in expired else _recent_stored_score(cat, today)
         if stored is not None:
             day, score = stored
             current_scores[cat] = score
@@ -697,7 +724,7 @@ def aggregate_data(status_callback=None) -> dict:
             category_metadata[cat] = meta
             logger.warning("%s: using last stored score %.1f from %s", cat, score, day)
         else:
-            category_metadata[cat] = _unavailable_metadata(cat, reason)
+            category_metadata[cat] = _unavailable_metadata(cat, reason, expired=cat in expired)
             if cat in CATEGORY_WEIGHTS:
                 excluded_categories.append(cat)
             logger.warning("%s: no live or recent stored score; left out", cat)

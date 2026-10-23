@@ -21,7 +21,7 @@ import config
 from data import portwatch
 from data.providers.base import BaseProvider
 from data.providers.readings import (
-    InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of)
+    InputReading, InputsExpired, blend_inputs, freshness_status, inputs_metadata, oldest_as_of)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class ChokepointsProvider(BaseProvider):
         )
         score, status = blend_inputs([reading], {_KEY: 1.0})
         if score is None:
-            raise RuntimeError(f"chokepoint data is too old (as of {as_of})")
+            raise InputsExpired(f"chokepoint data is too old (as of {as_of})")
 
         cape = row.get("Cape")
         cape_text = ""
