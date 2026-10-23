@@ -65,11 +65,22 @@ def select_news(alerts, query="", severity="all", category="all"):
     return sorted(selected, key=lambda a: str(a.get("timestamp") or ""), reverse=True)
 
 
+def _csv_status(available, cat, meta, data):
+    """excluded / missing / fallback / stale / measured."""
+    if not available:
+        return "excluded" if cat in (data.get("excluded_categories") or []) else "missing"
+    if meta.get("is_fallback"):
+        return "fallback"
+    if meta.get("is_stale") or cat in (data.get("stale_categories") or []):
+        return "stale"
+    return "measured"
+
+
 def snapshot_csv(data, key):
-    """A profile-scoped export with provenance and fallback status."""
+    """A profile-scoped export with provenance, data date (as_of) and freshness status."""
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["snapshot_utc", "profile", "category", "score", "weight", "weighted_points", "status", "source", "source_updated"])
+    writer.writerow(["snapshot_utc", "profile", "category", "score", "weight", "weighted_points", "status", "as_of", "source", "source_updated"])
     def cell(value):
         value = str(value or "")
         return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
@@ -79,6 +90,6 @@ def snapshot_csv(data, key):
         available = finite_score(score)
         writer.writerow([cell(data.get("last_updated_utc")), cell(profile_for(key)["label"]), CATEGORY_LABELS.get(cat, cat),
                          score if available else "", weight, round(score * weight, 3) if available else "",
-                         "missing" if not available else "fallback" if meta.get("is_fallback") else "measured",
+                         _csv_status(available, cat, meta, data), cell(meta.get("as_of")),
                          cell(meta.get("source")), cell(meta.get("updated"))])
     return output.getvalue()

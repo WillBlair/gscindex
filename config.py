@@ -120,6 +120,31 @@ CATEGORY_LABELS: dict[str, str] = {
     "aero_ppi":            "Aircraft PPI",
 }
 
+# Display names for the canonical input keys in a category's ``inputs`` metadata
+# (the category hover lists each input with its as-of date and status).
+INPUT_LABELS: dict[str, str] = {
+    "gscpi":            "NY Fed GSCPI",
+    "chokepoint_flow":  "Chokepoint transits",
+    "brent":            "Brent crude",
+    "ulsd":             "Diesel (ULSD)",
+    "ttf":              "TTF gas",
+    "ttf_monthly":      "TTF gas (monthly)",
+    "tariff_burden":    "Tariff burden",
+    "tpu":              "Trade policy uncertainty",
+    "gpr":              "Geopolitical risk index",
+    "geo_register":     "Disruption register",
+    "tsifrght":         "Freight TSI",
+    "rail_volume":      "Rail volume",
+    "prices_paid":      "Prices paid surveys",
+    "copper":           "Copper",
+    "aluminum":         "Aluminum",
+    "copper_monthly":   "Copper (monthly)",
+    "aluminum_monthly": "Aluminum (monthly)",
+    "hazards":          "Natural hazards",
+    "gatun":            "Gatun Lake level",
+    "mississippi":      "Mississippi River stage",
+}
+
 # ---------------------------------------------------------------------------
 # Industry Profiles
 # ---------------------------------------------------------------------------

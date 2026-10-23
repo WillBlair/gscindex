@@ -177,8 +177,10 @@ def test_failed_provider_uses_recent_stored_score(harness):
     assert data["degraded"] is True
     meta = data["category_metadata"]["energy"]
     assert meta["is_fallback"] is True and meta["is_stale"] is True
-    assert f"Last stored reading from {stored_day.isoformat()}" in meta["description"]
-    assert meta["as_of"] == stored_day.isoformat()
+    # as_of is the data date, which a stored fallback does not know; stored_on is the row date.
+    assert meta["as_of"] is None
+    assert meta["stored_on"] == stored_day.isoformat()
+    assert "Last stored reading" in meta["source"]
     for key in ("source", "raw_value", "raw_label", "calculation", "updated", "inputs"):
         assert key in meta
     # The stored fallback is never written back as a measurement; failed history stays NaN.

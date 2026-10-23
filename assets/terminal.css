@@ -313,8 +313,8 @@ td.h a:hover { text-decoration: underline; }
   touch-action: manipulation;
 }
 .cat-name:hover, .cat-name:focus { border-bottom-color: var(--amber); }
-.is-fallback td { opacity: 0.6; }
-.fallback-tag { margin-left: 8px; font-size: 11px; color: var(--dim); border: 1px solid var(--grid); padding: 1px 5px; }
+.is-fallback td, .is-excluded td { opacity: 0.6; }
+.row-tag { margin-left: 8px; font-size: 11px; color: var(--dim); border: 1px solid var(--grid); padding: 1px 5px; white-space: nowrap; }
 .index-row td { border-bottom: 0; }
 
 /* Category detail tooltip */

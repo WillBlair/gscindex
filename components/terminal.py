@@ -19,7 +19,8 @@ import config
 from components.feed import _format_time_ago
 from components.terminal_data import TIER_COLORS, category_rows, index_history, index_summary, tier_for
 from components.workspace import plain_text, safe_url, select_news
-from config import CATEGORY_LABELS, DEFAULT_PROFILE, INDUSTRY_PROFILES
+from config import CATEGORY_LABELS, DEFAULT_PROFILE, INDUSTRY_PROFILES, INPUT_LABELS
+from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 
 DASH = "–"
 MINUS = "−"
@@ -264,7 +265,7 @@ def build_chokepoints(traffic: dict | None) -> html.Div:
         html.Div(rows, className="choke-rows"),
         html.Div(
             f"Ship transits, last {traffic.get('recent_days', 7)} days vs "
-            f"{traffic.get('baseline', 'normal')}. Source: {traffic.get('source', 'IMF PortWatch')}.",
+            f"{traffic.get('baseline', 'normal')}. {PORTWATCH_CREDIT}.",
             className="dim choke-note",
         ),
     ], className="choke")
@@ -354,6 +355,15 @@ def build_briefing(briefing: str) -> html.Div:
 
 # --- category table ----------------------------------------------------------------------------
 
+def _input_line(item: dict) -> str:
+    """'Brent crude 20.1 · as of 2026-10-21 · live' (an en dash for a missing score)."""
+    name = str(item.get("name") or "")
+    label = INPUT_LABELS.get(name) or name.replace("_", " ").capitalize() or "Input"
+    as_of = plain_text(item.get("as_of")) or DASH
+    status = plain_text(item.get("status")) or DASH
+    return f"{label} {fmt(item.get('score'))} · as of {as_of} · {status}"
+
+
 def _detail_lines(row: dict) -> list:
     lines = []
     if row.get("source"):
@@ -361,15 +371,36 @@ def _detail_lines(row: dict) -> list:
     raw_value, raw_label = row.get("raw_value"), row.get("raw_label")
     if raw_value not in (None, ""):
         lines.append(f"{plain_text(raw_label)}: {plain_text(raw_value)}" if raw_label else f"Raw value: {plain_text(raw_value)}")
-    if row.get("updated"):
-        lines.append(f"Updated: {plain_text(row['updated'])}")
+    if row.get("stored_on"):
+        # A stored fallback: its storage date, never presented as the data date.
+        lines.append(f"Last stored reading from {plain_text(row['stored_on'])}; the live source is unavailable.")
+    else:
+        if row.get("as_of"):
+            lines.append(f"As of: {plain_text(row['as_of'])}" + (" (stale)" if row.get("is_stale") else ""))
+        if row.get("updated"):
+            lines.append(f"Updated: {plain_text(row['updated'])}")
+    for item in row.get("inputs") or []:
+        lines.append(_input_line(item))
     if row.get("description"):
         lines.append(plain_text(row["description"]))
     if row.get("calculation"):
         lines.append(f"Calculation: {plain_text(row['calculation'])}")
-    if row.get("is_fallback"):
+    if row.get("is_fallback") and not row.get("stored_on"):
         lines.append("Live source unavailable; showing the fallback value.")
+    if row.get("is_excluded"):
+        lines.append("Left out of the index; the other weights are renormalized.")
     return [html.Div(line) for line in lines] or [html.Div("No source details available.")]
+
+
+def _row_tag(row: dict) -> str | None:
+    """One status tag per row: excluded, else fallback, else stale."""
+    if row.get("is_excluded"):
+        return "excluded"
+    if row.get("is_fallback"):
+        return "fallback"
+    if row.get("is_stale"):
+        return "stale"
+    return None
 
 
 def _bar(today, yday, color) -> html.Div:
@@ -395,10 +426,11 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
     for row in rows:
         cat, color = row["cat"], _tier_color(row["today"])
         target = f"cat-detail-{cat}"
+        tag = _row_tag(row)
         body.append(html.Tr([
             html.Td([
                 html.Button(row["label"], id=target, n_clicks=0, className="cat-name", type="button"),
-                html.Span("fallback", className="fallback-tag") if row["is_fallback"] else None,
+                html.Span(tag, className="row-tag") if tag else None,
                 dbc.Tooltip(_detail_lines(row), target=target, trigger="hover focus",
                             placement="top-start", className="cat-tip"),
             ]),
@@ -409,7 +441,7 @@ def build_category_table(data: dict, profile_key: str) -> html.Table:
             html.Td(signed(row["change"]), className=f"r num {change_class(row['change'])}"),
             html.Td(signed(row["effect"], 2), className=f"r num {change_class(row['effect'])}"),
             html.Td(sparkline(row["history"], 110, 18, color), className="hide-s"),
-        ], className="is-fallback" if row["is_fallback"] else None))
+        ], className=f"is-{tag}" if tag else None))
 
     tier = summary["tier"]
     index_color = tier["color"] if tier else DIM

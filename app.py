@@ -76,6 +76,16 @@ def _migrate_keys(data: dict) -> dict:
     return data
 
 
+def _has_current_categories(data: dict) -> bool:
+    """Whether a stored snapshot covers every weighted category (current schema).
+
+    A category the aggregator excluded (no live or recent stored score) is absent from
+    ``current_scores`` but listed in ``excluded_categories``; that snapshot is current.
+    """
+    present = set(data.get("current_scores") or {}) | set(data.get("excluded_categories") or [])
+    return set(CATEGORY_WEIGHTS).issubset(present)
+
+
 def _extract_last_updated(data: dict | None) -> datetime | None:
     """Parse last update timestamp from dashboard payload if present."""
     if not data:
@@ -132,12 +142,10 @@ try:
     startup_data = get_cached_dashboard()
     if startup_data:
         startup_data = _migrate_keys(startup_data)
-        required_keys = set(CATEGORY_WEIGHTS.keys())
-        cached_keys = set(startup_data.get("current_scores", {}).keys())
-        if not required_keys.issubset(cached_keys):
+        if not _has_current_categories(startup_data):
             logging.getLogger(__name__).warning(
                 "INVALIDATING CACHE: Missing keys %s. Schema has changed.",
-                required_keys - cached_keys,
+                set(CATEGORY_WEIGHTS) - set(startup_data.get("current_scores") or {}),
             )
             startup_data = None
         else:
@@ -157,7 +165,7 @@ if not startup_data:
         raw = load_dashboard_snapshot()
         if raw:
             raw = _migrate_keys(raw)
-            if set(CATEGORY_WEIGHTS.keys()).issubset(raw.get("current_scores", {}).keys()):
+            if _has_current_categories(raw):
                 startup_data = reconstruct_dashboard_state(raw)
                 # Seed the disk cache too, so /api/v1/latest answers at once.
                 set_cached_dashboard(startup_data)
@@ -180,8 +188,6 @@ if not startup_data:
         if _fallback_path.exists():
             raw = json.loads(_fallback_path.read_text())
             raw = _migrate_keys(raw)
-            required_keys = set(CATEGORY_WEIGHTS.keys())
-            cached_keys = set(raw.get("current_scores", {}).keys())
             fallback_updated = _extract_last_updated(raw)
             too_old = _is_stale(
                 fallback_updated, max_age_seconds=FALLBACK_SNAPSHOT_MAX_AGE_DAYS * 86400
@@ -193,7 +199,7 @@ if not startup_data:
                     "Committed fallback snapshot is older than %d days; not serving it.",
                     FALLBACK_SNAPSHOT_MAX_AGE_DAYS,
                 )
-            elif required_keys.issubset(cached_keys):
+            elif _has_current_categories(raw):
                 startup_data = reconstruct_dashboard_state(raw)
                 # Never show stale narrative/news from committed fallback.
                 startup_data["alerts"] = []
@@ -380,9 +386,10 @@ def create_app() -> dash.Dash:
             fetch_duration = _LAST_FETCH_DURATION_SECONDS
             fetch_started_at = _FETCH_STARTED_AT
             has_fetched_ok = _HAS_FETCHED_OK
-            fallback_categories = (
-                list(_DATA_CACHE.get("fallback_categories", [])) if _DATA_CACHE else []
-            )
+            snapshot = _DATA_CACHE or {}
+            fallback_categories = list(snapshot.get("fallback_categories") or [])
+            stale_categories = list(snapshot.get("stale_categories") or [])
+            excluded_categories = list(snapshot.get("excluded_categories") or [])
 
         age_seconds = round((now_utc - last_update).total_seconds(), 1) if last_update else None
         try:
@@ -418,6 +425,8 @@ def create_app() -> dash.Dash:
             "last_fetch_error": fetch_error,
             "last_fetch_duration_seconds": fetch_duration,
             "fallback_categories": fallback_categories,
+            "stale_categories": stale_categories,
+            "excluded_categories": excluded_categories,
             "status_message": status_message,
             "update_interval_seconds": 300,
             "process_memory": memory_usage(),

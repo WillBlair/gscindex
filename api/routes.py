@@ -1,7 +1,11 @@
 
+import math
+
 from flask import Blueprint, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
+from config import CATEGORY_WEIGHTS, METHODOLOGY_VERSION
 from scoring import snapshot_composite
 
 # Create Blueprint
@@ -28,6 +32,38 @@ def get_limiter(app):
     """
     return Limiter(client_ip, app=app, storage_uri="memory://")
 
+def _score(value) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return round(float(value), 1)
+
+
+def category_objects(data: dict) -> dict:
+    """One object per category: the weighted ones (an excluded one has score None), then any
+    other scored category (industry profiles, weight None).
+
+    ``as_of`` is the date of the oldest input used. A category serving its last stored
+    score has ``as_of`` None and ``stored_on`` set to the date that score was stored.
+    """
+    scores = data.get("current_scores") or {}
+    metadata = data.get("category_metadata") or {}
+    out = {}
+    for cat in list(CATEGORY_WEIGHTS) + [c for c in scores if c not in CATEGORY_WEIGHTS]:
+        meta = metadata.get(cat) or {}
+        out[cat] = {
+            "score": _score(scores.get(cat)),
+            "weight": CATEGORY_WEIGHTS.get(cat),
+            "as_of": meta.get("as_of"),
+            "stored_on": meta.get("stored_on"),
+            "source": meta.get("source"),
+            "is_stale": bool(meta.get("is_stale", False)),
+            "is_fallback": bool(meta.get("is_fallback", False)),
+            "inputs": [{**i, "score": _score(i.get("score"))}
+                       for i in meta.get("inputs") or [] if isinstance(i, dict)],
+        }
+    return out
+
+
 @api_bp.route('/latest', methods=['GET'])
 def get_latest_data():
     """Return the cached dashboard snapshot as JSON."""
@@ -41,22 +77,23 @@ def get_latest_data():
             "message": "The system is warming up. Try again in 10 seconds."
         }), 503
         
-    # Simplify the response for public consumption
-    # We strip out heavy internal structures like 'category_history' and 'dates' 
-    # to save bandwidth, unless requested? 
-    # Actually, user asked "add this data to your project", so full snapshot is better.
-    
-    current_scores = data.get("current_scores", {})
+    # Heavy internal structures ('category_history', 'dates') are left out.
     composite = snapshot_composite(data)
     response = {
+        "methodology_version": METHODOLOGY_VERSION,
         # Actual snapshot time, not midnight of the final history date.
         "timestamp": data.get("last_updated_utc"),
+        # The composite stored with the snapshot (weights renormalized over the present
+        # categories); computed only for an old snapshot without one.
         "composite_index": round(composite, 1) if composite is not None else None,
-        "categories": current_scores,
-        # Degradation flags: categories listed here are serving a neutral
-        # fallback value (provider failure), not a measurement.
+        "categories": category_objects(data),
+        # Degradation flags. Fallback categories serve their last stored reading (not a
+        # measurement this cycle); excluded categories have no recent reading and are left
+        # out of the composite; stale categories rest on an input past its freshness window.
         "degraded": bool(data.get("degraded", False)),
         "fallback_categories": data.get("fallback_categories", []),
+        "excluded_categories": data.get("excluded_categories", []),
+        "stale_categories": data.get("stale_categories", []),
         "disruptions": data.get("disruptions", []),
         "map_markers": data.get("map_markers", []),
         "meta": {

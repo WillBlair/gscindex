@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gscindex-local",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["DATABASE_URL=", "ANTHROPIC_API_KEY=", "GSC_DISABLE_BACKGROUND=1", "PORT=8051", "venv/bin/gunicorn", "app:server", "-c", "gunicorn.conf.py"],
+      "port": 8051
+    },
+    {
+      "name": "gscindex-attach",
+      "url": "http://localhost:8051"
+    }
+  ]
+}

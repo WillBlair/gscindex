@@ -465,3 +465,78 @@ def test_readout_includes_chokepoint_panel():
     snap["chokepoints"] = {"as_of": "2026-10-18", "chokepoints": [
         {"name": "Suez", "recent_per_day": 44.3, "normal_per_day": 73.5, "pct_of_normal": 60}]}
     assert "Suez" in text_of(term.build_readout(snap, "baseline"))
+
+
+# --- methodology v2: stale and excluded rows, input freshness, PortWatch credit ---
+
+def _row_for(table, cat):
+    return next(r for r in rows_of(table)
+                if any(getattr(c, "id", None) == f"cat-detail-{cat}" for c in walk(r)))
+
+
+def _tip_for(table, cat):
+    return next(c for c in walk(table) if isinstance(c, dbc.Tooltip) and c.target == f"cat-detail-{cat}")
+
+
+def test_table_shows_stale_suffix():
+    snap = snapshot()
+    snap["category_metadata"]["freight"]["is_stale"] = True
+    snap["stale_categories"] = ["freight"]
+    table = term.build_category_table(snap, "baseline")
+    row = _row_for(table, "freight")
+    assert "stale" in text_of(cells(row)[0])
+    assert "is-stale" in (row.className or "")
+    assert "stale" not in text_of(cells(_row_for(table, "energy"))[0])
+
+
+def test_stored_fallback_shows_one_tag_and_the_stored_date():
+    snap = snapshot()
+    snap["category_metadata"]["energy"].update(
+        is_stale=True, is_fallback=True, as_of=None, stored_on="2026-10-20")
+    snap["fallback_categories"] = ["energy"]
+    snap["stale_categories"] = ["energy"]
+    table = term.build_category_table(snap, "baseline")
+    label = text_of(cells(_row_for(table, "energy"))[0])
+    assert "fallback" in label and "stale" not in label
+    tip = text_of(_tip_for(table, "energy"))
+    assert "Last stored reading from 2026-10-20" in tip
+    assert "As of" not in tip
+
+
+def test_excluded_row_is_marked_and_index_still_renders():
+    snap = snapshot()
+    del snap["current_scores"]["physical"]
+    snap["excluded_categories"] = ["physical"]
+    table = term.build_category_table(snap, "baseline")
+    assert "excluded" in text_of(cells(_row_for(table, "physical"))[0])
+    body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
+    assert text_of(cells(body[-1])[3]).strip() == f"{index_summary(snap, 'baseline')['today']:.1f}"
+    assert "No live score" not in text_of(term.build_readout(snap, "baseline"))
+
+
+def test_hover_lists_inputs_with_as_of_and_status():
+    snap = snapshot()
+    snap["category_metadata"]["energy"].update(as_of="2026-10-17", inputs=[
+        {"name": "brent", "score": 20.1, "as_of": "2026-10-21", "status": "live",
+         "source": "FRED", "raw_value": "$64"},
+        {"name": "ttf_monthly", "score": None, "as_of": "2026-08-31", "status": "stale",
+         "source": "FRED", "raw_value": ""},
+    ])
+    tip = text_of(_tip_for(term.build_category_table(snap, "baseline"), "energy"))
+    assert "As of: 2026-10-17" in tip
+    assert "Brent crude" in tip and "20.1" in tip and "2026-10-21" in tip and "live" in tip
+    assert "2026-08-31" in tip and "stale" in tip
+
+
+def test_eight_baseline_rows():
+    table = term.build_category_table(snapshot(), "baseline")
+    body = [r for r in rows_of(table) if not any(isinstance(c, html.Th) for c in r.children)]
+    assert len(body) == len(config.CATEGORY_WEIGHTS) + 1 == 9
+
+
+def test_chokepoint_panel_has_credit():
+    from components.layout import build_layout
+    snap = snapshot()
+    snap["chokepoints"] = {"as_of": "2026-10-18", "source": "IMF PortWatch", "chokepoints": [
+        {"name": "Suez", "recent_per_day": 44.3, "normal_per_day": 73.5, "pct_of_normal": 60}]}
+    assert "Sources: UN Global Platform; IMF PortWatch" in text_of(build_layout(snap))

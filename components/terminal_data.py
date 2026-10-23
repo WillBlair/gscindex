@@ -89,6 +89,8 @@ def category_rows(data: dict, profile_key: str) -> list[dict]:
     scores = data.get("current_scores") or {}
     metadata = data.get("category_metadata") or {}
     fallbacks = set(data.get("fallback_categories") or [])
+    stale = set(data.get("stale_categories") or [])
+    excluded = set(data.get("excluded_categories") or [])
     window = _window(today_date, ROW_HISTORY_DAYS)
 
     rows = []
@@ -108,6 +110,11 @@ def category_rows(data: dict, profile_key: str) -> list[dict]:
             "effect": change * weight if change is not None else None,
             "history": history,
             "is_fallback": cat in fallbacks,
+            "is_stale": cat in stale or bool(meta.get("is_stale")),
+            "is_excluded": cat in excluded and today is None,
+            "as_of": meta.get("as_of"),
+            "stored_on": meta.get("stored_on"),
+            "inputs": [i for i in meta.get("inputs") or [] if isinstance(i, dict)],
             "source": meta.get("source"),
             "raw_value": meta.get("raw_value"),
             "raw_label": meta.get("raw_label"),
@@ -122,12 +129,17 @@ def category_rows(data: dict, profile_key: str) -> list[dict]:
 def index_summary(data: dict, profile_key: str) -> dict:
     """Weighted index today and yesterday. Any missing category blanks that side.
 
-    ``today`` and ``tier`` are None only if a profile category has no live score.
+    A category the snapshot lists in ``excluded_categories`` (no live or recent stored
+    score) is left out and the remaining weights are renormalized, as the composite is.
+    Yesterday uses the same categories and weights, so the change compares like with like.
+    ``today`` and ``tier`` are None only if a profile category has no live score and is
+    not excluded.
     """
-    rows = category_rows(data, profile_key)
-    weights = [r["weight"] for r in rows]
-    today = _weighted([r["today"] for r in rows], weights)
-    yday = _weighted([r["yday"] for r in rows], weights)
+    rows = [r for r in category_rows(data, profile_key) if not r["is_excluded"]]
+    total = sum(r["weight"] for r in rows)
+    weights = [r["weight"] / total for r in rows] if rows and total > 0 else []
+    today = _weighted([r["today"] for r in rows], weights) if weights else None
+    yday = _weighted([r["yday"] for r in rows], weights) if weights else None
     change = today - yday if today is not None and yday is not None else None
     return {
         "today": today,

@@ -13,6 +13,8 @@ and must sum to 1.0.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from config import CATEGORY_WEIGHTS, HEALTH_TIERS
@@ -89,7 +91,10 @@ def snapshot_composite(data: dict) -> float | None:
     """
     if "composite" in data:
         value = data.get("composite")
-        return float(value) if isinstance(value, (int, float)) else None
+        # bool is an int subclass, but True / False are not composites.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return float(value) if math.isfinite(value) else None
     scores = data.get("current_scores") or {}
     try:
         return compute_composite_index(scores) if scores else None

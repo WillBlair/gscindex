@@ -422,17 +422,17 @@ def _stored_fallback_metadata(category: str, reason: str, day: date, score: floa
         "source": "Last stored reading (live source unavailable)",
         "raw_value": f"{score:.1f}",
         "raw_label": "Last stored daily score",
-        "description": (
-            f"Last stored reading from {day.isoformat()}. The live source failed this "
-            f"cycle: {reason}"
-        ),
+        "description": f"The live source failed this cycle: {reason}",
         "calculation": (
             f"Not measured this cycle. The last stored daily score is used until it is "
             f"{limit} days old; after that the category is left out of the composite and "
             "the other weights are renormalized."
         ),
         "updated": day.isoformat(),
-        "as_of": day.isoformat(),
+        # The row's storage date is not the date of the data behind it, so as_of stays
+        # unknown; stored_on says when the reading was stored ("last stored reading from").
+        "as_of": None,
+        "stored_on": day.isoformat(),
         "is_stale": True,
         "is_fallback": True,
         "inputs": [],

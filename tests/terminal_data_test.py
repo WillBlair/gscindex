@@ -244,3 +244,64 @@ def test_index_history_needs_every_category_and_ends_live():
     snap["daily_history"]["scores"]["energy"][-3] = None
     assert td.index_history(snap, "baseline", 7)[-3] is None
     assert td.index_history(snap, "baseline", 7)[-2] == pytest.approx(summary["yday"])
+
+
+# --- methodology v2: excluded categories and per-category freshness ------------
+
+def test_index_today_renormalizes_when_excluded():
+    snap = _snapshot()
+    del snap["current_scores"]["physical"]
+    snap["excluded_categories"] = ["physical"]
+    rows = {r["cat"]: r for r in td.category_rows(snap, "baseline")}
+    assert rows["physical"]["today"] is None
+    assert rows["physical"]["is_excluded"] is True
+    assert rows["energy"]["is_excluded"] is False
+
+    summary = td.index_summary(snap, "baseline")
+    present = {c: w for c, w in BASELINE.items() if c != "physical"}
+    total = sum(present.values())
+    today = sum(w / total * snap["current_scores"][c] for c, w in present.items())
+    assert summary["today"] == pytest.approx(today)
+    assert summary["tier"] == td.tier_for(summary["today"])
+    # Yesterday uses the same categories and weights, so the change compares like with like.
+    yday = sum(w / total * rows[c]["yday"] for c, w in present.items())
+    assert summary["yday"] == pytest.approx(yday)
+    assert summary["change"] == pytest.approx(today - yday)
+    assert td.index_history(snap, "baseline", 7)[-1] == pytest.approx(today)
+
+
+def test_index_today_matches_stored_composite_when_excluded():
+    from scoring.engine import compute_composite_index, renormalized_weights
+
+    snap = _snapshot()
+    del snap["current_scores"]["chokepoints"]
+    snap["excluded_categories"] = ["chokepoints"]
+    present = {c: snap["current_scores"][c] for c in BASELINE if c != "chokepoints"}
+    composite = compute_composite_index(present, renormalized_weights(BASELINE, set(present)))
+    assert td.index_summary(snap, "baseline")["today"] == pytest.approx(composite)
+
+
+def test_missing_category_that_is_not_excluded_still_blanks_today():
+    snap = _snapshot()
+    del snap["current_scores"]["physical"]
+    assert td.index_summary(snap, "baseline")["today"] is None
+
+
+def test_rows_carry_as_of_stale_and_inputs():
+    snap = _snapshot()
+    inputs = [{"name": "brent", "score": 20.1, "as_of": "2026-10-21", "status": "live",
+               "source": "FRED", "raw_value": "$64"}]
+    snap["category_metadata"]["energy"].update(as_of="2026-10-21", is_stale=False, inputs=inputs)
+    snap["category_metadata"]["freight"].update(as_of="2026-08-31", is_stale=True)
+    snap["category_metadata"]["tariffs"].update(as_of=None, stored_on="2026-10-20",
+                                                is_stale=True)
+    snap["fallback_categories"] = ["tariffs"]
+    rows = {r["cat"]: r for r in td.category_rows(snap, "baseline")}
+    assert rows["energy"]["as_of"] == "2026-10-21"
+    assert rows["energy"]["inputs"] == inputs
+    assert rows["energy"]["is_stale"] is False
+    assert rows["freight"]["is_stale"] is True
+    assert rows["tariffs"]["as_of"] is None and rows["tariffs"]["stored_on"] == "2026-10-20"
+    assert rows["physical"]["inputs"] == []
+    snap["stale_categories"] = ["inputs"]
+    assert {r["cat"]: r for r in td.category_rows(snap, "baseline")}["inputs"]["is_stale"] is True

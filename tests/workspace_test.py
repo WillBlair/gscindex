@@ -315,3 +315,21 @@ def test_startup_snapshot_without_daily_history_stays_provisional(monkeypatch):
     assert application._startup_is_fresh({"current_scores": {}}, recent, now) is False
     assert application._startup_is_fresh(with_history, old, now) is False
     assert application._startup_is_fresh(None, None, now) is False
+
+
+def test_export_adds_as_of_and_freshness_status(snapshot):
+    meta = snapshot["category_metadata"]
+    meta["energy"] = {"source": "FRED", "as_of": "2026-09-15"}
+    meta["freight"] = {"source": "BTS", "as_of": "2026-07-31", "is_stale": True}
+    meta["tariffs"] = {"source": "Last stored", "as_of": None, "stored_on": "2026-09-14",
+                       "is_stale": True, "is_fallback": True}
+    del snapshot["current_scores"]["physical"]
+    snapshot["excluded_categories"] = ["physical"]
+    rows = {r["category"]: r for r in csv.DictReader(io.StringIO(snapshot_csv(snapshot, "baseline")))}
+    assert rows["Energy & Fuel"]["as_of"] == "2026-09-15"
+    assert rows["Energy & Fuel"]["status"] == "measured"
+    assert rows["Freight Volume"]["status"] == "stale"
+    assert rows["Trade & Tariffs"]["status"] == "fallback"
+    assert rows["Trade & Tariffs"]["as_of"] == ""
+    assert rows["Physical Disruption"]["status"] == "excluded"
+    assert rows["Physical Disruption"]["score"] == ""
