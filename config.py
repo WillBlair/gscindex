@@ -474,3 +474,9 @@ TPU_MIN_PERIODS = 20             # fewest observations a 30-day mean may rest on
 # Runtime FRED window for BOPGIMP and EPUTRADE: the burden's 3-month sums, the history tail
 # and the publication lag, never the full history.
 TARIFFS_FRED_LOOKBACK_DAYS = 3 * 365
+
+# Geopolitical category: the 30-day mean of the daily GPR index, plus a hook for the
+# stored Claude disruption register (written by the register job; weight 0 until it is trusted).
+GPR_MEAN_DAYS = 30               # trailing days averaged in the daily GPR index
+GPR_MIN_PERIODS = 20             # fewest observations a 30-day mean may rest on
+GEO_REGISTER_WEIGHT = 0.0        # share of the geopolitical score taken from the stored register

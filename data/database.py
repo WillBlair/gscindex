@@ -390,6 +390,51 @@ def get_category_score_history(category: str, days: int):
     finally:
         conn.close()
 
+def get_last_category_score(category: str) -> tuple[date, float] | None:
+    """Newest stored ``(date, score)`` for one category, or None.
+
+    None means no database is configured, the category has no rows, or the read failed.
+    """
+    conn = get_connection()
+    if not conn:
+        return None
+
+    db_type = get_db_type()
+    try:
+        cursor = conn.cursor()
+        if db_type == "postgres":
+            cursor.execute("""
+                SELECT date, score FROM daily_category_scores
+                WHERE category = %s
+                ORDER BY date DESC
+                LIMIT 1
+            """, (category,))
+        elif db_type == "sqlite":
+            cursor.execute("""
+                SELECT date, score FROM daily_category_scores
+                WHERE category = ?
+                ORDER BY date DESC
+                LIMIT 1
+            """, (category,))
+        else:
+            return None
+
+        row = cursor.fetchone()
+        if not row:
+            return None
+        day = row[0]
+        if isinstance(day, datetime):
+            day = day.date()
+        elif not isinstance(day, date):
+            day = date.fromisoformat(str(day)[:10])
+        return day, float(row[1])
+    except Exception as e:
+        logger.error(f"Failed to fetch last category score for {category}: {e}")
+        return None
+    finally:
+        conn.close()
+
+
 def get_previous_daily_score() -> float | None:
     """Fetch the most recent daily score strictly prior to today.
 
