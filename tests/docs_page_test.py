@@ -133,3 +133,13 @@ def test_docs_drops_gatun_and_panama_canal_authority(body):
     assert "PortWatch transits in Chokepoints" in text
     assert f"{round(config.PHYSICAL_WEIGHTS['hazards'] * 100)}% hazards, " \
            f"{round(config.PHYSICAL_WEIGHTS['mississippi'] * 100)}% Mississippi" in text
+
+
+def test_docs_has_limitations_section(body):
+    assert "<h2>Limitations</h2>" in body
+    text = _text(body)
+    assert text.index("Limitations") < text.index("Data sources and credits")
+    section = text[text.index("Limitations"):text.index("Data sources and credits")]
+    assert "April 2020" in section and "demand collapse" in section
+    assert "about 70" in section and "has not been tuned away" in section
+    assert "\u2014" not in section

@@ -677,4 +677,5 @@ All tunable values live in `config.py`; generated anchors live in `data/score_an
 - `index_history` does not renormalize past days under an exclusion, so the sparkline's previous point can differ from "yesterday" in the readout on degraded days.
 - A failed category's stored-score fallback age is measured from the date the score was stored, not from its data's as-of date.
 - The St. Louis gauge threshold is statistical (10th percentile), not an official navigation stage, and the waterway record lows are not cut at 2025 like the other anchors.
+- Known limitation, disclosed on /docs under "Limitations": the index measures supply-side stress and input costs. In a demand collapse, such as April 2020, oil and metal prices fall, so Energy and Input Costs read as healthy and offset the disruption elsewhere. The backtest reads April 2020 at about 70 (Stable) even though GSCPI (supply chain 30) and freight (51) were stressed. This is a deliberate property of averaging cost and disruption categories, disclosed rather than tuned away.
 - `tests/check_fred_gpr.py` is a stale manual script, not a test.

@@ -877,7 +877,12 @@ flowchart LR
     </div>
 </div>
 
-<div class="section-heading"><span class="section-num">10.</span><h2>Data sources and credits</h2></div>
+<div class="section-heading"><span class="section-num">10.</span><h2>Limitations</h2></div>
+<hr class="section-rule">
+<p>The index measures supply-side stress and input costs. In a demand collapse, such as April 2020, oil and metal prices fall, so the Energy and Input Costs categories read as healthy and offset the disruption elsewhere. The backtest reads April 2020 at about 70 (Stable), even though the NY Fed index (Supply Chain 30) and freight (51) were stressed.</p>
+<p>This is a property of averaging cost categories with disruption categories. It is disclosed here and has not been tuned away.</p>
+
+<div class="section-heading"><span class="section-num">11.</span><h2>Data sources and credits</h2></div>
 <hr class="section-rule">
 
 | Source | Data used |
