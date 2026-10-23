@@ -363,3 +363,80 @@ MAP_RISK_SCALE = [
     [0.0, "#ff4969"], [0.25, "#ff963f"], [0.5, "#f8d84a"],
     [0.75, "#73e589"], [1.0, "#20df9c"],
 ]
+
+
+# ---------------------------------------------------------------------------
+# Score rebuild (methodology v2)
+# ---------------------------------------------------------------------------
+METHODOLOGY_VERSION: int = 2
+
+
+_SCORE_ANCHORS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "data", "score_anchors.json")
+
+
+def _load_score_anchors(path: str = _SCORE_ANCHORS_PATH) -> dict:
+    """Read data/score_anchors.json; a missing or invalid file gives {} (never raises)."""
+    import json
+    try:
+        with open(path, encoding="utf-8") as fh:
+            loaded = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+# Anchored 0-100 mapping per input: 100 = healthiest 5% of pre-2020 history,
+# 80 = pre-2020 median, 0 = worst monthly average on record through 2025.
+SCORE_ANCHORS: dict = _load_score_anchors()
+
+# Per input: (stale_after_days, drop_after_days), counted from the observation's
+# period end. Past stale_after the input is flagged stale; past drop_after it is dropped.
+FRESHNESS: dict[str, tuple[int, int]] = {
+    "gscpi":            (75, 150),
+    "chokepoint_flow":  (14, 42),
+    "brent":            (10, 30),
+    "ulsd":             (10, 30),
+    "ttf":              (10, 30),
+    "copper":           (10, 30),
+    "aluminum":         (10, 30),
+    "ttf_monthly":      (75, 150),
+    "copper_monthly":   (75, 150),
+    "aluminum_monthly": (75, 150),
+    "tariff_burden":    (60, 150),
+    "tpu":              (14, 42),
+    "gpr":              (14, 42),
+    "geo_register":     (3, 9),
+    "tsifrght":         (120, 200),
+    "rail_volume":      (14, 45),
+    "prices_paid":      (60, 150),
+    "hazards":          (3, 9),
+    "gatun":            (3, 9),
+    "mississippi":      (3, 9),
+}
+
+# Days between a period ending and the source publishing it; history is dated by this lag.
+PUBLICATION_LAG_DAYS: dict[str, int] = {
+    "gscpi":           5,
+    "tsifrght":        80,
+    "prices_paid":     0,
+    "imf_monthly":     35,
+    "dts":             1,
+    "bopgimp":         35,
+    "gpr":             7,
+    "tpu":             7,
+    "rail_volume":     5,
+    "chokepoint_flow": 4,
+}
+
+# A category whose oldest used input is older than this is dropped from the composite.
+CATEGORY_DROP_AFTER_DAYS: dict[str, int] = {
+    "supply_chain": 150,
+    "chokepoints":  42,
+    "energy":       30,
+    "tariffs":      150,
+    "geopolitical": 42,
+    "freight":      200,
+    "inputs":       150,
+    "physical":     9,
+}
