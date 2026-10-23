@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest import mock
 
 # Allow running from repo root or tests/ dir
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from data.providers.weather import (
+    WeatherProvider,
     _precip_deduction,
     _score_hub_current,
     _score_hub_daily,
@@ -62,6 +64,45 @@ def test_precip_light_rain():
     """10 mm of rain — moderate, not catastrophic."""
     d = _precip_deduction(10)
     assert 3 < d < 8, f"Expected 3–8 pt deduction, got {d}"
+
+
+def test_weather_precip_uses_daily_total():
+    """30 mm over the day: 25 x 30 / 50 = 15 pts, and the hub score takes the daily total."""
+    assert _precip_deduction(30) == 15.0
+    assert _score_hub_current({"temperature_2m": 20}, precip_mm=30) == 85.0
+
+
+def test_weather_request_asks_for_daily_precipitation_and_gusts():
+    url = WeatherProvider._build_open_meteo_url("29.76,51.92", "-95.37,4.48")
+    assert "daily=precipitation_sum" in url and "forecast_days=1" in url
+    assert "wind_gusts_10m" in url
+    # The 15-minute precipitation and mean wind are not requested.
+    current = url.split("current=")[1].split("&")[0].split(",")
+    assert "precipitation" not in current and "wind_speed_10m" not in current
+
+
+def test_weather_wind_deduction_uses_gusts():
+    gusty = _score_hub_current({"wind_gusts_10m": 80, "temperature_2m": 20})
+    calm = _score_hub_current({"wind_gusts_10m": 5, "temperature_2m": 20})
+    assert (calm, gusty) == (100.0, 70.0)
+    # The mean wind field is no longer read.
+    assert _score_hub_current({"wind_speed_10m": 80, "temperature_2m": 20}) == 100.0
+
+
+def test_weather_batch_scores_from_daily_precip_and_gusts():
+    provider = WeatherProvider()
+    location = {
+        "current": {"weather_code": 0, "wind_gusts_10m": 45.0, "temperature_2m": 20.0},
+        "daily": {"time": ["2026-10-22"], "precipitation_sum": [30.0]},
+    }
+    with mock.patch("data.providers.weather.get_cached", return_value=None), \
+         mock.patch("data.providers.weather.set_cached") as save, \
+         mock.patch.object(provider, "_fetch_chunk", return_value=[location]):
+        batch = provider.fetch_batch_port_weather([("Houston", 29.76, -95.37)])
+    expected = 100.0 - _wind_deduction(45.0) - 15.0
+    assert batch["Houston"]["score"] == round(expected, 1)
+    assert batch["Houston"]["precip"] == 30.0 and batch["Houston"]["wind"] == 45.0
+    assert save.call_args.args[0] == "weather_batch_ports_v3"
 
 
 def test_precip_flood():
@@ -133,22 +174,20 @@ def test_perfect_day():
     """Clear, calm, comfortable — should score 100."""
     current = {
         "weather_code": 0,
-        "wind_speed_10m": 5,
+        "wind_gusts_10m": 5,
         "temperature_2m": 22,
-        "precipitation": 0,
     }
-    assert _score_hub_current(current) == 100.0
+    assert _score_hub_current(current, precip_mm=0) == 100.0
 
 
 def test_moderate_bad_weather():
     """Moderate wind + light rain + slightly cold + overcast → ~77 (Stable)."""
     current = {
         "weather_code": 3,     # overcast (-2)
-        "wind_speed_10m": 30,  # moderate wind (-8.6)
+        "wind_gusts_10m": 30,  # moderate gusts (-8.6)
         "temperature_2m": 5,   # slightly cold (-3.75)
-        "precipitation": 5,    # light rain (-2.5)
     }
-    score = _score_hub_current(current)
+    score = _score_hub_current(current, precip_mm=5)  # light rain (-2.5)
     assert 70 < score < 90, f"Moderate bad weather should be Stable, got {score}"
 
 
@@ -156,11 +195,10 @@ def test_severe_storm():
     """Thunderstorm + strong wind + heavy rain + freezing → Critical."""
     current = {
         "weather_code": 95,    # thunderstorm (-30)
-        "wind_speed_10m": 70,  # storm (-25.7)
+        "wind_gusts_10m": 70,  # storm (-25.7)
         "temperature_2m": -5,  # freezing (-11.25)
-        "precipitation": 40,   # heavy (-20)
     }
-    score = _score_hub_current(current)
+    score = _score_hub_current(current, precip_mm=40)  # heavy (-20)
     assert score < 20, f"Severe storm should be Critical, got {score}"
 
 

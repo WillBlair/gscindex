@@ -135,6 +135,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "tariffs":             "Trade & Tariffs",
     "geopolitical":        "Geopolitical Risk",
     "inputs":              "Input Costs",
+    "physical":            "Physical Disruption",
     # Semiconductor-specific categories (industry profile mode)
     "chip_fab_util":       "Fab Utilization",
     "chip_memory_prices":  "Memory Prices",
@@ -279,6 +280,7 @@ CATEGORY_COLORS: dict[str, str] = {
     "tariffs":             "#fb7185",
     "geopolitical":        "#22d3ee",
     "inputs":              "#fb923c",
+    "physical":            "#a3e635",
     "chip_fab_util":       "#5f8f9c",
     "chip_memory_prices":  "#7d7394",
     "chip_lead_times":     "#5a8f86",
@@ -492,3 +494,41 @@ REGISTER_MAX_OPEN_EVENTS = 25    # open events kept per run, highest severity fi
 REGISTER_MAX_EVIDENCE = 5        # evidence URLs kept per event
 REGISTER_SEVERITY_MAX = 10.0     # severity is clamped to 0..this
 REGISTER_SCORE_FACTOR = 0.3      # points per unit of severity x trade share %
+
+# Physical Disruption: natural hazards near ports (GDACS Orange and Red alerts, weighted by
+# port throughput share), the Panama Canal's Gatun Lake level and the Mississippi River stage
+# at St. Louis. Keys are the canonical input keys; weights are renormalized over what is available.
+# The Kaub (Rhine) gauge is stored for later study and never scored.
+PHYSICAL_WEIGHTS: dict[str, float] = {"hazards": 0.5, "gatun": 0.25, "mississippi": 0.25}
+
+# GDACS hazard penalty = HAZARD_SCALE x sum over affected ports of (port throughput share x
+# level points). Calibrated so one Red event over a port holding a 5% share costs 50 points
+# (1000 x 0.05 x 1.0). TODO(Task 12): check against the real SCORE_ANCHORS["port_throughput_share"]
+# values and adjust HAZARD_SCALE so a Red event over a top-10 port reads about 50.
+HAZARD_SCALE: float = 1000.0
+HAZARD_LEVEL_POINTS: dict[str, float] = {"Orange": 0.5, "Red": 1.0}
+# A port is affected by an event whose centre lies within this many km. Rough footprints of
+# a damaging event of each GDACS type (ours, not GDACS's): tropical cyclone wind field 300 km,
+# flood 100 km, earthquake 150 km, volcano 50 km.
+HAZARD_RADIUS_KM: dict[str, float] = {"TC": 300.0, "FL": 100.0, "EQ": 150.0, "VO": 50.0}
+# Days of GDACS events fetched for the current reading; an event still active today may have
+# started weeks ago (a tropical cyclone lasts up to about two weeks).
+HAZARD_LOOKBACK_DAYS = 90
+# Days of St. Louis gauge height requested for the current reading (the latest daily value
+# is used; the extra days cover a gap in the series).
+PHYSICAL_GAUGE_LOOKBACK_DAYS = 30
+
+# Gatun Lake: the Neopanamax locks allow the full 50 ft draft only at or above this lake level
+# (Panama Canal Authority vessel requirements, as reported by FreightWaves:
+# https://www.freightwaves.com/news/panama-canal-ups-maximum-authorized-draft-for-neopanamax-locks).
+# Score is 100 at or above it and 0 at the record low, SCORE_ANCHORS["waterways"]["gatun_record_low"].
+GATUN_FULL_DRAFT_FT: float = 85.0
+# Mississippi at St. Louis: no single published stage was found that the Coast Guard or the Corps
+# ties to draft or tow limits (the Corps has said it can hold a 9 ft channel down to about -5 ft,
+# while the Coast Guard decides restrictions from observed conditions, not the gauge reading), so
+# the low-water threshold is the gauge's own 10th-percentile stage,
+# SCORE_ANCHORS["waterways"]["mississippi_threshold"], and 0 is its record low,
+# SCORE_ANCHORS["waterways"]["mississippi_record_low"] (both computed in Task 12).
+# Sanity bounds on source values; a unit or datum change falls outside and counts as missing.
+GATUN_PLAUSIBLE_FT: tuple[float, float] = (50.0, 100.0)
+MISSISSIPPI_STL_PLAUSIBLE_FT: tuple[float, float] = (-15.0, 50.0)

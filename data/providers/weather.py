@@ -21,8 +21,8 @@ The deductions are CONTINUOUS (not just thresholds), making the score
 vary meaningfully from day to day.
 
 Deduction budget (max total = 100, matching the 0–100 scale):
-    Wind:        0 at <10 km/h, up to -30 at ≥80 km/h (linear ramp)
-    Precip:      0 at 0 mm, up to -25 at ≥50 mm (linear ramp)
+    Wind:        0 at <10 km/h, up to -30 at ≥80 km/h (linear ramp), on the 10 m GUST speed
+    Precip:      0 at 0 mm, up to -25 at ≥50 mm (linear ramp), on the DAILY total in mm
     Temp:        0 in 10–30°C, up to -15 at extremes
     WMO code:    0 for clear, up to -30 for thunderstorm/hail
 """
@@ -53,7 +53,7 @@ _HISTORICAL_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 
 def _wind_deduction(speed_kmh: float) -> float:
-    """Continuous wind penalty. Port cranes stop at ~60 km/h.
+    """Continuous wind penalty on the gust speed. Port cranes stop at ~60 km/h.
 
     0 km/h  →  0 pts
     10      →  0 pts  (calm)
@@ -69,7 +69,8 @@ def _wind_deduction(speed_kmh: float) -> float:
 
 
 def _precip_deduction(mm: float) -> float:
-    """Continuous precipitation penalty. Even light rain slows port ops.
+    """Continuous precipitation penalty on the DAILY total in mm (never the 15-minute
+    ``current.precipitation``, which reads as a tiny fraction of a day's rain).
 
     0 mm  →  0 pts
     2 mm  →  1 pts  (light drizzle, minor impact)
@@ -126,15 +127,16 @@ def _wmo_deduction(code: int) -> float:
     return 0.0        # clear
 
 
-def _score_hub_current(current: dict) -> float:
-    """Score a hub from its current weather conditions (0–100)."""
+def _score_hub_current(current: dict, precip_mm: float | None = 0.0) -> float:
+    """Score a hub from its current conditions (0–100): the current weather code, gusts and
+    temperature, and today's total precipitation ``precip_mm`` (daily mm)."""
     score = 100.0
 
     wmo_code = current.get("weather_code", 0) or 0
-    wind = current.get("wind_speed_10m", 0) or 0
+    wind = current.get("wind_gusts_10m", 0) or 0
     temp = current.get("temperature_2m")
     temp = 20.0 if temp is None else temp  # 0°C is a real reading, not missing
-    precip = current.get("precipitation", 0) or 0
+    precip = precip_mm or 0
 
     score -= _wmo_deduction(wmo_code)
     score -= _wind_deduction(wind)
@@ -201,7 +203,8 @@ class WeatherProvider(BaseProvider):
             f"{_CURRENT_URL}"
             f"?latitude={lats}"
             f"&longitude={lons}"
-            f"&current=weather_code,wind_speed_10m,temperature_2m,precipitation"
+            f"&current=weather_code,wind_gusts_10m,temperature_2m"
+            f"&daily=precipitation_sum&forecast_days=1"
             f"&timezone=auto"
         )
 
@@ -250,7 +253,7 @@ class WeatherProvider(BaseProvider):
             Mapping of port name → ``{"score", "summary", "temp", "wind",
             "precip", "wmo_code"}``.  Cached for 4 hours.
         """
-        cache_key = "weather_batch_ports_v2"
+        cache_key = "weather_batch_ports_v3"   # v3: daily precipitation total and gusts
         cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             return cached
@@ -306,11 +309,12 @@ class WeatherProvider(BaseProvider):
                 continue
 
             current = all_results[i].get("current", {})
-            score = _score_hub_current(current)
+            daily_precip = (all_results[i].get("daily", {}).get("precipitation_sum") or [0])[0]
+            score = _score_hub_current(current, daily_precip)
 
             wmo = current.get("weather_code", 0) or 0
-            wind = current.get("wind_speed_10m", 0) or 0
-            precip = current.get("precipitation", 0) or 0
+            wind = current.get("wind_gusts_10m", 0) or 0
+            precip = daily_precip or 0
             temp = current.get("temperature_2m")
             temp = 20.0 if temp is None else temp
 
@@ -318,9 +322,9 @@ class WeatherProvider(BaseProvider):
             wmo_desc = _WMO_DESCRIPTIONS.get(wmo, f"Code {wmo}")
             parts: list[str] = [f"{temp:.0f}°C", wmo_desc]
             if wind > 10:
-                parts.append(f"Wind {wind:.0f} km/h")
+                parts.append(f"Gusts {wind:.0f} km/h")
             if precip > 0:
-                parts.append(f"Precip {precip:.1f} mm")
+                parts.append(f"Precip {precip:.1f} mm/day")
 
             result[name] = {
                 "score": score,
@@ -345,7 +349,7 @@ class WeatherProvider(BaseProvider):
         Uses the batched ``fetch_batch_port_weather()`` call under the
         hood — one HTTP request for all ports, not N serial calls.
         """
-        cache_key = "weather_hubs_detailed"
+        cache_key = "weather_hubs_detailed_v2"
         cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             return cached
@@ -369,9 +373,9 @@ class WeatherProvider(BaseProvider):
             if _wmo_deduction(wmo) > 0:
                 reasons.append(wmo_desc)
             if _wind_deduction(wind) > 0:
-                reasons.append(f"Wind {wind:.0f} km/h")
+                reasons.append(f"Gusts {wind:.0f} km/h")
             if _precip_deduction(precip) > 0:
-                reasons.append(f"Precip {precip:.1f} mm")
+                reasons.append(f"Precip {precip:.1f} mm/day")
             if temp is not None and _temp_deduction(temp) > 0:
                 reasons.append(f"Temp {temp:.1f}°C")
 
@@ -394,7 +398,7 @@ class WeatherProvider(BaseProvider):
         Uses the batched ``fetch_batch_port_weather()`` call — one HTTP
         request instead of N serial calls.
         """
-        cache_key = "weather_current_v3"  # Bumped after deduction rebalance
+        cache_key = "weather_current_v4"  # v4: daily precipitation total and gusts
         cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             if "metadata" in cached:
@@ -436,7 +440,7 @@ class WeatherProvider(BaseProvider):
 
     def fetch_history(self, days: int) -> pd.Series:
         """Fetch historical weather from Open-Meteo, averaged across all hubs."""
-        cache_key = f"weather_history_{days}"
+        cache_key = f"weather_history_v2_{days}"   # v2: daily gusts
         cached = get_cached(cache_key, ttl=14400)  # 4-hour cache
         if cached is not None:
             s = pd.Series(cached["values"], name="weather")
@@ -453,7 +457,7 @@ class WeatherProvider(BaseProvider):
                     f"{_HISTORICAL_URL}"
                     f"?latitude={lat}&longitude={lon}"
                     f"&start_date={start_date}&end_date={end_date}"
-                    f"&daily=weather_code,wind_speed_10m_max,precipitation_sum,"
+                    f"&daily=weather_code,wind_gusts_10m_max,precipitation_sum,"
                     f"temperature_2m_max,temperature_2m_min"
                     f"&timezone=auto"
                 )
@@ -462,7 +466,7 @@ class WeatherProvider(BaseProvider):
                 daily = resp.json().get("daily", {})
                 dates = daily.get("time", [])
                 codes = daily.get("weather_code", [])
-                winds = daily.get("wind_speed_10m_max", [])
+                winds = daily.get("wind_gusts_10m_max", [])
                 precips = daily.get("precipitation_sum", [])
                 t_maxes = daily.get("temperature_2m_max", [])
                 t_mins = daily.get("temperature_2m_min", [])

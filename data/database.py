@@ -9,6 +9,7 @@ Tables:
     daily_category_scores — one score per category per calendar day
                             (the real measurement history behind trend charts)
     disruption_events     — the Claude disruption register (data/register.py)
+    gauge_readings        — daily river gauge values stored for later study (Kaub, never scored)
 """
 
 import os
@@ -151,6 +152,14 @@ def init_db():
                         rationale TEXT
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS gauge_readings (
+                        date DATE NOT NULL,
+                        gauge VARCHAR(64) NOT NULL,
+                        value REAL NOT NULL,
+                        PRIMARY KEY (date, gauge)
+                    )
+                """)
                 cursor.execute(
                     "ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS unsubscribed_at "
                     "TIMESTAMP WITH TIME ZONE"
@@ -207,6 +216,14 @@ def init_db():
                         closed DATE NULL,
                         evidence TEXT,
                         rationale TEXT
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS gauge_readings (
+                        date DATE NOT NULL,
+                        gauge TEXT NOT NULL,
+                        value REAL NOT NULL,
+                        PRIMARY KEY (date, gauge)
                     )
                 """)
                 columns = {row[1] for row in cursor.execute("PRAGMA table_info(subscribers)")}
@@ -751,6 +768,29 @@ def upsert_disruption_events(events: list[dict]) -> None:
                 ))
     except Exception as e:
         logger.error("Failed to upsert disruption events: %s", e)
+        raise
+    finally:
+        conn.close()
+
+
+def upsert_gauge_reading(day, gauge: str, value: float) -> None:
+    """Insert or replace one daily gauge reading, keyed by (date, gauge).
+
+    No-op when no database is configured; a failed write raises.
+    """
+    conn = get_connection()
+    if not conn:
+        return
+    ph = "%s" if get_db_type() == "postgres" else "?"
+    sql = (
+        f"INSERT INTO gauge_readings (date, gauge, value) VALUES ({ph}, {ph}, {ph}) "
+        "ON CONFLICT (date, gauge) DO UPDATE SET value = EXCLUDED.value"
+    )
+    try:
+        with conn:
+            conn.cursor().execute(sql, (_iso_day(day), gauge, float(value)))
+    except Exception as e:
+        logger.error("Failed to upsert gauge reading: %s", e)
         raise
     finally:
         conn.close()
