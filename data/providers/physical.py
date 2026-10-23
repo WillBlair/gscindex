@@ -48,6 +48,8 @@ _SOURCES = {
     _GATUN: "Panama Canal Authority Gatun Lake level",
     _MISSISSIPPI: "USGS 07010000 Mississippi River at St. Louis",
 }
+_RAW_LABELS = {_HAZARDS: "Active hazard alerts", _GATUN: "Gatun Lake level (ft)",
+               _MISSISSIPPI: "St. Louis stage (ft)"}
 _WATERWAY_KEYS = ("gatun_record_low", "mississippi_record_low", "mississippi_threshold")
 
 
@@ -178,7 +180,7 @@ class PhysicalProvider(BaseProvider):
         metadata = {
             "source": "; ".join(r.source for r in readings),
             "raw_value": " / ".join(r.raw_value for r in used),
-            "raw_label": "Active hazard alerts; Gatun Lake level (ft); St. Louis stage (ft)",
+            "raw_label": "; ".join(_RAW_LABELS[r.name] for r in used),
             "description": " ".join(sentences),
             "calculation": (
                 "Hazards: 100 minus 1000 x the sum, over affected ports, of throughput share x level "

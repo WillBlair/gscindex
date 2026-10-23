@@ -128,7 +128,10 @@ def _fetch_chunk(first: date, last: date, today: date) -> list[dict]:
         payload = resp.json()
     except ValueError:
         if short and not (resp.text or "").strip():
-            return []              # GDACS answers a window without events with an empty body
+            # GDACS answers a window without events with an empty body. Cache that like any
+            # other result, so a quiet spell does not re-hit a slow API every cycle.
+            set_cached(key, [])
+            return []
         raise ValueError("GDACS response is not JSON") from None
     events = parse_events(payload, allow_empty=short)
     set_cached(key, events)
@@ -146,7 +149,11 @@ def fetch_events(start: date, end: date, today: date | None = None) -> list[dict
     seen: dict = {}
     for first, last in _half_years(start, min(end, today)):
         for event in _fetch_chunk(first, last, today):
-            seen.setdefault(event["id"] if event.get("id") is not None else id(event), event)
+            key = event["id"] if event.get("id") is not None else id(event)
+            # An event spanning a chunk boundary appears in both; the older chunk's copy may be
+            # cached with an outdated end date, so keep the record that ends later.
+            if key not in seen or event["to"] > seen[key]["to"]:
+                seen[key] = event
     return [e for e in seen.values() if e["to"] >= start.isoformat() and e["from"] <= end.isoformat()]
 
 

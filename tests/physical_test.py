@@ -217,6 +217,21 @@ def test_gdacs_uses_cached_chunk_without_a_request():
     assert events == cached
 
 
+def test_gdacs_boundary_event_keeps_the_record_that_ends_later(no_cache):
+    old = _feature("FL", "Red", eid=88, start="2026-06-20T00:00:00", end="2026-06-30T00:00:00")
+    new = _feature("FL", "Red", eid=88, start="2026-06-20T00:00:00", end="2026-07-08T00:00:00")
+    answers = iter([_resp(_collection(old)), _resp(_collection(new))])
+    with mock.patch.object(gdacs.requests, "get", side_effect=lambda *a, **k: next(answers)):
+        events = gdacs.fetch_events(date(2026, 6, 15), date(2026, 7, 10), today=TODAY)
+    assert [e["to"] for e in events] == ["2026-07-08"]
+    assert gdacs.active_on(events, date(2026, 7, 5)) == events
+    # Same result when the chunks are merged in the opposite order of freshness.
+    answers = iter([_resp(_collection(new)), _resp(_collection(old))])
+    with mock.patch.object(gdacs.requests, "get", side_effect=lambda *a, **k: next(answers)):
+        events = gdacs.fetch_events(date(2026, 6, 15), date(2026, 7, 10), today=TODAY)
+    assert [e["to"] for e in events] == ["2026-07-08"]
+
+
 def test_gdacs_empty_long_chunk_raises_and_is_not_cached(no_cache):
     with mock.patch.object(gdacs.requests, "get", return_value=_resp(_collection())):
         with pytest.raises(ValueError):
@@ -231,6 +246,20 @@ def test_gdacs_blank_body_for_a_short_chunk_is_no_events(no_cache):
     with mock.patch.object(gdacs.requests, "get", return_value=resp):
         # Two days into a half-year the aligned chunk is short, so no events is believable.
         assert gdacs.fetch_events(date(2026, 7, 1), date(2026, 7, 2), today=date(2026, 7, 2)) == []
+
+
+def test_gdacs_blank_body_result_is_cached(no_cache):
+    resp = _resp(None, text="")
+    resp.json.side_effect = ValueError("no json")
+    today = date(2026, 7, 2)
+    with mock.patch.object(gdacs.requests, "get", return_value=resp):
+        gdacs.fetch_events(date(2026, 7, 1), date(2026, 7, 2), today=today)
+    assert no_cache.call_args.args == ("gdacs_events_v1_2026H2", [])
+    # The cached empty list is served without another request.
+    with mock.patch.object(gdacs, "get_cached", return_value=[]), \
+         mock.patch.object(gdacs.requests, "get") as get:
+        assert gdacs.fetch_events(date(2026, 7, 1), date(2026, 7, 2), today=today) == []
+    get.assert_not_called()
 
 
 def test_gdacs_http_error_raises(no_cache):
@@ -325,6 +354,12 @@ def test_kaub_parse():
     payload = {"shortname": "W", "unit": "cm",
                "currentMeasurement": {"timestamp": "2026-10-23T04:00:00+02:00", "value": 27.0}}
     assert waterways.parse_kaub(payload) == (date(2026, 10, 23), 27.0)
+
+
+def test_kaub_missing_unit_raises():
+    with pytest.raises(ValueError):
+        waterways.parse_kaub({"currentMeasurement": {"timestamp": "2026-10-23T04:00:00+02:00",
+                                                     "value": 27.0}})
 
 
 @pytest.mark.parametrize("payload", [
@@ -541,6 +576,18 @@ def test_physical_metadata_contract(anchors):
         assert key in meta
     assert "GDACS" in meta["source"] and "Gatun" in meta["source"]
     assert "St. Louis" in meta["source"]
+
+
+def test_physical_raw_label_matches_the_inputs_used(anchors):
+    _, meta = _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")])
+    assert meta["raw_label"] == "Active hazard alerts"
+    assert len(meta["raw_value"].split(" / ")) == len(meta["raw_label"].split("; ")) == 1
+    _, meta = _run(PhysicalProvider().fetch_current, gatun=_gatun_series(86.0), river=_river_series(9.0))
+    assert meta["raw_label"] == "Gatun Lake level (ft); St. Louis stage (ft)"
+    assert len(meta["raw_value"].split(" / ")) == 2
+    _, meta = _run(PhysicalProvider().fetch_current, events=[_event(lat=0, lon=-30)],
+                   gatun=_gatun_series(86.0), river=_river_series(9.0))
+    assert meta["raw_label"] == "Active hazard alerts; Gatun Lake level (ft); St. Louis stage (ft)"
 
 
 def test_physical_upserts_kaub_each_cycle_and_never_scores_it(anchors):

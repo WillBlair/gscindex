@@ -173,7 +173,7 @@ def parse_kaub(payload) -> tuple[date, float]:
     measurement is absent, not numeric, or the unit is not centimetres."""
     if not isinstance(payload, dict):
         raise ValueError("PEGELONLINE payload is not an object")
-    if payload.get("unit", "cm") != "cm":
+    if payload.get("unit") != "cm":
         raise ValueError(f"PEGELONLINE unit is {payload.get('unit')!r}, expected cm")
     current = payload.get("currentMeasurement")
     if not isinstance(current, dict):
