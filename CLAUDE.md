@@ -360,6 +360,7 @@ return max(0.0, min(100.0, score))
 - `semis_memory_prices`: YoY % of the BOJ CGPI import price index, MOS memory ICs, contract-currency basis (`PRCG20_2500850005`, monthly from 2000). Baseline 2001–2019; zero = +57.4% (2025-12), the plain v2 rule with no override, so the category reads 0 whenever YoY is above that (it is +316% in the Sep 2026 data). Disclosed on /docs.
 - `semis_logic_prices`: same for MOS logic ICs (`PRCG20_2500850004`).
 - `semis_fab_utilization`: Fed G.17 capacity utilization, NAICS 3344 (FRED `CAPUTLG3344S`, from 1972), level %. Lower is better (spare capacity); weak-demand slack is not separated out.
+- An unmeasurable latest month (non-finite level, or a year-earlier base that is missing or not positive) is skipped: the category reads the newest measurable month, dated by that month's end, and freshness ages it from there (stale, then `InputsExpired`). Aero differs: an unmeasurable latest month makes that Aero input missing.
 - The two BOJ categories set `credits_boj`; `semis.BOJ_CATEGORIES` lists them. Their description (also when the aggregator serves a stored fallback, `_stored_fallback_metadata`), CSV rows and the API `sectors.semiconductor.terms` carry `config.BOJ_CREDIT`. Fab utilization is Federal Reserve data and does not.
 
 **Aero** (`data/providers/aero.py`, equal-weight mean of the inputs present, all FRED, US government data):

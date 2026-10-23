@@ -257,6 +257,27 @@ def test_zero_or_missing_base_counts_as_missing(anchors):
         _with_boj(semis.MemoryPricesProvider().fetch_current, levels)
 
 
+@pytest.mark.parametrize("break_latest", ["nan_level", "zero_base"])
+def test_unmeasurable_latest_month_uses_newest_measurable_month_with_its_own_date(anchors, monkeypatch, break_latest):
+    """Semis keeps honest dating: when the latest month cannot be measured (non-finite level or a
+    year-earlier base that is not positive), the newest measurable month is used and as_of is
+    that month's end, so freshness ages it as the older reading it is. (Aero instead counts an
+    unmeasurable latest month as missing.)"""
+    levels = _levels(yoy_pct=31.3)                      # 2024-04 .. 2026-09
+    if break_latest == "nan_level":
+        levels.iloc[-1] = float("nan")                  # Sep 2026 level not finite
+    else:
+        levels[pd.Timestamp("2025-09-01")] = 0.0        # Sep 2026's year-earlier base is zero
+    score, meta = _with_boj(semis.MemoryPricesProvider().fetch_current, levels)
+    assert meta["as_of"] == "2026-08-31"
+    assert "Aug 2026" in meta["raw_value"] and meta["inputs"][0]["status"] == "live"
+    assert score == pytest.approx(30.2, abs=0.05)
+
+    monkeypatch.setattr(semis, "_today", lambda: date(2026, 11, 20))   # 81 days after 2026-08-31
+    _, meta = _with_boj(semis.MemoryPricesProvider().fetch_current, levels)
+    assert meta["is_stale"] is True and meta["as_of"] == "2026-08-31"
+
+
 def test_month_in_progress_is_as_of_today(anchors):
     _, meta = _with_boj(semis.MemoryPricesProvider().fetch_current, _levels(end="2026-10-01", yoy_pct=5))
     assert meta["as_of"] == TODAY.isoformat()

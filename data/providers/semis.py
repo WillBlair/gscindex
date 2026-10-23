@@ -14,9 +14,13 @@ Every input is mapped through ``get_anchor(<input key>)`` (healthiest 5% of pre-
 pre-2020 median = 80, worst month through 2025 = 0). All three are cost or tightness gauges:
 lower price growth and lower utilization read as healthier. A missing anchor is a RuntimeError.
 
-An input that cannot be fetched or parsed, has no finite value, or whose year-earlier base is
-not positive counts as missing and the category raises; a neutral constant is never returned.
-When the only reading is past its drop window the provider raises ``InputsExpired``.
+A month whose level is not finite, or whose year-earlier base is missing or not positive, has no
+value and is skipped. The reading is the newest month that does have one, dated by that month's
+own end (``as_of``), so freshness (``config.FRESHNESS``) ages it as the older reading it is:
+stale first, then ``InputsExpired`` once it is past its drop window. (Aero differs: there an
+unmeasurable latest month makes that input missing for now.) An input that cannot be fetched or
+parsed, or has no measurable month at all, counts as missing and the category raises; a neutral
+constant is never returned.
 
 History dates each month by its period end plus the source's publication lag
 (``PUBLICATION_LAG_DAYS``) and carries it forward until it is older than its drop window.
