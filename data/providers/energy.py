@@ -37,7 +37,7 @@ import pandas as pd
 
 import config
 from data.providers.base import BaseProvider
-from data.providers.fred_client import fetch_fred_full
+from data.providers.fred_client import fetch_fred_series
 from data.providers.readings import (
     InputReading, blend_inputs, freshness_status, inputs_metadata, oldest_as_of, period_end)
 from data.sources import markets
@@ -45,7 +45,6 @@ from scoring.anchors import get_anchor, score_raw
 
 logger = logging.getLogger(__name__)
 
-_FRED_CACHE_TTL = 3600
 _CPI_SERIES = "CPIAUCSL"
 _LEGS = {
     # leg: (label, FRED series, live symbol, unit label)
@@ -64,7 +63,7 @@ def _today() -> date:
 
 
 def _fred(series_id: str) -> pd.Series:
-    return fetch_fred_full(series_id, cache_ttl=_FRED_CACHE_TTL)
+    return fetch_fred_series(series_id, lookback_days=config.ENERGY_FRED_LOOKBACK_DAYS)
 
 
 def spike_penalty(change_3m: float) -> float:
@@ -154,12 +153,18 @@ class EnergyProvider(BaseProvider):
 
     def _reading(self, name: str, value: float, as_of: date, mode: str, symbol: str,
                  series_id: str, anchor: dict, ratio_now: float, history: pd.Series,
-                 ratios: pd.Series, today: date, official_date: date | None = None) -> tuple[InputReading, float | None, float]:
-        """Score one price. Returns (reading, price, spike penalty in points)."""
+                 ratios: pd.Series, today: date, official_date: date | None = None,
+                 ref_day: date | None = None) -> tuple[InputReading, float | None, float]:
+        """Score one price. Returns (reading, price, spike penalty in points).
+
+        The spike compares against the official price on/before ``ref_day`` (default 91 days
+        before ``as_of``).
+        """
         label = _LEG_LABELS[name]
         score = score_raw(value, anchor, ratio_now)
-        change = _real_change(value, ratio_now, history, ratios,
-                              as_of - timedelta(days=config.ENERGY_SPIKE_LOOKBACK_DAYS))
+        if ref_day is None:
+            ref_day = as_of - timedelta(days=config.ENERGY_SPIKE_LOOKBACK_DAYS)
+        change = _real_change(value, ratio_now, history, ratios, ref_day)
         penalty = spike_penalty(change)
         if mode == "live" and name == "ttf":
             source = f"{label} ({symbol}: live, converted to $/MMBtu; {series_id} monthly average is the fallback)"
@@ -204,9 +209,12 @@ class EnergyProvider(BaseProvider):
             logger.warning("Energy live TTF skipped, using the monthly value: %s", exc)
         if monthly_value is None:
             return _missing("ttf_monthly", f"TTF: FRED {_TTF_SERIES} unavailable"), None, 0.0
-        as_of = period_end(monthly.index[-1].date(), "M")
-        return self._reading("ttf_monthly", monthly_value, as_of, "official", "monthly average",
-                             _TTF_SERIES, anchors["ttf_monthly"], ratio_now, monthly, ratios, today)
+        obs = monthly.index[-1].date()
+        # Same comparison as fetch_history: this month's average against the one three months back.
+        ref_day = (pd.Timestamp(obs) - pd.DateOffset(months=3)).date()
+        return self._reading("ttf_monthly", monthly_value, period_end(obs, "M"), "official", "monthly average",
+                             _TTF_SERIES, anchors["ttf_monthly"], ratio_now, monthly, ratios, today,
+                             ref_day=ref_day)
 
     def _context(self, prices: dict[str, float]) -> str:
         """WTI, Brent-WTI spread and ULSD crack lines; never raises."""

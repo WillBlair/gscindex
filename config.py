@@ -462,3 +462,7 @@ ENERGY_SPIKE_LOOKBACK_DAYS = 91
 # Live TTF: EUR/MWh x EURUSD / this = USD/MMBtu. The quote must be at most this many days old.
 MWH_PER_MMBTU = 3.412
 TTF_LIVE_MAX_AGE_DAYS = 5
+
+# Runtime FRED window for the energy legs and CPI: enough for the current value, the 91-day
+# reference, the CPI deflator and the history tail, never the full history.
+ENERGY_FRED_LOOKBACK_DAYS = 3 * 365

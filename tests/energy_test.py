@@ -267,3 +267,57 @@ def test_history_all_missing_raises(monkeypatch):
     Env(monkeypatch, brent=err, ulsd=err, ttf=err)
     with pytest.raises(RuntimeError):
         EnergyProvider().fetch_history(90)
+
+
+def _monthly_with(**by_month):
+    """Monthly TTF of 10.0 with overrides keyed 'YYYY_MM'."""
+    series = _monthly(10.0)
+    for key, value in by_month.items():
+        series[pd.Timestamp(key.replace("_", "-") + "-01")] = value
+    return series
+
+
+def test_ttf_monthly_spike_compares_with_three_months_earlier(monkeypatch):
+    # Sep 7.6 against Jun 5.0 is +52% (Jul/Aug are 7.0, so a two-month reference would see +9%).
+    ttf = _monthly_with(**{"2026_06": 5.0, "2026_07": 7.0, "2026_08": 7.0, "2026_09": 7.6})
+    Env(monkeypatch, ttf=ttf)
+    score, meta = EnergyProvider().fetch_current()
+    assert meta["inputs"][2]["name"] == "ttf_monthly"
+    penalty = spike_penalty(7.6 / 5.0 - 1)
+    assert penalty == pytest.approx(7.742, abs=0.01)
+    blend = 0.35 * BRENT_S(80.0) + 0.40 * ULSD_S(2.5) + 0.25 * TTF_S(7.6)
+    assert score == pytest.approx(blend - 0.25 * penalty, abs=0.1)
+
+
+def test_ttf_monthly_spike_matches_history_dating(monkeypatch):
+    # Once September is published (2026-11-04), the history's last point applies the same
+    # Sep-vs-Jun comparison as the current value.
+    ttf = _monthly_with(**{"2026_06": 5.0, "2026_07": 7.0, "2026_08": 7.0, "2026_09": 7.6})
+    Env(monkeypatch, ttf=ttf)
+    monkeypatch.setattr(energy, "_today", lambda: date(2026, 11, 10))
+    score, _ = EnergyProvider().fetch_current()
+    hist = EnergyProvider().fetch_history(60)
+    assert hist.iloc[-1] == pytest.approx(score, abs=0.1)
+
+
+def test_live_ttf_spike_uses_official_value_on_or_before_91_days_back(monkeypatch):
+    # Live as_of 2026-10-21, so the reference is the July 2026 average (6.0): +61%.
+    ttf = _monthly_with(**{"2026_06": 3.0, "2026_07": 6.0})
+    quotes = {"TTF=F": (date(2026, 10, 21), 30.0), "EURUSD=X": (TODAY, 1.10)}
+    Env(monkeypatch, ttf=ttf, quotes=quotes)
+    score, meta = EnergyProvider().fetch_current()
+    live = 30.0 * 1.10 / 3.412
+    assert meta["inputs"][2]["name"] == "ttf"
+    penalty = spike_penalty(live / 6.0 - 1)
+    assert penalty == pytest.approx(9.97, abs=0.01)
+    blend = 0.35 * BRENT_S(80.0) + 0.40 * ULSD_S(2.5) + 0.25 * TTF_S(live)
+    assert score == pytest.approx(blend - 0.25 * penalty, abs=0.1)
+
+
+def test_runtime_fred_fetch_is_trimmed_not_full_history(monkeypatch):
+    fetch = mock.Mock(return_value=pd.Series([1.0], index=pd.DatetimeIndex(["2026-10-01"])))
+    monkeypatch.setattr(energy, "fetch_fred_series", fetch)
+    energy._fred("DCOILBRENTEU")
+    fetch.assert_called_once_with("DCOILBRENTEU", lookback_days=config.ENERGY_FRED_LOOKBACK_DAYS)
+    assert config.ENERGY_FRED_LOOKBACK_DAYS <= 4 * 365
+    assert not hasattr(energy, "fetch_fred_full")
