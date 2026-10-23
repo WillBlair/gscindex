@@ -314,3 +314,49 @@ def test_boj_category_on_stored_fallback_keeps_the_boj_credit(harness):
     for cat in ("semis_fab_utilization", "aero_flow"):
         meta = data["category_metadata"][cat]
         assert meta["is_fallback"] is True and config.BOJ_CREDIT not in meta["description"]
+
+
+def test_hung_sector_job_does_not_delay_global_collection(harness, monkeypatch):
+    """Global provider futures are collected first, on the global deadlines alone; a sector job
+    that hangs to its (longer) sector deadline is collected afterwards."""
+    import threading
+    import time
+
+    from data.runtime import RefreshTasks
+
+    run, _ = harness
+    monkeypatch.setattr(config, "PROVIDER_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(config, "PROVIDER_TIMEOUT_OVERRIDES", {})
+    monkeypatch.setattr(config, "SECTOR_PROVIDER_TIMEOUT_SECONDS", 1.5)
+    release = threading.Event()
+    providers = [_Provider(c, block=release if c == "energy" else None) for c in CATEGORY_WEIGHTS] + [
+        _Provider(c, score=s, block=release if c == "aero_flow" else None) for c, s in _SECTOR_SCORES.items()]
+
+    collected = []
+    real_collect = aggregator._collect_provider_results
+
+    def spy(future_to_provider, started):
+        out = real_collect(future_to_provider, started)
+        collected.append(({p.category for p in future_to_provider.values()}, time.monotonic()))
+        return out
+    monkeypatch.setattr(aggregator, "_collect_provider_results", spy)
+
+    tasks, sector_tasks = RefreshTasks(max_workers=3), RefreshTasks(max_workers=2)
+    try:
+        t0 = time.monotonic()
+        data = run(providers, tasks=tasks, sector_tasks=sector_tasks)
+    finally:
+        release.set()
+        tasks.shutdown()
+        sector_tasks.shutdown()
+
+    (first_cats, first_done), (second_cats, second_done) = collected
+    assert first_cats == set(CATEGORY_WEIGHTS) and second_cats == _SECTOR_CATS
+    assert first_done - t0 < 1.0                       # global deadline 0.3 s, not the 1.5 s sector one
+    assert second_done - t0 >= 1.4                     # the hung sector job ran to its own deadline
+    assert data["excluded_categories"] == ["energy"]   # the hung global job timed out at its deadline
+    assert data["provider_errors"]["energy"] == data["provider_errors"]["aero_flow"] == "Provider timed out"
+    expected = sum(CATEGORY_WEIGHTS[c] * _SCORES[c] for c in CATEGORY_WEIGHTS if c != "energy") / (
+        1 - CATEGORY_WEIGHTS["energy"])
+    assert data["composite"] == pytest.approx(expected)
+    assert data["sectors"]["aerospace"]["excluded_categories"] == ["aero_flow"]

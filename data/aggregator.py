@@ -550,10 +550,13 @@ def aggregate_data(status_callback=None) -> dict:
     try:
         # -- Submit Provider Tasks --
         providers_started = time.monotonic()
-        future_to_provider = {
-            (_SECTOR_TASKS if p.category in _SECTOR_OF else executor).submit_once(
-                p.category, _fetch_provider_data, p): p
-            for p in _PROVIDERS
+        global_futures = {
+            executor.submit_once(p.category, _fetch_provider_data, p): p
+            for p in _PROVIDERS if p.category not in _SECTOR_OF
+        }
+        sector_futures = {
+            _SECTOR_TASKS.submit_once(p.category, _fetch_provider_data, p): p
+            for p in _PROVIDERS if p.category in _SECTOR_OF
         }
 
         # -- Submit News/Market/Port Tasks --
@@ -566,30 +569,34 @@ def aggregate_data(status_callback=None) -> dict:
         # -------------------------------------------------------------------
         # 2. Collect Results (each provider until its own deadline)
         # -------------------------------------------------------------------
-        # A. Process Providers
+        def take_provider_results(futures: dict) -> None:
+            results, timed_out = _collect_provider_results(futures, providers_started)
+            failed.update(timed_out)
+            provider_errors.update(timed_out)
+
+            for cat, score, hist_series, meta, err in results:
+                if err:
+                    provider_errors[cat] = err
+                if score is None:
+                    failed[cat] = err or "Provider failed"
+                    if meta.get("inputs_expired"):
+                        expired.add(cat)
+                    continue
+
+                current_scores[cat] = score
+                meta["score"] = round(score, 1)
+                meta["tier"] = get_health_tier(score)
+                category_metadata[cat] = meta
+
+                # Reindex fills gaps by ffill. Dates BEFORE the first real observation stay
+                # NaN; with no history only today's live point is set.
+                category_history[cat] = _align_history_to_dates(hist_series, dates, score)
+
+        # A. Process the global providers, on their own deadlines only. The sector providers
+        # are collected last (A2), so a hung sector job never holds up the global ones.
         if status_callback:
             status_callback("Waiting for data providers...")
-        results, timed_out = _collect_provider_results(future_to_provider, providers_started)
-        failed.update(timed_out)
-        provider_errors.update(timed_out)
-
-        for cat, score, hist_series, meta, err in results:
-            if err:
-                provider_errors[cat] = err
-            if score is None:
-                failed[cat] = err or "Provider failed"
-                if meta.get("inputs_expired"):
-                    expired.add(cat)
-                continue
-
-            current_scores[cat] = score
-            meta["score"] = round(score, 1)
-            meta["tier"] = get_health_tier(score)
-            category_metadata[cat] = meta
-
-            # Reindex fills gaps by ffill. Dates BEFORE the first real observation stay
-            # NaN; with no history only today's live point is set.
-            category_history[cat] = _align_history_to_dates(hist_series, dates, score)
+        take_provider_results(global_futures)
 
         # B. Process News (AI analysis takes 20-40s — old 5s timeout killed it every time).
         # News is display-only; it never reaches a category.
@@ -627,6 +634,10 @@ def aggregate_data(status_callback=None) -> dict:
             port_summaries = future_port_summaries.result(timeout=240) or {}
         except Exception as e:
             logger.warning("Port summaries fetch timed out or failed: %s", e)
+
+        # A2. Sector providers, each until its own deadline (counted from the same cycle start,
+        # so by now most have finished).
+        take_provider_results(sector_futures)
     finally:
         # Do not block forever on a hung upstream call.
         # Running jobs remain tracked and are reused on the next refresh.

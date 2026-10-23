@@ -148,7 +148,8 @@ Background daemon thread (every 5 min)
   → _FETCH_TASKS (3 workers) runs the 8 global providers + news + market + port summaries
     + chokepoint traffic + disruption register
   → _SECTOR_TASKS (2 workers) runs the 7 sector providers, so a hung sector job never holds
-    a worker a global job needs
+    a worker a global job needs. Global provider futures are collected first, on the global
+    deadlines alone; sector futures are collected last, after news and port summaries
   → each provider has its own deadline (45 s; 150 s for freight and physical;
     SECTOR_PROVIDER_TIMEOUT_SECONDS 60 for sector providers)
   → failed/timed-out category: last stored score while younger than CATEGORY_DROP_AFTER_DAYS
@@ -453,7 +454,7 @@ _SECTOR_TASKS = RefreshTasks(max_workers=2)   # the 7 sector providers only, so 
 # The register is collected only if already finished (never delays the composite)
 ```
 
-Freight and physical run last among the global providers in `_PROVIDERS` so the fast providers finish inside their 45 s first; the sector providers follow and run on `_SECTOR_TASKS`. Sector failures take the same stored-fallback / exclusion path as global ones (`_drop_after_days` gives them `SECTOR_DROP_AFTER_DAYS`), but an excluded sector category is never added to the global `excluded_categories`.
+Freight and physical run last among the global providers in `_PROVIDERS` so the fast providers finish inside their 45 s first; the sector providers follow and run on `_SECTOR_TASKS`. The aggregator collects the global provider futures first and the sector futures last (after news, market and port summaries), so a hung sector job never delays the global collection past the global deadlines. Sector failures take the same stored-fallback / exclusion path as global ones (`_drop_after_days` gives them `SECTOR_DROP_AFTER_DAYS`), but an excluded sector category is never added to the global `excluded_categories`.
 
 ### Series Alignment (critical for sparklines)
 
