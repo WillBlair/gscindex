@@ -627,7 +627,7 @@ The newsletter (`scripts/send_newsletter.py`) uses `composite_index` from `/api/
 Lazy dual-backend: resolves PostgreSQL vs SQLite at connection time, not import time. This lets `dotenv` load environment variables first.
 
 Tables:
-- `subscribers` (email, subscribed_at, is_active, unsubscribed_at). Unsubscribed addresses cannot be re-added from the form
+- `subscribers` (email, subscribed_at, is_active, unsubscribed_at, source). Unsubscribed addresses cannot be re-added from the form. `source` is `utm_source/utm_campaign` from the page URL at signup (`api.share.signup_source`, letters/digits/_/- only), for comparing ad spend with signups
 - `daily_scores` (date, score). The composite, written only on days with no excluded weighted category
 - `daily_category_scores` (date, category, score). The real measurement history behind trend charts and the stored-score fallback, written at most hourly via `record_daily_scores()`, fallback values excluded. Holds the sector categories too, and the shadow `geo_register` key. Old `RETIRED_CATEGORIES` rows stay untouched and are never read
 - `dashboard_snapshot` (id=1, payload, updated_at). Cold-start layer, written at most hourly

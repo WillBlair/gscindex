@@ -150,6 +150,27 @@ def _is_public_host(host: str) -> bool:
     return host in (site, f"www.{site}")
 
 
+_SOURCE_PART_RE = re.compile(r"[a-z0-9_-]{1,30}")
+
+
+def signup_source(search: str | None) -> str | None:
+    """'utm_source/utm_campaign' from the page's query string, e.g. 'reddit/test1'.
+
+    Lowercased; a value with anything but letters, digits, '_' or '-' is dropped, so the
+    stored source is never free text from the URL.
+    """
+    from urllib.parse import parse_qs
+
+    params = parse_qs((search or "").lstrip("?"))
+    parts = []
+    for key in ("utm_source", "utm_campaign"):
+        value = (params.get(key) or [""])[0].strip().lower()
+        if not _SOURCE_PART_RE.fullmatch(value):
+            break
+        parts.append(value)
+    return "/".join(parts) or None
+
+
 def _font(size: int):
     from PIL import ImageFont
 

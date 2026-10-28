@@ -87,6 +87,7 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         dcc.Interval(id="refresh-interval", interval=20_000 if is_provisional else 300_000, n_intervals=0),
         dcc.Store(id="profile-store", data=DEFAULT_TAB),
         dcc.Download(id="snapshot-download"),
+        dcc.Location(id="page-url", refresh=False),   # utm tags for the signup source
 
         build_header(updated_label(data)),
 

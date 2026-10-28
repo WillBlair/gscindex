@@ -165,6 +165,7 @@ def init_db():
                     "ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS unsubscribed_at "
                     "TIMESTAMP WITH TIME ZONE"
                 )
+                cursor.execute("ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS source VARCHAR(64)")
             elif db_type == "sqlite":
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS subscribers (
@@ -230,6 +231,8 @@ def init_db():
                 columns = {row[1] for row in cursor.execute("PRAGMA table_info(subscribers)")}
                 if "unsubscribed_at" not in columns:
                     cursor.execute("ALTER TABLE subscribers ADD COLUMN unsubscribed_at TIMESTAMP")
+                if "source" not in columns:
+                    cursor.execute("ALTER TABLE subscribers ADD COLUMN source TEXT")
         logger.info("Database initialized (%s).", db_type)
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
@@ -243,7 +246,9 @@ _OPTED_OUT_RESULT = {
 }
 
 
-def add_subscriber(email: str) -> dict:
+def add_subscriber(email: str, source: str | None = None) -> dict:
+    """Add an address. ``source`` is where the visitor came from (the ad link's utm tags),
+    stored once on the first signup so ad spend can be compared with signups."""
     conn = get_connection()
     if not conn:
         return {"success": False, "message": "Database not configured."}
@@ -262,10 +267,10 @@ def add_subscriber(email: str) -> dict:
                 if row and row[0] is not None:
                     return _OPTED_OUT_RESULT
                 cursor.execute("""
-                    INSERT INTO subscribers (email, is_active)
-                    VALUES (%s, TRUE)
+                    INSERT INTO subscribers (email, is_active, source)
+                    VALUES (%s, TRUE, %s)
                     ON CONFLICT (email) DO NOTHING
-                """, (email,))
+                """, (email, source))
             elif db_type == "sqlite":
                 cursor.execute(
                     "SELECT unsubscribed_at FROM subscribers WHERE email = ?", (email,)
@@ -274,10 +279,10 @@ def add_subscriber(email: str) -> dict:
                 if row and row[0] is not None:
                     return _OPTED_OUT_RESULT
                 cursor.execute("""
-                    INSERT INTO subscribers (email, is_active)
-                    VALUES (?, 1)
+                    INSERT INTO subscribers (email, is_active, source)
+                    VALUES (?, 1, ?)
                     ON CONFLICT(email) DO NOTHING
-                """, (email,))
+                """, (email, source))
         return {"success": True, "message": "Successfully subscribed!"}
     except Exception as e:
         logger.error(f"Failed to add subscriber: {e}")

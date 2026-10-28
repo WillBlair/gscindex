@@ -601,15 +601,17 @@ def create_app() -> dash.Dash:
         Output("newsletter-email", "value"),
         Input("newsletter-submit", "n_clicks"),
         State("newsletter-email", "value"),
+        State("page-url", "search"),
         prevent_initial_call=True,
     )
-    def handle_newsletter_submit(n_clicks, email):
+    def handle_newsletter_submit(n_clicks, email, search=None):
         email = str(email or "").strip().lower()
         if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
             return "Please enter a valid email address.", _FEEDBACK_ERROR, dash.no_update
         
+        from api.share import signup_source
         from data.database import add_subscriber
-        result = add_subscriber(email)
+        result = add_subscriber(email, signup_source(search))
         
         if result.get("success"):
             return "You're subscribed to the daily briefing.", _FEEDBACK_OK, ""

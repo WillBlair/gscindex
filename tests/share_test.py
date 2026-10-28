@@ -125,3 +125,45 @@ def test_no_analytics_on_local_or_render_hosts(monkeypatch):
 def test_malformed_token_is_ignored():
     assert share.analytics_tag("abc\"><script>") == ""
     assert share.analytics_tag("") == ""
+
+
+# --- signup source (ad attribution) --------------------------------------------
+
+@pytest.mark.parametrize("search, expected", [
+    ("?utm_source=reddit&utm_campaign=test1", "reddit/test1"),
+    ("?utm_source=Reddit", "reddit"),
+    ("", None),
+    (None, None),
+    ("?utm_campaign=test1", None),                       # campaign without a source
+    ("?utm_source=reddit&utm_campaign=<b>x</b>", "reddit"),
+    ("?utm_source=" + "a" * 31, None),
+])
+def test_signup_source(search, expected):
+    assert share.signup_source(search) == expected
+
+
+def test_add_subscriber_stores_source_once(tmp_path, monkeypatch):
+    import sqlite3
+
+    import data.database as database
+    monkeypatch.setattr(database, "_resolve_db_config", lambda: ("sqlite", None))
+    monkeypatch.setattr(database, "SQLITE_PATH", str(tmp_path / "subs.db"))
+    database.init_db()
+    database.init_db()                                   # the ALTER runs only once
+    assert database.add_subscriber("a@example.com", "reddit/test1")["success"]
+    assert database.add_subscriber("a@example.com", "google")["success"]
+    assert database.add_subscriber("b@example.com")["success"]
+    rows = dict(sqlite3.connect(database.SQLITE_PATH).execute(
+        "SELECT email, source FROM subscribers").fetchall())
+    assert rows == {"a@example.com": "reddit/test1", "b@example.com": None}
+
+
+def test_signup_callback_passes_the_ad_source(monkeypatch):
+    import app as application
+    seen = []
+    monkeypatch.setattr("data.database.add_subscriber",
+                        lambda email, source=None: seen.append((email, source)) or {"success": True})
+    handler = next(v["callback"].__wrapped__ for k, v in application.app.callback_map.items()
+                   if "newsletter-feedback.children" in k)
+    handler(1, "Pat@Example.com", "?utm_source=reddit&utm_campaign=test1")
+    assert seen == [("pat@example.com", "reddit/test1")]
