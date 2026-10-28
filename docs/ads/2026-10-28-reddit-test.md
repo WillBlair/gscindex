@@ -13,19 +13,20 @@ Goal: find out what one newsletter signup costs on Reddit before spending more. 
 
 ## Ads
 
-Image for all three: `docs/ads/reddit-card-2026-10-28.png` (today's share card, 1200x630). Call to action button: Learn More.
+All three sell the daily email (score, tier and a short news briefing, sent once a day at 15:00 UTC). Image for all three: `docs/ads/reddit-card-2026-10-28.png` (today's share card, 1200x630). Call to action button: Sign Up.
 
-**Ad A**
-Headline: A free daily 0 to 100 score for global supply chain health, built from NY Fed, IMF and Federal Reserve data. It covers chokepoints, energy, tariffs and freight.
-URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=test-a`
+**Ad A: "best" claim (Will's pick)**
+Headline: The best free daily briefing on global supply chains: a 0 to 100 health score and the day's main news, in your inbox every day.
+URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-best`
+Risk: "best" has no proof behind it yet, and Reddit ads take comments.
 
-**Ad B**
-Headline: How are the Red Sea, Hormuz and Panama doing today? We track ship transits through 8 chokepoints every day, along with energy prices, tariffs and freight. The site is free.
-URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=test-b`
+**Ad B: chokepoints hook**
+Headline: Red Sea, Hormuz, Panama, tariffs, diesel prices. One free email a day scores how global supply chains are holding up and sums up the news behind it.
+URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-chokepoints`
 
-**Ad C**
-Headline: A daily score for supply chain stress, built from published data, with a live map of 37 major ports. There's a free daily briefing by email if you want it.
-URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=test-c`
+**Ad C: data hook**
+Headline: Get global supply chain stress as a number every day: a 0 to 100 score built from NY Fed, IMF and Federal Reserve data, with a short briefing on the news. Free, unsubscribe anytime.
+URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-data`
 
 ## How we judge it
 
