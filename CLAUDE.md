@@ -50,7 +50,7 @@ NEWSLETTER_SECRET         # Signs unsubscribe links (falls back to ADMIN_TOKEN)
 NEWSLETTER_POSTAL_ADDRESS # Footer address for the newsletter (CAN-SPAM)
 SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, RECIPIENT_EMAIL, WEBSITE_URL  # Newsletter cron
 RUN_LIVE_CLAUDE           # Set to 1 to run the paid Claude integration tests
-CF_ANALYTICS_TOKEN        # Optional. Cloudflare Web Analytics site token; unset = no analytics script
+CF_ANALYTICS_TOKEN        # Cloudflare Web Analytics site token (public; default in config.py). "" turns analytics off
 PORT                      # Server port (default 10000)
 ```
 
@@ -614,7 +614,7 @@ Rate limits (`API_RATE_LIMIT = "500 per hour;2000 per day"`) apply to the `/api/
 
 Health: fields `state`, `now_utc`, `is_fresh`, `has_data`, `last_updated_utc`, `data_age_seconds`, `last_fetch_status`, `last_fetch_error` (exception class name only), `last_fetch_duration_seconds`, `fallback_categories`, `stale_categories`, `excluded_categories` (global only), `sectors` (`{sector: {"degraded", "coverage"}}`; a missing block reads degraded, coverage 0), `status_message`, `update_interval_seconds`, `process_memory`. A sector outage never changes `state` or the HTTP status. HTTP 200 `warming_up` (no successful fetch since boot and the current fetch has run ≤10 min), HTTP 200 `healthy`, HTTP 503 `degraded` (no data, data > 30 min old, or a fetch running > 10 min).
 
-Share tags and analytics: `api/share.py` adds Open Graph and Twitter tags (title with today's Global index and tier; image `/og.png?v=<snapshot time>` so LinkedIn and X refetch after each update) to the HTML of `config.SITEMAP_PATHS` only, plus the cookieless Cloudflare Web Analytics beacon when `CF_ANALYTICS_TOKEN` is set. Never on `/unsubscribe` (its URL carries a token). Card numbers come from `index_summary`, the readout's values.
+Share tags and analytics: `api/share.py` adds Open Graph and Twitter tags (title with today's Global index and tier; image `/og.png?v=<snapshot time>` so LinkedIn and X refetch after each update) to the HTML of `config.SITEMAP_PATHS` only, plus the cookieless Cloudflare Web Analytics beacon on requests to gscindex.com or www (never localhost or onrender.com). Never on `/unsubscribe` (its URL carries a token). Card numbers come from `index_summary`, the readout's values.
 
 Security headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 

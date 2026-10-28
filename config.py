@@ -176,8 +176,10 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 # Public pages, share card and analytics (api/share.py)
 SITE_URL = "https://gscindex.com"           # canonical origin for share tags, robots.txt and the sitemap
 SITEMAP_PATHS = ("/", "/docs", "/report")   # public pages listed in /sitemap.xml and tracked by analytics
-# Cloudflare Web Analytics site token (cookieless). Unset = no analytics script on any page.
-CF_ANALYTICS_TOKEN: str = os.environ.get("CF_ANALYTICS_TOKEN", "").strip()
+# Cloudflare Web Analytics site token for gscindex.com (cookieless). Not a secret: it is
+# printed in every page's HTML. The beacon is sent only on SITE_URL's host, never on
+# localhost or the onrender.com address. Set the env var to "" to turn analytics off.
+CF_ANALYTICS_TOKEN: str = os.environ.get("CF_ANALYTICS_TOKEN", "499cf81df6ed47918ecfb9c11ca0be31").strip()
 
 # ---------------------------------------------------------------------------
 # Per-Category Colors (used in the multi-line trend chart)

@@ -7,8 +7,9 @@
 - Open Graph and Twitter tags go into the HTML of the public pages. The image URL carries
   the snapshot time, so LinkedIn and X fetch a new card after each update instead of
   reusing an old one.
-- The Cloudflare Web Analytics beacon (cookieless) is added to the public pages only when
-  ``CF_ANALYTICS_TOKEN`` is set. Never on /unsubscribe, whose URL carries a token.
+- The Cloudflare Web Analytics beacon (cookieless) is added to the public pages when
+  ``CF_ANALYTICS_TOKEN`` is set and the request came to gscindex.com. Never on
+  /unsubscribe, whose URL carries a token.
 
 Numbers come from ``components.terminal_data.index_summary``, the same values the readout
 shows. Nothing here fetches data.
@@ -138,8 +139,15 @@ def analytics_tag(token: str | None = None) -> str:
     token = CF_ANALYTICS_TOKEN if token is None else token
     if not _TOKEN_RE.fullmatch(token or ""):
         return ""
-    return ("<script defer src=\"https://static.cloudflareinsights.com/beacon.min.js\" "
+    return ("<script type=\"module\" src=\"https://static.cloudflareinsights.com/beacon.min.js\" "
             f"data-cf-beacon='{{\"token\": \"{token}\"}}'></script>")
+
+
+def _is_public_host(host: str) -> bool:
+    """gscindex.com or www.gscindex.com, so local previews never count as visits."""
+    site = SITE_URL.split("://", 1)[-1]
+    host = (host or "").split(":", 1)[0].lower()
+    return host in (site, f"www.{site}")
 
 
 def _font(size: int):
@@ -266,5 +274,6 @@ def register_share_routes(server: Flask, get_snapshot: SnapshotGetter) -> None:
             return response
         data, _ = get_snapshot()
         html = response.get_data(as_text=True)
-        response.set_data(_inject(html, share_tags(request.path, data), analytics_tag()))
+        beacon = analytics_tag() if _is_public_host(request.host) else ""
+        response.set_data(_inject(html, share_tags(request.path, data), beacon))
         return response

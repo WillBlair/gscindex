@@ -100,17 +100,26 @@ def test_docs_keeps_its_own_title_and_no_snapshot_falls_back():
 
 def test_no_analytics_without_a_token(monkeypatch):
     monkeypatch.setattr(share, "CF_ANALYTICS_TOKEN", "")
-    html = _client(_snapshot()).get("/").get_data(as_text=True)
+    html = _client(_snapshot()).get("/", base_url="https://gscindex.com").get_data(as_text=True)
     assert "cloudflareinsights" not in html
 
 
 def test_analytics_on_public_pages_only(monkeypatch):
     monkeypatch.setattr(share, "CF_ANALYTICS_TOKEN", "abcdef0123456789abcdef0123456789")
     client = _client(_snapshot())
-    assert "cloudflareinsights" in client.get("/").get_data(as_text=True)
-    assert "cloudflareinsights" in client.get("/docs").get_data(as_text=True)
-    unsub = client.get("/unsubscribe").get_data(as_text=True)
+    live = {"base_url": "https://gscindex.com"}
+    assert "cloudflareinsights" in client.get("/", **live).get_data(as_text=True)
+    assert "cloudflareinsights" in client.get("/docs", base_url="https://www.gscindex.com").get_data(as_text=True)
+    unsub = client.get("/unsubscribe", **live).get_data(as_text=True)
     assert "cloudflareinsights" not in unsub and "og:title" not in unsub
+
+
+def test_no_analytics_on_local_or_render_hosts(monkeypatch):
+    monkeypatch.setattr(share, "CF_ANALYTICS_TOKEN", "abcdef0123456789abcdef0123456789")
+    client = _client(_snapshot())
+    for base in ("http://localhost:8051", "https://gscindex.onrender.com"):
+        html = client.get("/", base_url=base).get_data(as_text=True)
+        assert "cloudflareinsights" not in html and "og:title" in html
 
 
 def test_malformed_token_is_ignored():
