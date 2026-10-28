@@ -7,7 +7,7 @@ Real-time supply chain health dashboard built with Python/Dash. Scores 8 global 
 ## Tech Stack
 
 - **Framework:** Dash 4.4 (wraps Flask), Dash Bootstrap Components (versions pinned in `requirements.txt`)
-- **Visualizations:** Plotly
+- **Visualizations:** Plotly; Pillow draws the `/og.png` share card
 - **Data:** Pandas, NumPy, openpyxl (reads the TPU workbook)
 - **Production server:** Gunicorn (1 worker, 4 gthreads, 120s timeout)
 - **Databases:** PostgreSQL (prod via Neon) / SQLite (dev fallback). Subscribers, daily score history, latest dashboard snapshot, newsletter send log, disruption register, river gauge readings
@@ -50,6 +50,7 @@ NEWSLETTER_SECRET         # Signs unsubscribe links (falls back to ADMIN_TOKEN)
 NEWSLETTER_POSTAL_ADDRESS # Footer address for the newsletter (CAN-SPAM)
 SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, RECIPIENT_EMAIL, WEBSITE_URL  # Newsletter cron
 RUN_LIVE_CLAUDE           # Set to 1 to run the paid Claude integration tests
+CF_ANALYTICS_TOKEN        # Optional. Cloudflare Web Analytics site token; unset = no analytics script
 PORT                      # Server port (default 10000)
 ```
 
@@ -129,6 +130,7 @@ api/
   briefing.py             # On-demand AI briefing helper (no button in the Terminal UI)
   report.py               # /report page (Terminal look)
   docs.py                 # /docs methodology page (Terminal look; numbers read from config at request time)
+  share.py                # /robots.txt, /sitemap.xml, /og.png share card (Pillow), Open Graph tags + Cloudflare beacon on /, /docs, /report
 scripts/
   compute_anchors.py      # Downloads full histories, writes data/score_anchors.json (offline, no DB); --sectors-only merges sector anchors only
   rebuild_category_history.py  # Recomputes stored daily category scores (8 global + 7 sector categories) from source data (dry run by default); the sector backfill uses --sectors-only
@@ -572,6 +574,8 @@ GET  /api/v1/admin/subscribers   # Admin: Authorization: Bearer ADMIN_TOKEN
 GET  /unsubscribe?t=TOKEN        # Confirmation page (does not unsubscribe; mail scanners prefetch)
 POST /unsubscribe?t=TOKEN        # Unsubscribes; also serves RFC 8058 one-click
 GET  /docs, /report              # Public pages
+GET  /robots.txt, /sitemap.xml   # Crawlers (config.SITE_URL, config.SITEMAP_PATHS)
+GET  /og.png                     # 1200x630 share card from the in-memory snapshot, rendered once per snapshot
 GET  /health                     # Monitoring (fields below)
 GET  /healthz                    # Alias for /health
 ```
@@ -609,6 +613,8 @@ Admin auth accepts only the `Authorization: Bearer` header (no query-string toke
 Rate limits (`API_RATE_LIMIT = "500 per hour;2000 per day"`) apply to the `/api/v1/*` blueprints only, keyed on `CF-Connecting-IP` (falls back to the socket address), in-memory storage. Dash pages, callbacks, `/health`, and `/unsubscribe` are not limited.
 
 Health: fields `state`, `now_utc`, `is_fresh`, `has_data`, `last_updated_utc`, `data_age_seconds`, `last_fetch_status`, `last_fetch_error` (exception class name only), `last_fetch_duration_seconds`, `fallback_categories`, `stale_categories`, `excluded_categories` (global only), `sectors` (`{sector: {"degraded", "coverage"}}`; a missing block reads degraded, coverage 0), `status_message`, `update_interval_seconds`, `process_memory`. A sector outage never changes `state` or the HTTP status. HTTP 200 `warming_up` (no successful fetch since boot and the current fetch has run ≤10 min), HTTP 200 `healthy`, HTTP 503 `degraded` (no data, data > 30 min old, or a fetch running > 10 min).
+
+Share tags and analytics: `api/share.py` adds Open Graph and Twitter tags (title with today's Global index and tier; image `/og.png?v=<snapshot time>` so LinkedIn and X refetch after each update) to the HTML of `config.SITEMAP_PATHS` only, plus the cookieless Cloudflare Web Analytics beacon when `CF_ANALYTICS_TOKEN` is set. Never on `/unsubscribe` (its URL carries a token). Card numbers come from `index_summary`, the readout's values.
 
 Security headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 

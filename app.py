@@ -624,6 +624,10 @@ def create_app() -> dash.Dash:
 
     register_workspace_callbacks(app, get_snapshot)
 
+    from api.share import register_share_routes
+
+    register_share_routes(app.server, get_snapshot)
+
     return app
 
 

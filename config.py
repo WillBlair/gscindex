@@ -173,6 +173,12 @@ APP_AUTHOR_URL = "https://williamcblair.com"
 HISTORY_DAYS = 90            # how many days of history to show in charts
 REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 
+# Public pages, share card and analytics (api/share.py)
+SITE_URL = "https://gscindex.com"           # canonical origin for share tags, robots.txt and the sitemap
+SITEMAP_PATHS = ("/", "/docs", "/report")   # public pages listed in /sitemap.xml and tracked by analytics
+# Cloudflare Web Analytics site token (cookieless). Unset = no analytics script on any page.
+CF_ANALYTICS_TOKEN: str = os.environ.get("CF_ANALYTICS_TOKEN", "").strip()
+
 # ---------------------------------------------------------------------------
 # Per-Category Colors (used in the multi-line trend chart)
 # ---------------------------------------------------------------------------
