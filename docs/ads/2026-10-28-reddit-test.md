@@ -13,7 +13,7 @@ Goal: find out what one newsletter signup costs on Reddit before spending more. 
 
 ## Ads
 
-All three sell the daily email (score, tier and a short news briefing, sent once a day at 15:00 UTC). Image for all three: `docs/ads/reddit-card-2026-10-28.png` (today's share card, 1200x630). Call to action button: Sign Up.
+All three sell the daily email (score, tier and a short news briefing, sent once a day at 15:00 UTC). Images: `docs/ads/reddit-square-2026-10-28.png` (1080x1080, mobile feed) and `docs/ads/reddit-wide-2026-10-28.png` (1200x628, desktop). Upload both if Reddit asks for more than one size. They show the real 28 Oct score (46.5, Stressed) and three lines from that day's briefing; redraw with `scripts/make_ad_images.py` for a later run. Call to action button: Sign Up.
 
 **Ad A: "best" claim (Will's pick)**
 Headline: The best free daily briefing on global supply chains: a 0 to 100 health score and the day's main news, in your inbox every day.
