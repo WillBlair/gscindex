@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -591,9 +590,7 @@ def create_app() -> dash.Dash:
 
     _FEEDBACK_OK = {"color": TIER_COLORS["Healthy"]}
     _FEEDBACK_ERROR = {"color": TIER_COLORS["Critical"]}
-    # Letters, digits and . _ % + - in the local part; no quotes, commas or
-    # spaces, which could otherwise end up inside the email To header.
-    _EMAIL_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")
+    from api.signup import valid_email
 
     @app.callback(
         Output("newsletter-feedback", "children"),
@@ -606,7 +603,7 @@ def create_app() -> dash.Dash:
     )
     def handle_newsletter_submit(n_clicks, email, search=None):
         email = str(email or "").strip().lower()
-        if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
+        if not valid_email(email):
             return "Please enter a valid email address.", _FEEDBACK_ERROR, dash.no_update
         
         from api.share import signup_source
@@ -627,8 +624,10 @@ def create_app() -> dash.Dash:
     register_workspace_callbacks(app, get_snapshot)
 
     from api.share import register_share_routes
+    from api.signup import register_signup_routes
 
     register_share_routes(app.server, get_snapshot)
+    register_signup_routes(app.server, get_snapshot, limiter)
 
     return app
 

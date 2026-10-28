@@ -17,16 +17,16 @@ All three sell the daily email (score, tier and a short news briefing, sent once
 
 **Ad A: "best" claim (Will's pick)**
 Headline: The best free daily briefing on global supply chains: a 0 to 100 health score and the day's main news, in your inbox every day.
-URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-best`
+URL: `https://gscindex.com/briefing?utm_source=reddit&utm_campaign=brief-best`
 Risk: "best" has no proof behind it yet, and Reddit ads take comments.
 
 **Ad B: chokepoints hook**
 Headline: Red Sea, Hormuz, Panama, tariffs, diesel prices. One free email a day scores how global supply chains are holding up and sums up the news behind it.
-URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-chokepoints`
+URL: `https://gscindex.com/briefing?utm_source=reddit&utm_campaign=brief-chokepoints`
 
 **Ad C: data hook**
 Headline: Get global supply chain stress as a number every day: a 0 to 100 score built from NY Fed, IMF and Federal Reserve data, with a short briefing on the news. Free, unsubscribe anytime.
-URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-data`
+URL: `https://gscindex.com/briefing?utm_source=reddit&utm_campaign=brief-data`
 
 ## How we judge it
 

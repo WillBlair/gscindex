@@ -130,6 +130,7 @@ api/
   briefing.py             # On-demand AI briefing helper (no button in the Terminal UI)
   report.py               # /report page (Terminal look)
   docs.py                 # /docs methodology page (Terminal look; numbers read from config at request time)
+  signup.py               # /briefing landing page for the daily email (ad links): today's index, email form (honeypot, 10 POSTs/hour per IP), sample briefing
   share.py                # /robots.txt, /sitemap.xml, /og.png share card (Pillow), Open Graph tags + Cloudflare beacon on /, /docs, /report
 scripts/
   compute_anchors.py      # Downloads full histories, writes data/score_anchors.json (offline, no DB); --sectors-only merges sector anchors only
@@ -574,6 +575,7 @@ GET  /api/v1/admin/subscribers   # Admin: Authorization: Bearer ADMIN_TOKEN
 GET  /unsubscribe?t=TOKEN        # Confirmation page (does not unsubscribe; mail scanners prefetch)
 POST /unsubscribe?t=TOKEN        # Unsubscribes; also serves RFC 8058 one-click
 GET  /docs, /report              # Public pages
+GET/POST /briefing               # Daily-email landing page; POST subscribes, storing utm_source/utm_campaign as the source
 GET  /robots.txt, /sitemap.xml   # Crawlers (config.SITE_URL, config.SITEMAP_PATHS)
 GET  /og.png                     # 1200x630 share card from the in-memory snapshot, rendered once per snapshot
 GET  /health                     # Monitoring (fields below)

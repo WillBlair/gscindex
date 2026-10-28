@@ -39,6 +39,7 @@ _CARD_DIM = "#8A94A3"
 _SCALE_BANDS = ((0, 40, "Critical"), (40, 60, "Stressed"), (60, 80, "Stable"), (80, 100, "Healthy"))
 
 _PAGE_TITLES = {
+    "/briefing": f"Free daily supply chain briefing | {APP_TITLE}",
     "/docs": f"Methodology | {APP_TITLE}",
     "/report": f"Daily report | {APP_TITLE}",
 }
