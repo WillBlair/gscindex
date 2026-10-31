@@ -159,7 +159,7 @@ def build_header(updated_label: str) -> html.Header:
     newsletter = dbc.Popover(
         dbc.PopoverBody([
             html.Label("Daily briefing by email", htmlFor="newsletter-email", className="newsletter-label"),
-            dcc.Input(id="newsletter-email", type="email", placeholder="you@company.com",
+            dcc.Input(id="newsletter-email", type="email", placeholder="you@email.com",
                       autoComplete="email", className="newsletter-input"),
             html.Button("Subscribe", id="newsletter-submit", n_clicks=0, className="newsletter-submit"),
             html.Div(id="newsletter-feedback", role="status", className="newsletter-feedback"),
@@ -211,7 +211,7 @@ def build_signup_bar() -> html.Section:
                className="signup-pitch"),
         html.Div([
             html.Label("Email address", htmlFor="signup-email", className="visually-hidden"),
-            dcc.Input(id="signup-email", type="email", placeholder="you@company.com",
+            dcc.Input(id="signup-email", type="email", placeholder="you@email.com",
                       autoComplete="email", className="signup-input"),
             html.Button("Sign up free", id="signup-submit", n_clicks=0, className="signup-submit"),
         ], className="signup-form"),
