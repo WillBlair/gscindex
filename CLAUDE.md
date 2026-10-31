@@ -130,7 +130,6 @@ api/
   briefing.py             # On-demand AI briefing helper (no button in the Terminal UI)
   report.py               # /report page (Terminal look)
   docs.py                 # /docs methodology page (Terminal look; numbers read from config at request time)
-  signup.py               # /briefing landing page for the daily email (ad links): today's index, email form (honeypot, 10 POSTs/hour per IP), sample briefing
   share.py                # /robots.txt, /sitemap.xml, /og.png share card (Pillow), Open Graph tags + Cloudflare beacon on /, /docs, /report
 scripts/
   compute_anchors.py      # Downloads full histories, writes data/score_anchors.json (offline, no DB); --sectors-only merges sector anchors only
@@ -538,6 +537,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 ### Terminal panes (layout.py, terminal.py)
 
 - Header: brand, tab switch (Global / Semis / Aero; id `profile-switch`, values from `config.TABS`), updated label, Methodology link, API button, CSV button, Subscribe button
+- Sign-up bar (`build_signup_bar`, full width under the header): FREE badge, pitch, email box, "Sign up free", close. Ad links point at the dashboard and this bar collects the email. A signup sets the local store `signup-done`; the close button sets `gsci-signup-closed` in localStorage; `assets/terminal.js` reads both before Dash renders and hides the bar on later visits
 - Readout: index value and tier, change vs yesterday, sparkline with a 7D / 30D / 90D range selector, per-category list. On Semis or Aero it shows that sector's index ("Semis index"); below coverage it shows "Not enough data" with no tier or change. The sparkline breaks at missing days (no line across a gap)
 - Map, markets, chokepoints, headlines and briefing are the same on every tab
 - Map pane, Markets pane, chokepoint traffic (with the PortWatch credit), Briefing pane with a "Read full report" link
@@ -560,7 +560,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 - `profile-switch` writes `profile-store` (a tab key; `tab_key()` maps anything unknown, such as an old `"baseline"`, to `"global"`); the readout and category table rebuild from `profile-store`, the refresh interval, and `trend-range`
 - The refresh interval also updates the map, quotes, briefing, updated label and the interval itself (`prevent_initial_call=True`, because `serve_layout` already rendered those panes)
 - News callback filters by search text, severity and topic; CSV callback downloads the selected tab as `gscindex-<tab>.csv` (score, nominal weight, weighted points, status, as_of, source, credit; sector exports add an `inputs` column)
-- `app.py` holds the API modal toggle and the Subscribe handler (validates the email, calls `add_subscriber()`)
+- `app.py` holds the API modal toggle and the two subscribe handlers, header popover and sign-up bar (`_subscribe`: `share.valid_email`, then `add_subscriber(email, signup_source(search))`)
 - All callbacks read from `_DATA_CACHE` — never trigger fetches
 - Use `dash.no_update` to skip outputs that shouldn't change
 
@@ -575,7 +575,6 @@ GET  /api/v1/admin/subscribers   # Admin: Authorization: Bearer ADMIN_TOKEN
 GET  /unsubscribe?t=TOKEN        # Confirmation page (does not unsubscribe; mail scanners prefetch)
 POST /unsubscribe?t=TOKEN        # Unsubscribes; also serves RFC 8058 one-click
 GET  /docs, /report              # Public pages
-GET/POST /briefing               # Daily-email landing page; POST subscribes, storing utm_source/utm_campaign as the source
 GET  /robots.txt, /sitemap.xml   # Crawlers (config.SITE_URL, config.SITEMAP_PATHS)
 GET  /og.png                     # 1200x630 share card from the in-memory snapshot, rendered once per snapshot
 GET  /health                     # Monitoring (fields below)

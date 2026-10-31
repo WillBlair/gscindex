@@ -13,20 +13,20 @@ Goal: find out what one newsletter signup costs on Reddit before spending more. 
 
 ## Ads
 
-All three sell the daily email (score, tier and a short news briefing, sent once a day at 15:00 UTC). Images: `docs/ads/reddit-square-2026-10-30.png` (1080x1080, mobile feed) and `docs/ads/reddit-wide-2026-10-30.png` (1200x628, desktop). Upload both if Reddit asks for more than one size. They show a dot world map with all 37 scored ports in their tier colors (Dubai labeled at 28, Critical), the real 30 Oct index (47.1, Stressed), a FREE badge and a "Sign up free" bar. Redraw from the live API with `venv/bin/python scripts/make_ad_images.py` the day the ads launch, so the numbers are current. Call to action button: Sign Up.
+All three sell the daily email (score, tier and a short news briefing, sent once a day at 15:00 UTC). Every ad links to the dashboard itself. A sign-up bar under the header (FREE badge, email box, "Sign up free") asks every visitor for their email and stores the ad's utm tags with the signup. Images: `docs/ads/reddit-square-2026-10-31.png` (1080x1080, mobile feed) and `docs/ads/reddit-wide-2026-10-31.png` (1200x628, desktop). Upload both if Reddit asks for more than one size. They show a dot world map with all 37 scored ports in their tier colors (the worst port labeled), the real 31 Oct index (46.6, Stressed), a FREE badge and a "Sign up free at gscindex.com" bar. Redraw from the live API with `venv/bin/python scripts/make_ad_images.py` the day the ads launch, so the numbers are current. Call to action button: Sign Up.
 
 **Ad A: "best" claim (Will's pick)**
 Headline: The best free daily briefing on global supply chains: a 0 to 100 health score and the day's main news, in your inbox every day.
-URL: `https://gscindex.com/briefing?utm_source=reddit&utm_campaign=brief-best`
+URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-best`
 Risk: "best" has no proof behind it yet, and Reddit ads take comments.
 
 **Ad B: chokepoints hook**
 Headline: Red Sea, Hormuz, Panama, tariffs, diesel prices. One free email a day scores how global supply chains are holding up and sums up the news behind it.
-URL: `https://gscindex.com/briefing?utm_source=reddit&utm_campaign=brief-chokepoints`
+URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-chokepoints`
 
 **Ad C: data hook**
 Headline: Get global supply chain stress as a number every day: a 0 to 100 score built from NY Fed, IMF and Federal Reserve data, with a short briefing on the news. Free, unsubscribe anytime.
-URL: `https://gscindex.com/briefing?utm_source=reddit&utm_campaign=brief-data`
+URL: `https://gscindex.com/?utm_source=reddit&utm_campaign=brief-data`
 
 ## How we judge it
 

@@ -16,7 +16,7 @@ from dash import dcc, html
 from components.charts import _finite_score, build_world_map
 from components.terminal import (
     build_briefing, build_category_table, build_header, build_headlines,
-    build_quotes, build_readout, updated_label,
+    build_quotes, build_readout, build_signup_bar, updated_label,
 )
 from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, DEFAULT_TAB
 
@@ -88,8 +88,10 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         dcc.Store(id="profile-store", data=DEFAULT_TAB),
         dcc.Download(id="snapshot-download"),
         dcc.Location(id="page-url", refresh=False),   # utm tags for the signup source
+        dcc.Store(id="signup-done", storage_type="local"),   # hides the sign-up bar after a signup
 
         build_header(updated_label(data)),
+        build_signup_bar(),
 
         html.Div([
             html.Div(build_readout(data, DEFAULT_TAB, DEFAULT_TREND_DAYS), id="readout"),

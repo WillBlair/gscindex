@@ -1,5 +1,19 @@
 /* Terminal touch and keyboard helpers (Dash loads every file in assets/). */
 (function () {
+  // The sign-up bar stays hidden for anyone who signed up here (the Dash local store
+  // "signup-done") or closed it. Set on <html> before Dash renders, so it never flashes.
+  var SIGNUP_CLOSED = "gsci-signup-closed";
+  try {
+    if (localStorage.getItem("signup-done") === "true" || localStorage.getItem(SIGNUP_CLOSED) === "1") {
+      document.documentElement.classList.add("signup-off");
+    }
+  } catch (e) { /* storage blocked: keep showing the bar */ }
+  document.addEventListener("click", function (event) {
+    if (!(event.target.closest && event.target.closest("#signup-close"))) return;
+    document.documentElement.classList.add("signup-off");
+    try { localStorage.setItem(SIGNUP_CLOSED, "1"); } catch (e) { /* hidden for this page view only */ }
+  });
+
   // Category details open on hover or focus. Mobile Safari does not focus a
   // button on tap, so focus it explicitly; tapping anywhere else blurs it and
   // the detail closes.

@@ -590,7 +590,18 @@ def create_app() -> dash.Dash:
 
     _FEEDBACK_OK = {"color": TIER_COLORS["Healthy"]}
     _FEEDBACK_ERROR = {"color": TIER_COLORS["Critical"]}
-    from api.signup import valid_email
+    from api.share import signup_source, valid_email
+
+    def _subscribe(email, search):
+        """(message, style, input value, signed up) for the header popover and the sign-up bar."""
+        email = str(email or "").strip().lower()
+        if not valid_email(email):
+            return "Please enter a valid email address.", _FEEDBACK_ERROR, dash.no_update, False
+        from data.database import add_subscriber
+        result = add_subscriber(email, signup_source(search))
+        if result.get("success"):
+            return "You're subscribed to the daily briefing.", _FEEDBACK_OK, "", True
+        return result.get("message", "An error occurred."), _FEEDBACK_ERROR, dash.no_update, False
 
     @app.callback(
         Output("newsletter-feedback", "children"),
@@ -602,18 +613,22 @@ def create_app() -> dash.Dash:
         prevent_initial_call=True,
     )
     def handle_newsletter_submit(n_clicks, email, search=None):
-        email = str(email or "").strip().lower()
-        if not valid_email(email):
-            return "Please enter a valid email address.", _FEEDBACK_ERROR, dash.no_update
-        
-        from api.share import signup_source
-        from data.database import add_subscriber
-        result = add_subscriber(email, signup_source(search))
-        
-        if result.get("success"):
-            return "You're subscribed to the daily briefing.", _FEEDBACK_OK, ""
-        else:
-            return result.get("message", "An error occurred."), _FEEDBACK_ERROR, dash.no_update
+        return _subscribe(email, search)[:3]
+
+    @app.callback(
+        Output("signup-feedback", "children"),
+        Output("signup-feedback", "style"),
+        Output("signup-email", "value"),
+        Output("signup-done", "data"),
+        Input("signup-submit", "n_clicks"),
+        Input("signup-email", "n_submit"),
+        State("signup-email", "value"),
+        State("page-url", "search"),
+        prevent_initial_call=True,
+    )
+    def handle_signup_bar(n_clicks, n_submit, email, search=None):
+        message, style, value, done = _subscribe(email, search)
+        return message, style, value, True if done else dash.no_update
 
     from components.workspace_callbacks import register_workspace_callbacks
 
@@ -624,10 +639,8 @@ def create_app() -> dash.Dash:
     register_workspace_callbacks(app, get_snapshot)
 
     from api.share import register_share_routes
-    from api.signup import register_signup_routes
 
     register_share_routes(app.server, get_snapshot)
-    register_signup_routes(app.server, get_snapshot, limiter)
 
     return app
 

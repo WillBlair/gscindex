@@ -39,7 +39,6 @@ _CARD_DIM = "#8A94A3"
 _SCALE_BANDS = ((0, 40, "Critical"), (40, 60, "Stressed"), (60, 80, "Stable"), (80, 100, "Healthy"))
 
 _PAGE_TITLES = {
-    "/briefing": f"Free daily supply chain briefing | {APP_TITLE}",
     "/docs": f"Methodology | {APP_TITLE}",
     "/report": f"Daily report | {APP_TITLE}",
 }
@@ -152,6 +151,14 @@ def _is_public_host(host: str) -> bool:
 
 
 _SOURCE_PART_RE = re.compile(r"[a-z0-9_-]{1,30}")
+
+# Letters, digits and . _ % + - in the local part; no quotes, commas or spaces, which
+# could otherwise end up inside the email To header.
+EMAIL_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")
+
+
+def valid_email(email: str) -> bool:
+    return len(email) <= 254 and bool(EMAIL_RE.fullmatch(email))
 
 
 def signup_source(search: str | None) -> str | None:

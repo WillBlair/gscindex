@@ -181,6 +181,56 @@ button { font: inherit; color: inherit; }
 .newsletter-feedback { font-size: 12px; }
 .newsletter-feedback:not(:empty) { margin-top: 8px; }
 
+/* ── Sign-up bar (under the header) ───────────────────────────────── */
+.signup-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--cell);
+  border-top: 2px solid var(--amber);
+}
+.signup-off .signup-bar { display: none; }
+.free-badge {
+  background: var(--amber);
+  color: var(--bg);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  padding: 4px 9px;
+  line-height: 1.2;
+}
+.signup-pitch { margin: 0; font-family: var(--sans); font-size: 15px; color: var(--text); min-width: 0; }
+.signup-pitch b { font-weight: 700; }
+.signup-pitch span { color: var(--dim); }
+.signup-form { margin-left: auto; display: flex; gap: 0; flex: 0 1 420px; min-width: 260px; }
+.signup-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--grid);
+  border-right: 0;
+  border-radius: 0;
+  padding: 8px 10px;
+  font: inherit;
+}
+.signup-input:focus { outline: none; border-color: var(--amber); }
+.signup-submit {
+  background: var(--amber);
+  color: var(--bg);
+  border: 0;
+  padding: 8px 16px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.signup-submit:hover { filter: brightness(1.08); }
+.signup-feedback { font-size: 12px; white-space: nowrap; }
+.signup-feedback:empty { display: none; }
+.signup-close { color: var(--dim); font-size: 20px; line-height: 1; padding: 0 2px; }
+.signup-close:hover { color: var(--text); }
+
 /* ── Index readout ────────────────────────────────────────────────── */
 /* The readout section is re-rendered by its callback; the trend toggle sits
    outside it, so both are laid out in the cell's own single-column grid. */
@@ -407,6 +457,16 @@ td.h a:hover { text-decoration: underline; }
   .newsletter-input, .flt-search .dash-input-element, .flt.form-select { font-size: 16px; }
   .popover { --bs-popover-max-width: calc(100vw - 32px); }
   .newsletter-popover { width: min(280px, calc(100vw - 32px)); }
+
+  /* Badge, pitch and close on one line, then the email box, then any message. */
+  .signup-bar { flex-wrap: wrap; gap: 10px; padding: 14px 16px; }
+  .signup-pitch { flex: 1 1 0; font-size: 15px; order: 1; }
+  .free-badge { order: 0; }
+  .signup-close { order: 2; align-self: flex-start; }
+  .signup-form { order: 3; flex: 1 1 100%; min-width: 0; margin-left: 0; }
+  .signup-feedback { order: 4; flex: 1 1 100%; white-space: normal; }
+  .signup-input { font-size: 16px; padding: 10px; }
+  .signup-submit { padding: 10px 14px; }
 
   .news-head { flex-wrap: wrap; row-gap: 8px; }
   .news-head .count { margin-left: auto; }

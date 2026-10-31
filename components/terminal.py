@@ -196,6 +196,31 @@ def build_header(updated_label: str) -> html.Header:
     ], className="head")
 
 
+# --- sign-up bar -------------------------------------------------------------------------
+
+def build_signup_bar() -> html.Section:
+    """Full-width bar under the header asking every visitor to sign up for the daily email.
+
+    The close button and a successful signup hide it on later visits (assets/terminal.js
+    reads the "signup-done" local store and the close flag before the page renders).
+    """
+    return html.Section([
+        html.Span("FREE", className="free-badge"),
+        html.P([html.B("Get this index in your inbox every day."),
+                html.Span(" Today's score and a short briefing on the news behind it.", className="hide-s")],
+               className="signup-pitch"),
+        html.Div([
+            html.Label("Email address", htmlFor="signup-email", className="visually-hidden"),
+            dcc.Input(id="signup-email", type="email", placeholder="you@company.com",
+                      autoComplete="email", className="signup-input"),
+            html.Button("Sign up free", id="signup-submit", n_clicks=0, className="signup-submit"),
+        ], className="signup-form"),
+        html.Div(id="signup-feedback", role="status", className="signup-feedback"),
+        html.Button("\u00d7", id="signup-close", className="signup-close link-button",
+                    **{"aria-label": "Close the sign-up bar"}),
+    ], id="signup-bar", className="signup-bar full", **{"aria-label": "Sign up for the daily email"})
+
+
 # --- index readout ----------------------------------------------------------------------
 
 def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:

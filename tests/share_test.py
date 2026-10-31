@@ -169,65 +169,48 @@ def test_signup_callback_passes_the_ad_source(monkeypatch):
     assert seen == [("pat@example.com", "reddit/test1")]
 
 
-# --- /briefing landing page -----------------------------------------------------
+# --- dashboard sign-up bar -------------------------------------------------------
 
-def _briefing_client(data, monkeypatch, store=None):
-    from api import signup
-    calls = [] if store is None else store
-    monkeypatch.setattr("data.database.add_subscriber",
-                        lambda email, source=None: calls.append((email, source)) or {"success": True})
-    app = Flask(__name__)
-    signup.register_signup_routes(app, lambda: (data, True))
-    share.register_share_routes(app, lambda: (data, True))
-    return app.test_client(), calls
-
-
-def test_briefing_page_shows_score_sample_and_form(monkeypatch):
-    data = _snapshot() | {"briefing": "• Hormuz transits run near 60% of normal.\n• Port strike risk.\n• Rates firm.\n• Fourth."}
-    client, _ = _briefing_client(data, monkeypatch)
-    html = client.get("/briefing").get_data(as_text=True)
-    assert "46.5" in html and "STRESSED" in html and "Down 1.5 from yesterday" in html
-    assert "Hormuz transits run near 60% of normal." in html and "Fourth." not in html   # 3 bullets
-    assert 'type="email"' in html and "Get the briefing" in html
-    assert 'content="Free daily supply chain briefing | Global Supply Chain Index"' in html
-    assert "—" not in html
-
-
-def test_briefing_signup_stores_the_ad_source(monkeypatch):
-    client, calls = _briefing_client(_snapshot(), monkeypatch)
-    resp = client.post("/briefing?utm_source=reddit&utm_campaign=brief-best", data={"email": " Pat@Example.com "})
-    assert resp.status_code == 200 and "You're subscribed" in resp.get_data(as_text=True)
-    assert calls == [("pat@example.com", "reddit/brief-best")]
-
-
-def test_briefing_rejects_bad_email_and_escapes_it(monkeypatch):
-    client, calls = _briefing_client(_snapshot(), monkeypatch)
-    resp = client.post("/briefing", data={"email": '"><script>x</script>'})
-    body = resp.get_data(as_text=True)
-    assert resp.status_code == 400 and "valid email" in body and "<script>x" not in body
-    assert calls == []
-
-
-def test_briefing_honeypot_never_writes(monkeypatch):
-    client, calls = _briefing_client(_snapshot(), monkeypatch)
-    resp = client.post("/briefing", data={"email": "bot@example.com", "website": "spam"})
-    assert resp.status_code == 200 and calls == []
-
-
-def test_briefing_page_without_data(monkeypatch):
-    client, _ = _briefing_client(None, monkeypatch)
-    html = client.get("/briefing").get_data(as_text=True)
-    assert "Get the briefing" in html and "TODAY'S INDEX" not in html
-
-
-def test_briefing_post_is_rate_limited(monkeypatch):
+def _bar_handler():
     import app as application
+    return next(v["callback"].__wrapped__ for k, v in application.app.callback_map.items()
+                if "signup-feedback.children" in k)
+
+
+def test_signup_bar_stores_the_ad_source_and_remembers_the_signup(monkeypatch):
     seen = []
     monkeypatch.setattr("data.database.add_subscriber",
-                        lambda email, source=None: seen.append(email) or {"success": True})
-    client = application.server.test_client()
-    ip = {"REMOTE_ADDR": "203.0.113.9"}
-    codes = [client.post("/briefing", data={"email": f"r{i}@example.com"}, environ_base=ip).status_code
-             for i in range(12)]
-    assert codes.count(429) >= 1 and len(seen) <= 10
-    assert client.get("/briefing", environ_base=ip).status_code == 200    # GET is never limited
+                        lambda email, source=None: seen.append((email, source)) or {"success": True})
+    message, _, value, done = _bar_handler()(1, None, " Pat@Example.com ", "?utm_source=reddit&utm_campaign=map-free")
+    assert seen == [("pat@example.com", "reddit/map-free")]
+    assert "subscribed" in message and value == "" and done is True
+
+
+def test_signup_bar_rejects_a_bad_email(monkeypatch):
+    import dash
+    seen = []
+    monkeypatch.setattr("data.database.add_subscriber", lambda *a, **k: seen.append(a) or {"success": True})
+    message, _, value, done = _bar_handler()(None, 1, '"><script>x</script>', "")
+    assert "valid email" in message and seen == [] and done is dash.no_update
+
+
+def test_signup_bar_is_on_the_dashboard():
+    from components.layout import build_layout
+    ids = set()
+
+    def walk(node):
+        if hasattr(node, "id") and isinstance(getattr(node, "id", None), str):
+            ids.add(node.id)
+        children = getattr(node, "children", None)
+        for child in children if isinstance(children, (list, tuple)) else [children]:
+            if child is not None and not isinstance(child, (str, int, float)):
+                walk(child)
+
+    walk(build_layout(_snapshot()))
+    assert {"signup-bar", "signup-email", "signup-submit", "signup-feedback", "signup-close", "signup-done"} <= ids
+
+
+def test_valid_email():
+    assert share.valid_email("pat@example.com")
+    assert not share.valid_email("pat@example")
+    assert not share.valid_email('a"b@example.com')

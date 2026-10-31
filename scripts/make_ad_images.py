@@ -158,7 +158,7 @@ def _cta(draw, box, size):
     x0, y0, x1, y1 = box
     draw.rectangle(box, fill=AMBER)
     bold, reg = _font(size, 800), _font(size, 500)
-    left, right = "Sign up free", "  gscindex.com/briefing"
+    left, right = "Sign up free", "  at gscindex.com"
     w = draw.textlength(left, font=bold) + draw.textlength(right, font=reg)
     x, y = x0 + (x1 - x0 - w) / 2, y0 + (y1 - y0) / 2 - size * 0.62
     draw.text((x, y), left, font=bold, fill=BG)
