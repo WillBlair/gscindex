@@ -1,9 +1,13 @@
 /* Terminal touch and keyboard helpers (Dash loads every file in assets/). */
 (function () {
   // The sign-up bar stays hidden for anyone who signed up here (the Dash local store
-  // "signup-done") or closed it. Set on <html> before Dash renders, so it never flashes.
+  // "signup-done"), arrived from the daily email (utm_source=newsletter) or closed it.
+  // Set on <html> before Dash renders, so it never flashes.
   var SIGNUP_CLOSED = "gsci-signup-closed";
   try {
+    if (/[?&]utm_source=newsletter(&|$)/.test(window.location.search)) {
+      localStorage.setItem("signup-done", "true");
+    }
     if (localStorage.getItem("signup-done") === "true" || localStorage.getItem(SIGNUP_CLOSED) === "1") {
       document.documentElement.classList.add("signup-off");
     }

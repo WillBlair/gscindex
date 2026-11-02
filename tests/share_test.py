@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -165,8 +166,16 @@ def test_signup_callback_passes_the_ad_source(monkeypatch):
                         lambda email, source=None: seen.append((email, source)) or {"success": True})
     handler = next(v["callback"].__wrapped__ for k, v in application.app.callback_map.items()
                    if "newsletter-feedback.children" in k)
-    handler(1, "Pat@Example.com", "?utm_source=reddit&utm_campaign=test1")
+    *_, done = handler(1, "Pat@Example.com", "?utm_source=reddit&utm_campaign=test1")
     assert seen == [("pat@example.com", "reddit/test1")]
+    assert done is True   # a header-popover signup hides the sign-up bar too
+
+
+def test_newsletter_dashboard_link_marks_the_visitor_as_subscribed():
+    from scripts.send_newsletter import _dashboard_url
+    assert _dashboard_url("https://gscindex.com/") == "https://gscindex.com/?utm_source=newsletter&utm_campaign=daily"
+    js = (Path(__file__).resolve().parents[1] / "assets" / "terminal.js").read_text()
+    assert "utm_source=newsletter" in js and 'localStorage.setItem("signup-done", "true")' in js
 
 
 # --- dashboard sign-up bar -------------------------------------------------------

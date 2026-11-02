@@ -537,7 +537,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 ### Terminal panes (layout.py, terminal.py)
 
 - Header: brand, tab switch (Global / Semis / Aero; id `profile-switch`, values from `config.TABS`), updated label, Methodology link, API button, CSV button, Subscribe button
-- Sign-up bar (`build_signup_bar`, full width under the header): FREE badge, pitch, email box, "Sign up free", close. Ad links point at the dashboard and this bar collects the email. A signup sets the local store `signup-done`; the close button sets `gsci-signup-closed` in localStorage; `assets/terminal.js` reads both before Dash renders and hides the bar on later visits
+- Sign-up bar (`build_signup_bar`, full width under the header): FREE badge, pitch, email box, "Sign up free", close. Ad links point at the dashboard and this bar collects the email. A signup from the bar or the header popover sets the local store `signup-done`, and so does arriving from the daily email (its dashboard link carries `utm_source=newsletter`, `send_newsletter._dashboard_url`); the close button sets `gsci-signup-closed` in localStorage; `assets/terminal.js` reads both before Dash renders and hides the bar on later visits
 - Readout: index value and tier, change vs yesterday, sparkline with a 7D / 30D / 90D range selector, per-category list. On Semis or Aero it shows that sector's index ("Semis index"); below coverage it shows "Not enough data" with no tier or change. The sparkline breaks at missing days (no line across a gap)
 - Map, markets, chokepoints, headlines and briefing are the same on every tab
 - Map pane, Markets pane, chokepoint traffic (with the PortWatch credit), Briefing pane with a "Read full report" link

@@ -191,6 +191,12 @@ def _unsubscribe_url(website_url: str, email: str) -> str:
     return f"{website_url.rstrip('/')}/unsubscribe?t={make_token(email)}"
 
 
+def _dashboard_url(website_url: str) -> str:
+    """The email's dashboard link. utm_source=newsletter tells the site the visitor already
+    subscribed (assets/terminal.js hides the sign-up bar) and tags the visit in analytics."""
+    return f"{website_url.rstrip('/')}/?utm_source=newsletter&utm_campaign=daily"
+
+
 def generate_html_email(
     score: float,
     tier: dict,
@@ -428,10 +434,10 @@ def main():
     if args.dry_run:
         sample = subscribers[0]
         text_content = generate_text_email(
-            score, tier, briefing, website_url, _unsubscribe_url(website_url, sample), postal_address
+            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address
         )
         html_content = generate_html_email(
-            score, tier, briefing, website_url, _unsubscribe_url(website_url, sample), postal_address
+            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address
         )
         logger.info("DRY RUN MODE: Skipping actual SMTP dispatch.")
         logger.info(
@@ -463,10 +469,10 @@ def main():
                 try:
                     unsubscribe_url = _unsubscribe_url(website_url, email)
                     text_content = generate_text_email(
-                        score, tier, briefing, website_url, unsubscribe_url, postal_address
+                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address
                     )
                     html_content = generate_html_email(
-                        score, tier, briefing, website_url, unsubscribe_url, postal_address
+                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address
                     )
                     msg = EmailMessage()
                     msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"

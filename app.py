@@ -607,13 +607,15 @@ def create_app() -> dash.Dash:
         Output("newsletter-feedback", "children"),
         Output("newsletter-feedback", "style"),
         Output("newsletter-email", "value"),
+        Output("signup-done", "data", allow_duplicate=True),
         Input("newsletter-submit", "n_clicks"),
         State("newsletter-email", "value"),
         State("page-url", "search"),
         prevent_initial_call=True,
     )
     def handle_newsletter_submit(n_clicks, email, search=None):
-        return _subscribe(email, search)[:3]
+        message, style, value, done = _subscribe(email, search)
+        return message, style, value, True if done else dash.no_update
 
     @app.callback(
         Output("signup-feedback", "children"),
