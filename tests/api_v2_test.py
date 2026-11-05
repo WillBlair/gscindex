@@ -126,6 +126,17 @@ def test_newsletter_data_uses_stored_composite(client, monkeypatch):
     monkeypatch.setattr("api.admin.verify_admin", lambda: True)
     body = client.get("/api/v1/newsletter-data").get_json()
     assert body["composite_index"] == 45.0
+    assert "index_change" in body
+
+
+def test_newsletter_data_sends_the_readouts_change(client, monkeypatch):
+    snap = _snapshot()
+    monkeypatch.setattr(cache, "get_cached_dashboard", lambda: snap)
+    monkeypatch.setattr("api.admin.verify_admin", lambda: True)
+    monkeypatch.setattr("components.terminal_data.index_summary",
+                        lambda data, key: {"today": 48.4, "yday": 47.92, "change": 0.48, "tier": None})
+    body = client.get("/api/v1/newsletter-data").get_json()
+    assert body["index_change"] == 0.5
 
 
 def test_snapshot_composite_rejects_bool():

@@ -570,7 +570,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 
 ```
 GET  /api/v1/latest              # Public, methodology_version 2 (shape below)
-GET  /api/v1/newsletter-data     # Admin: current_scores, briefing, composite_index (stored composite)
+GET  /api/v1/newsletter-data     # Admin: current_scores, briefing, composite_index (stored composite), index_change (the readout's change vs yesterday)
 GET  /api/v1/admin/subscribers   # Admin: Authorization: Bearer ADMIN_TOKEN
 GET  /unsubscribe?t=TOKEN        # Confirmation page (does not unsubscribe; mail scanners prefetch)
 POST /unsubscribe?t=TOKEN        # Unsubscribes; also serves RFC 8058 one-click
@@ -653,7 +653,7 @@ Call types:
 - `generate_full_report()`: daily Markdown report for `/report` (up to 50 articles). Skipped after a failed scoring call
 - `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles plus up to 25 web searches (`PORT_WEB_SEARCH_MAX_USES`). Map only
 - `run_register_cycle()`: daily disruption register with web search (`REGISTER_WEB_SEARCH_MAX_USES` 8). Score = 100 − min(100, 0.3 × Σ(severity × trade share %)) over open events, stored as `geo_register`, weight `GEO_REGISTER_WEIGHT` = 0 (shadow) until Will turns it on. No key → the stored open events are rescored, never changed
-- `generate_newsletter_briefing()`: newsletter cron
+- `generate_newsletter_briefing()`: newsletter cron, 3 news bullets. The prompt keeps Claude off the index entirely (no score, movement or inputs: the news never feeds it); the email prints the index and `index_change` itself
 
 The daily score explanation (`generate_score_explanation`, `score_explanation`) was removed.
 

@@ -172,10 +172,14 @@ def get_newsletter_data():
     if not data:
         return jsonify({"error": "No cached data available"}), 503
 
+    from components.terminal_data import index_summary
+
     current_scores = data.get("current_scores", {})
     composite = snapshot_composite(data)
+    change = index_summary(data, "global")["change"]   # the readout's change vs yesterday
     return jsonify({
         "current_scores": current_scores,
         "briefing": data.get("briefing", ""),
         "composite_index": round(composite, 1) if composite is not None else None,
+        "index_change": round(change, 1) if change is not None else None,
     }), 200

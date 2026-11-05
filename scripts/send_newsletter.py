@@ -112,10 +112,13 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
         if local_data:
             scores = local_data.get("current_scores", {})
             composite = snapshot_composite(local_data)
+            from components.terminal_data import index_summary
+            change = index_summary(local_data, "global")["change"]
             return {
                 "current_scores": scores,
                 "briefing": local_data.get("briefing", ""),
                 "composite_index": round(composite, 1) if composite is not None else None,
+                "index_change": round(change, 1) if change is not None else None,
             }
     except Exception as e:
         logger.warning("Local cache fallback failed: %s", e)
@@ -139,7 +142,7 @@ def _build_daily_newsletter_briefing(
     today: datetime | None = None,
 ) -> str:
     """Build a fresh morning briefing from public sources, with same-day retry cache."""
-    _ = current_scores  # Reserved for score-delta context once daily score history is exposed here.
+    _ = current_scores  # Unused: the email shows the index and its change itself; the news never feeds it.
     run_date = today or datetime.now(timezone.utc)
     if run_date.tzinfo is None:
         run_date = run_date.replace(tzinfo=timezone.utc)
@@ -164,7 +167,6 @@ def _build_daily_newsletter_briefing(
             selected,
             score=score,
             tier_label=str(tier.get("label", "Unknown")),
-            score_delta=None,
         )
         set_cached(
             cache_key,
@@ -197,6 +199,15 @@ def _dashboard_url(website_url: str) -> str:
     return f"{website_url.rstrip('/')}/?utm_source=newsletter&utm_campaign=daily"
 
 
+def _change_text(change: float | None) -> str:
+    """The index's change since yesterday, as the dashboard readout shows it ("" when unknown)."""
+    if change is None:
+        return ""
+    if round(change, 1) == 0:
+        return "No change since yesterday"
+    return f"{change:+.1f} since yesterday"
+
+
 def generate_html_email(
     score: float,
     tier: dict,
@@ -204,10 +215,17 @@ def generate_html_email(
     website_url: str,
     unsubscribe_url: str = "",
     postal_address: str = "",
+    change: float | None = None,
 ) -> str:
     """Constructs the HTML body for the newsletter."""
     color = tier.get("color", "#ffffff")
     label = tier.get("label", "Unknown")
+    change_text = _change_text(change)
+    change_html = (
+        f'<div style="margin-top: 10px; color: #8a8f9e; font-size: 14px;">{change_text}</div>'
+        if change_text
+        else ""
+    )
     
     # Format briefing bullet points
     # Briefing usually comes as a single string with newlines.
@@ -264,6 +282,7 @@ def generate_html_email(
                     <div style="display: inline-block; background-color: {color}; color: #000; padding: 4px 12px; border-radius: 12px; font-weight: bold; font-size: 14px; margin-top: 5px;">
                         {label}
                     </div>
+                    {change_html}
                 </td>
             </tr>
 
@@ -305,6 +324,7 @@ def generate_text_email(
     website_url: str,
     unsubscribe_url: str = "",
     postal_address: str = "",
+    change: float | None = None,
 ) -> str:
     """Constructs the plain text fallback version."""
     label = tier.get("label", "Unknown")
@@ -313,7 +333,10 @@ def generate_text_email(
     text += f"Date: {datetime.now().strftime('%B %d, %Y')}\n"
     text += "=========================================\n\n"
     
-    text += f"Overall Health Score: {score:.1f}/100 ({label})\n\n"
+    text += f"Overall Health Score: {score:.1f}/100 ({label})\n"
+    if _change_text(change):
+        text += f"{_change_text(change)}\n"
+    text += "\n"
     
     text += "TODAY'S KEY DEVELOPMENTS:\n"
     for line in briefing.strip().split("\n"):
@@ -382,6 +405,7 @@ def main():
         logger.error("No composite available (a weighted category is missing). Not sending.")
         return
     tier = get_health_tier(score)
+    change = data.get("index_change")
 
     logger.info(f"Dashboard score: {score:.1f} ({tier.get('label')})")
     briefing = _build_daily_newsletter_briefing(
@@ -434,10 +458,10 @@ def main():
     if args.dry_run:
         sample = subscribers[0]
         text_content = generate_text_email(
-            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address
+            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address, change
         )
         html_content = generate_html_email(
-            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address
+            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address, change
         )
         logger.info("DRY RUN MODE: Skipping actual SMTP dispatch.")
         logger.info(
@@ -469,10 +493,10 @@ def main():
                 try:
                     unsubscribe_url = _unsubscribe_url(website_url, email)
                     text_content = generate_text_email(
-                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address
+                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address, change
                     )
                     html_content = generate_html_email(
-                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address
+                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address, change
                     )
                     msg = EmailMessage()
                     msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"

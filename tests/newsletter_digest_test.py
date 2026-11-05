@@ -11,10 +11,37 @@ import scripts.send_newsletter as newsletter
 
 class NewsletterDigestTests(unittest.TestCase):
     def test_generate_newsletter_briefing_returns_fallback_without_articles(self):
-        result = generate_newsletter_briefing([], score=72.4, tier_label="Stable", score_delta=None)
+        result = generate_newsletter_briefing([], score=72.4, tier_label="Stable")
 
         self.assertIn("No fresh public-source supply chain articles", result)
         self.assertIn("72.4/100", result)
+
+    def test_newsletter_prompt_keeps_claude_off_the_score(self):
+        seen = []
+        article = {"title": "Port strike", "description": "Dockers walk out.", "source": "Example",
+                   "source_group": "ports_shipping", "published": "2026-11-04"}
+        with (
+            patch("data.llm.is_configured", lambda: True),
+            patch("data.llm.complete_text", lambda prompt, **k: seen.append(prompt) or "• ok"),
+        ):
+            generate_newsletter_briefing([article], score=48.4, tier_label="Stressed")
+        prompt = seen[0]
+        self.assertNotIn("48.4", prompt)
+        self.assertNotIn("credible", prompt)
+        self.assertNotIn("unchanged", prompt)
+        self.assertIn("do not mention the index", prompt)
+
+    def test_change_line_matches_the_readout(self):
+        self.assertEqual(newsletter._change_text(None), "")
+        self.assertEqual(newsletter._change_text(0.04), "No change since yesterday")
+        self.assertEqual(newsletter._change_text(0.5), "+0.5 since yesterday")
+        self.assertEqual(newsletter._change_text(-1.26), "-1.3 since yesterday")
+        tier = {"label": "Stressed", "color": "#c47a3a"}
+        html = newsletter.generate_html_email(48.4, tier, "• a", "https://x", change=0.5)
+        text = newsletter.generate_text_email(48.4, tier, "• a", "https://x", change=0.5)
+        self.assertIn("+0.5 since yesterday", html)
+        self.assertIn("+0.5 since yesterday", text)
+        self.assertNotIn("since yesterday", newsletter.generate_html_email(48.4, tier, "• a", "https://x"))
 
     def test_build_newsletter_briefing_uses_today_cache(self):
         cached = {"briefing": "• Cached morning briefing"}
@@ -52,7 +79,7 @@ class NewsletterDigestTests(unittest.TestCase):
             patch.object(
                 newsletter,
                 "generate_newsletter_briefing",
-                lambda articles, score, tier_label, score_delta: "• Fresh generated briefing",
+                lambda articles, score, tier_label: "• Fresh generated briefing",
             ),
         ):
             result = newsletter._build_daily_newsletter_briefing(

@@ -176,8 +176,9 @@ def generate_briefing(articles: list[dict]) -> str:
 def _newsletter_no_fresh_articles_fallback(score: float, tier_label: str) -> str:
     return (
         "• No fresh public-source supply chain articles cleared the relevance filter this morning; "
-        f"the index is {score:.1f}/100 ({tier_label}), based on published data for supply chain pressure, "
-        "chokepoint traffic, energy prices, tariffs, freight volume and input costs."
+        f"the index is {score:.1f}/100 ({tier_label}), built from published data on supply chain pressure, "
+        "chokepoint traffic, energy prices, tariffs, geopolitical risk, freight volume, input costs and "
+        "physical hazards."
     )
 
 
@@ -186,9 +187,12 @@ def generate_newsletter_briefing(
     *,
     score: float,
     tier_label: str,
-    score_delta: float | None,
 ) -> str:
-    """Generate a morning newsletter briefing from selected fresh articles."""
+    """Generate a morning newsletter briefing from selected fresh articles.
+
+    The email shows the index and its change itself, from the dashboard's numbers. The news
+    never feeds the index, so the prompt keeps Claude off the score entirely: no movement,
+    no cause, no claim about what the index is built from."""
     if not articles:
         return _newsletter_no_fresh_articles_fallback(score, tier_label)
 
@@ -203,17 +207,14 @@ def generate_newsletter_briefing(
             )
         return "\n".join(bullets)
 
-    delta_text = "unchanged from the previous recorded score"
-    if score_delta is not None:
-        sign = "+" if score_delta >= 0 else ""
-        delta_text = f"{sign}{score_delta:.1f} points versus the previous recorded score"
-
     prompt_lines = [
-        "You are writing the morning email for the Global Supply Chain Index.",
-        f"Current score: {score:.1f}/100 ({tier_label}); movement: {delta_text}.",
+        "You are writing the news section of the morning email for the Global Supply Chain Index.",
+        "The email already shows the index and its change since yesterday. The index is computed only "
+        "from published economic data, never from news, so do not mention the index, its score, its "
+        "movement, its methodology or its inputs, and do not say any article affects it.",
         "Use ONLY the public-source articles below.",
-        "Write 4 bullets, each one sentence, plain text, each starting with '•'.",
-        "The bullets must cover: what changed overnight, top logistics risk, market/policy signal, and why the score is credible.",
+        "Write 3 bullets, each one sentence of at most 35 words, plain text, each starting with '•'.",
+        "The bullets cover: what changed overnight, the top logistics risk, and a market or policy signal.",
         "Mention source names naturally when useful. Do not invent facts, numbers, or disruptions.",
         "Avoid generic phrases like 'monitoring remains active' unless there is no fresh signal.",
         "",
