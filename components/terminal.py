@@ -18,7 +18,8 @@ from dash import dcc, html
 import config
 from components.feed import _format_time_ago
 from components.terminal_data import (
-    TIER_COLORS, category_rows, index_history, index_summary, row_history_days, tab_key, tier_for,
+    AMBER, DIM, TIER_COLORS, category_rows, chokepoint_color, index_history, index_summary,
+    row_history_days, tab_key, tier_for,
 )
 from components.workspace import plain_text, safe_url, select_news
 from config import CATEGORY_LABELS, DEFAULT_TAB, INPUT_LABELS, SECTORS, TABS
@@ -26,8 +27,7 @@ from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 
 DASH = "–"
 MINUS = "−"
-AMBER = "#FFB020"
-DIM = "#8A94A3"
+
 
 TAB_NAMES = {key: "Global" if key == DEFAULT_TAB else SECTORS[key]["label"] for key in TABS}
 SEVERITY = {
@@ -257,22 +257,6 @@ def build_readout(data: dict, profile_key: str, days: int = 30) -> html.Section:
 # --- chokepoint traffic -----------------------------------------------------------------
 
 CHOKE_SCALE_MAX = 200  # bar spans 0-200% of normal; the tick marks 100%
-
-
-def chokepoint_color(pct) -> str:
-    """Red when traffic collapses, green near normal, amber when far above
-    normal (ships rerouted there from a blocked route)."""
-    if pct is None:
-        return DIM
-    if pct < 50:
-        return TIER_COLORS["Critical"]
-    if pct < 80:
-        return TIER_COLORS["Stressed"]
-    if pct < 95:
-        return TIER_COLORS["Stable"]
-    if pct <= 120:
-        return TIER_COLORS["Healthy"]
-    return AMBER
 
 
 def build_chokepoints(traffic: dict | None) -> html.Div:

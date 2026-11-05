@@ -39,8 +39,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import COLORS
-from data.ai_analyst import generate_newsletter_briefing
+from components.terminal_data import AMBER, DIM, TIER_COLORS, chokepoint_color, tier_for
+from data.ai_analyst import generate_newsletter_stories
+from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 from data.cache import get_cached, set_cached
 from data.news_selection import select_fresh_articles
 from data.rss_fetcher import fetch_rss_articles
@@ -110,15 +111,14 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
         from scoring.engine import snapshot_composite
         local_data = get_cached_dashboard()
         if local_data:
+            from api.routes import newsletter_numbers
             scores = local_data.get("current_scores", {})
             composite = snapshot_composite(local_data)
-            from components.terminal_data import index_summary
-            change = index_summary(local_data, "global")["change"]
             return {
                 "current_scores": scores,
                 "briefing": local_data.get("briefing", ""),
                 "composite_index": round(composite, 1) if composite is not None else None,
-                "index_change": round(change, 1) if change is not None else None,
+                **newsletter_numbers(local_data),
             }
     except Exception as e:
         logger.warning("Local cache fallback failed: %s", e)
@@ -126,23 +126,21 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
     return None
 
 def _daily_newsletter_cache_key(today: datetime) -> str:
-    """Cache key scoped to one newsletter date so SMTP retries reuse the same text."""
+    """Cache key scoped to one newsletter date so SMTP retries reuse the same stories."""
     run_date = today
     if run_date.tzinfo is None:
         run_date = run_date.replace(tzinfo=timezone.utc)
-    return f"newsletter_briefing_{run_date.astimezone(timezone.utc).strftime('%Y_%m_%d')}"
+    return f"newsletter_stories_v1_{run_date.astimezone(timezone.utc).strftime('%Y_%m_%d')}"
 
 
-def _build_daily_newsletter_briefing(
-    *,
-    current_scores: dict,
-    score: float,
-    tier: dict,
-    fallback_briefing: str,
-    today: datetime | None = None,
-) -> str:
-    """Build a fresh morning briefing from public sources, with same-day retry cache."""
-    _ = current_scores  # Unused: the email shows the index and its change itself; the news never feeds it.
+def _stories_from_briefing(briefing: str) -> list[dict]:
+    """The dashboard's briefing bullets as headline-less stories (fallback only)."""
+    lines = [line.strip().lstrip(" -*•").strip() for line in str(briefing or "").splitlines()]
+    return [{"headline": "", "summary": line, "source": "", "url": ""} for line in lines if line]
+
+
+def _build_daily_stories(*, fallback_briefing: str, today: datetime | None = None) -> list[dict]:
+    """The morning briefing's stories from fresh public articles, with a same-day retry cache."""
     run_date = today or datetime.now(timezone.utc)
     if run_date.tzinfo is None:
         run_date = run_date.replace(tzinfo=timezone.utc)
@@ -150,9 +148,9 @@ def _build_daily_newsletter_briefing(
 
     cache_key = _daily_newsletter_cache_key(run_date)
     cached = get_cached(cache_key, ttl=36 * 3600)
-    if cached and cached.get("briefing"):
-        logger.info("Using cached daily newsletter briefing: %s", cache_key)
-        return str(cached["briefing"])
+    if cached and cached.get("stories"):
+        logger.info("Using cached daily newsletter stories: %s", cache_key)
+        return list(cached["stories"])
 
     try:
         articles = fetch_rss_articles(max_items=80)
@@ -163,25 +161,14 @@ def _build_daily_newsletter_briefing(
             fresh_hours=36,
             fallback_hours=72,
         )
-        briefing = generate_newsletter_briefing(
-            selected,
-            score=score,
-            tier_label=str(tier.get("label", "Unknown")),
-        )
-        set_cached(
-            cache_key,
-            {
-                "briefing": briefing,
-                "article_count": len(selected),
-                "article_fingerprints": [article.get("fingerprint") for article in selected],
-                "source_groups": sorted({str(article.get("source_group", "unknown")) for article in selected}),
-            },
-        )
-        logger.info("Generated fresh daily newsletter briefing from %d articles.", len(selected))
-        return briefing
+        stories = generate_newsletter_stories(selected)
+        if stories:
+            set_cached(cache_key, {"stories": stories, "article_count": len(selected)})
+        logger.info("Built %d newsletter stories from %d articles.", len(stories), len(selected))
+        return stories or _stories_from_briefing(fallback_briefing)
     except Exception as exc:
-        logger.warning("Fresh newsletter briefing failed; using dashboard briefing: %s", exc)
-        return fallback_briefing
+        logger.warning("Fresh newsletter stories failed; using dashboard briefing: %s", exc)
+        return _stories_from_briefing(fallback_briefing)
 
 
 def _mask_email(email: str) -> str:
@@ -199,158 +186,236 @@ def _dashboard_url(website_url: str) -> str:
     return f"{website_url.rstrip('/')}/?utm_source=newsletter&utm_campaign=daily"
 
 
+MINUS = "−"
+# Email palette: the site's Terminal colors (assets/terminal.css). Gmail ignores web fonts,
+# so numbers use the system monospace stack.
+PAGE, CARD, RULE, TEXT, TRACK = "#000000", "#07090C", "#1D232B", "#F2F4F7", "#1D232B"
+MONO = "Menlo, Consolas, 'Courier New', monospace"
+SANS = "-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif"
+
+
+def _signed(value: float) -> str:
+    return "0.0" if round(value, 1) == 0 else f"{value:+.1f}".replace("-", MINUS)
+
+
 def _change_text(change: float | None) -> str:
     """The index's change since yesterday, as the dashboard readout shows it ("" when unknown)."""
     if change is None:
         return ""
     if round(change, 1) == 0:
         return "No change since yesterday"
-    return f"{change:+.1f} since yesterday"
+    return f"{_signed(change)} since yesterday"
+
+
+def _biggest_move(categories: list[dict]) -> str:
+    """One sentence on the category that moved the index most since yesterday (change x weight)."""
+    moved = [c for c in categories or [] if c.get("change") is not None and c.get("today") is not None]
+    if not moved:
+        return ""
+    top = max(moved, key=lambda c: abs(c["change"] * c.get("weight", 0)))
+    if round(top["change"], 1) == 0:
+        return "No category moved since yesterday."
+    verb = "rose" if top["change"] > 0 else "fell"
+    return f"Biggest move: {top['label']} {verb} {abs(top['change']):.1f} to {top['today']:.1f}."
+
+
+def email_subject(score: float, tier: dict, change: float | None, stories: list[dict]) -> str:
+    """Lead story first, then the index, so the subject changes every day."""
+    index = f"Index {score:.1f} {tier.get('label', '')}".strip()
+    if change is not None:
+        index += f" ({_signed(change)})"
+    lead = next((s["headline"] for s in stories or [] if s.get("headline")), "")
+    return f"{lead} | {index}" if lead else f"Global Supply Chain Index: {index}"
+
+
+def email_preheader(stories: list[dict]) -> str:
+    """Inbox preview text: the next two headlines after the one in the subject."""
+    headlines = [s["headline"] for s in stories or [] if s.get("headline")]
+    return ". ".join(headlines[1:3]) + ("." if len(headlines) > 1 else "")
+
+
+def _label(text: str) -> str:
+    return (f'<div style="font-family:{MONO};font-size:11px;letter-spacing:1.5px;'
+            f'text-transform:uppercase;color:{AMBER};margin:0 0 16px 0;">{text}</div>')
+
+
+def _section(inner: str, pad: str = "24px 28px") -> str:
+    return f'<tr><td style="padding:{pad};border-top:1px solid {RULE};">{inner}</td></tr>'
+
+
+def _stories_html(stories: list[dict]) -> str:
+    if not stories:
+        return f'<p style="margin:0;font-size:15px;color:{DIM};">No fresh supply chain news cleared our filters this morning.</p>'
+    out = ""
+    for i, story in enumerate(stories):
+        gap = "0" if i == len(stories) - 1 else "22px"
+        headline = html_utils.escape(story.get("headline") or "")
+        summary = html_utils.escape(story.get("summary") or "")
+        url, source = story.get("url") or "", html_utils.escape(story.get("source") or "")
+        link = (f' <a href="{html_utils.escape(url)}" style="color:{AMBER};text-decoration:underline;white-space:nowrap;">{source or "Source"}</a>'
+                if url.startswith(("https://", "http://")) else "")
+        head = (f'<div style="font-size:17px;line-height:1.35;font-weight:bold;color:{TEXT};margin:0 0 6px 0;">{headline}</div>'
+                if headline else "")
+        out += (f'<div style="margin:0 0 {gap} 0;">{head}'
+                f'<div style="font-size:15px;line-height:1.6;color:#C9CED6;">{summary}{link}</div></div>')
+    return out
+
+
+def _categories_html(categories: list[dict]) -> str:
+    rows = ""
+    for cat in categories:
+        today, change = cat.get("today"), cat.get("change")
+        color = tier_for(today)["color"] if today is not None else DIM
+        tag = {"stored": "last stored", "stale": "stale", "excluded": "excluded"}.get(cat.get("status") or "")
+        tag_html = f' <span style="color:{DIM};font-size:11px;">({tag})</span>' if tag else ""
+        width = max(1, round(today)) if today is not None else 0
+        bar = (f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{TRACK};"><tr>'
+               f'<td width="{width}%" height="8" style="background:{color};font-size:0;line-height:0;">&nbsp;</td>'
+               f'<td style="font-size:0;line-height:0;">&nbsp;</td></tr></table>') if today is not None else ""
+        ch_color = DIM if change is None or round(change, 1) == 0 else (TIER_COLORS["Healthy"] if change > 0 else TIER_COLORS["Critical"])
+        rows += (f'<tr><td style="padding:6px 0;font-size:14px;color:{TEXT};">{html_utils.escape(cat.get("label", ""))}{tag_html}</td>'
+                 f'<td style="padding:6px 10px;width:38%;">{bar}</td>'
+                 f'<td align="right" style="padding:6px 0;font-family:{MONO};font-size:14px;font-weight:bold;color:{color};">'
+                 f'{"–" if today is None else f"{today:.1f}"}</td>'
+                 f'<td align="right" style="padding:6px 0 6px 12px;width:46px;font-family:{MONO};font-size:13px;color:{ch_color};">'
+                 f'{"–" if change is None else _signed(change)}</td></tr>')
+    return f'<table width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table>'
+
+
+def _chokepoints_html(chokepoints: dict) -> str:
+    items = [i for i in (chokepoints or {}).get("items") or [] if i.get("pct_of_normal") is not None]
+    if not items:
+        return ""
+    items = sorted(items, key=lambda i: i["pct_of_normal"])[:6]
+    cells = ""
+    for n, item in enumerate(items):
+        if n and n % 3 == 0:
+            cells += "</tr><tr>"
+        pct = item["pct_of_normal"]
+        cells += (f'<td align="center" width="33%" style="padding:10px 4px;border:1px solid {RULE};">'
+                  f'<div style="font-family:{MONO};font-size:20px;font-weight:bold;color:{chokepoint_color(pct)};">{pct:.0f}%</div>'
+                  f'<div style="font-size:11px;color:{DIM};margin-top:4px;">{html_utils.escape(item["name"])}</div></td>')
+    try:
+        as_of = f", as of {datetime.fromisoformat(chokepoints['as_of']).strftime('%b %-d')}"
+    except (KeyError, TypeError, ValueError):
+        as_of = ""
+    return (_label("Chokepoint traffic vs normal")
+            + f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>{cells}</tr></table>'
+            + f'<div style="font-size:12px;line-height:1.5;color:{DIM};margin-top:10px;">Ship transits in the last 7 days '
+            + f'vs the same month in 2022 to 2023{as_of}. {PORTWATCH_CREDIT}</div>')
 
 
 def generate_html_email(
     score: float,
     tier: dict,
-    briefing: str,
+    stories: list[dict],
     website_url: str,
     unsubscribe_url: str = "",
     postal_address: str = "",
     change: float | None = None,
+    categories: list[dict] | None = None,
+    chokepoints: dict | None = None,
 ) -> str:
-    """Constructs the HTML body for the newsletter."""
-    color = tier.get("color", "#ffffff")
+    """The email: today's briefing first, then the index and its categories, then chokepoints."""
+    color = tier.get("color", TEXT)
     label = tier.get("label", "Unknown")
-    change_text = _change_text(change)
-    change_html = (
-        f'<div style="margin-top: 10px; color: #8a8f9e; font-size: 14px;">{change_text}</div>'
-        if change_text
-        else ""
-    )
-    
-    # Format briefing bullet points
-    # Briefing usually comes as a single string with newlines.
-    bullet_points = ""
-    for line in briefing.strip().split("\n"):
-        line = line.strip()
-        if line:
-            # Strip markdown/unicode bullet characters so we can use real HTML bullets safely
-            line = line.lstrip(" -*•").strip()
-            line = html_utils.escape(line)
-            bullet_points += f"<li style='margin-bottom: 12px; line-height: 1.6;'>{line}</li>"
-
-    if not bullet_points:
-        bullet_points = "<li>No briefing data available today.</li>"
-
-    footer_lines = []
+    site = website_url.split("?")[0].rstrip("/")
+    change_html = (f'<span style="font-family:{MONO};font-size:13px;color:{DIM};padding-left:10px;">{_change_text(change)}</span>'
+                   if _change_text(change) else "")
+    move = _biggest_move(categories or [])
+    move_html = (f'<p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:{TEXT};">{html_utils.escape(move)}</p>'
+                 if move else "")
+    index_inner = (_label("The index")
+                   + f'<div style="margin:0 0 14px 0;"><span style="font-family:{MONO};font-size:40px;line-height:1;font-weight:bold;color:{color};">{score:.1f}</span>'
+                   + f'<span style="font-family:{MONO};font-size:14px;font-weight:bold;color:{color};letter-spacing:1px;padding-left:12px;">{html_utils.escape(label.upper())}</span>'
+                   + f'{change_html}</div>' + move_html
+                   + (_categories_html(categories) if categories else ""))
+    choke = _chokepoints_html(chokepoints or {})
+    footer = [
+        f'Forwarded this? <a href="{site}/?utm_source=forward" style="color:{TEXT};">Sign up free</a> for the daily email.',
+        "The index is built only from published data (NY Fed, IMF PortWatch, FRED, U.S. Treasury and others). "
+        f'The news above does not feed it. <a href="{site}/docs" style="color:{DIM};">How it works</a>',
+    ]
+    last = []
     if unsubscribe_url:
-        footer_lines.append(
-            f'<a href="{html_utils.escape(unsubscribe_url)}" style="color: #9ca3af;">Unsubscribe</a>'
-        )
+        last.append(f'<a href="{html_utils.escape(unsubscribe_url)}" style="color:{DIM};">Unsubscribe</a>')
     if postal_address:
-        footer_lines.append(html_utils.escape(postal_address))
-    footer_html = (
-        '<p style="margin: 12px 0 0 0; color: #6b7280; font-size: 12px;">'
-        + "<br>".join(footer_lines)
-        + "</p>"
-        if footer_lines
-        else ""
-    )
+        last.append(html_utils.escape(postal_address))
+    if last:
+        footer.append(" · ".join(last))
 
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Global Supply Chain Daily Briefing</title>
-    </head>
-    <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #0f1117; color: #e1e4ea; margin: 0; padding: 20px;">
-        
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; margin: 0 auto; background-color: #1a1d26; border-radius: 8px; overflow: hidden; border: 1px solid #2a2d3a;">
-            <!-- Header -->
-            <tr>
-                <td style="padding: 30px; border-bottom: 1px solid #2a2d3a; text-align: center;">
-                    <h2 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">Global Supply Chain Index</h2>
-                    <p style="margin: 5px 0 0 0; color: #8a8f9e; font-size: 14px;">Daily Briefing &bull; {datetime.now().strftime('%B %d, %Y')}</p>
-                </td>
-            </tr>
-            
-            <!-- Health Score Section -->
-            <tr>
-                <td style="padding: 30px 30px 10px 30px; text-align: center;">
-                    <h4 style="margin: 0 0 10px 0; color: #8a8f9e; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">Overall Health Score</h4>
-                    <div style="font-size: 56px; font-weight: bold; color: {color}; margin: 0;">{score:.1f}</div>
-                    <div style="display: inline-block; background-color: {color}; color: #000; padding: 4px 12px; border-radius: 12px; font-weight: bold; font-size: 14px; margin-top: 5px;">
-                        {label}
-                    </div>
-                    {change_html}
-                </td>
-            </tr>
-
-            <!-- Briefing Section -->
-            <tr>
-                <td style="padding: 20px 40px 30px 40px;">
-                    <h3 style="color: #ffffff; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #2a2d3a; padding-bottom: 10px;">Today's Key Developments</h3>
-                    <ul style="padding-left: 20px; color: #d1d5db; font-size: 15px;">
-                        {bullet_points}
-                    </ul>
-                </td>
-            </tr>
-
-            <!-- CTA Footer -->
-            <tr>
-                <td style="padding: 30px; background-color: #15171f; text-align: center; border-top: 1px solid #2a2d3a;">
-                    <a href="{website_url}" style="display: inline-block; background-color: #6366f1; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; font-size: 16px;">
-                        View Full Dashboard
-                    </a>
-                    <p style="margin: 15px 0 0 0; color: #6b7280; font-size: 12px;">
-                        This is an automated operational intelligence briefing.<br>
-                        Data is aggregated and analyzed continuously.
-                    </p>
-                    {footer_html}
-                </td>
-            </tr>
-        </table>
-        
-    </body>
-    </html>
-    """
-    return html
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><title>Global Supply Chain Index</title></head>
+<body style="margin:0;padding:0;background:{PAGE};" bgcolor="{PAGE}">
+<div style="display:none;max-height:0;overflow:hidden;">{html_utils.escape(email_preheader(stories))}</div>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{PAGE}" style="background:{PAGE};"><tr><td align="center" style="padding:24px 12px;">
+<table width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="{CARD}" style="width:100%;max-width:600px;background:{CARD};border:1px solid {RULE};font-family:{SANS};">
+  <tr><td style="padding:18px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="font-family:{MONO};font-size:12px;letter-spacing:1.5px;font-weight:bold;color:{AMBER};">GLOBAL SUPPLY CHAIN INDEX</td>
+      <td align="right" style="font-size:12px;color:{DIM};white-space:nowrap;">{datetime.now(timezone.utc).strftime('%b %-d, %Y')}</td>
+    </tr></table>
+  </td></tr>
+  {_section(_label("Today's briefing") + _stories_html(stories), "26px 28px")}
+  {_section(index_inner)}
+  {_section(choke) if choke else ""}
+  <tr><td align="center" style="padding:24px 28px 28px 28px;border-top:1px solid {RULE};">
+    <a href="{html_utils.escape(website_url)}" style="display:inline-block;background:{AMBER};color:#000000;font-family:{MONO};font-size:14px;font-weight:bold;letter-spacing:1px;text-decoration:none;padding:14px 28px;">OPEN THE DASHBOARD</a>
+  </td></tr>
+  <tr><td style="padding:20px 28px;border-top:1px solid {RULE};font-size:12px;line-height:1.6;color:{DIM};">{"<br>".join(footer)}</td></tr>
+</table>
+</td></tr></table>
+</body></html>"""
 
 
 def generate_text_email(
     score: float,
     tier: dict,
-    briefing: str,
+    stories: list[dict],
     website_url: str,
     unsubscribe_url: str = "",
     postal_address: str = "",
     change: float | None = None,
+    categories: list[dict] | None = None,
+    chokepoints: dict | None = None,
 ) -> str:
-    """Constructs the plain text fallback version."""
-    label = tier.get("label", "Unknown")
-    
-    text = "GLOBAL SUPPLY CHAIN INDEX - DAILY BRIEFING\n"
-    text += f"Date: {datetime.now().strftime('%B %d, %Y')}\n"
-    text += "=========================================\n\n"
-    
-    text += f"Overall Health Score: {score:.1f}/100 ({label})\n"
+    """Plain text version, same order as the HTML."""
+    site = website_url.split("?")[0].rstrip("/")
+    lines = [f"GLOBAL SUPPLY CHAIN INDEX, {datetime.now(timezone.utc).strftime('%b %-d, %Y')}", "", "TODAY'S BRIEFING", ""]
+    for story in stories or []:
+        if story.get("headline"):
+            lines.append(story["headline"])
+        lines.append(story.get("summary", ""))
+        if story.get("url"):
+            lines.append(f"{story.get('source') or 'Source'}: {story['url']}")
+        lines.append("")
+    if not stories:
+        lines += ["No fresh supply chain news cleared our filters this morning.", ""]
+    index_line = f"THE INDEX: {score:.1f} ({tier.get('label', 'Unknown')})"
     if _change_text(change):
-        text += f"{_change_text(change)}\n"
-    text += "\n"
-    
-    text += "TODAY'S KEY DEVELOPMENTS:\n"
-    for line in briefing.strip().split("\n"):
-        line = line.strip()
-        if line:
-            line = line.lstrip(" -*•").strip()
-            text += f"- {line}\n"
-                
-    text += f"\nView the full interactive dashboard here: {website_url}\n"
+        index_line += f", {_change_text(change)}"
+    lines += [index_line]
+    if _biggest_move(categories or []):
+        lines.append(_biggest_move(categories or []))
+    for cat in categories or []:
+        today, ch = cat.get("today"), cat.get("change")
+        lines.append(f"  {cat.get('label', ''):<20} {'–' if today is None else f'{today:.1f}':>6}"
+                     f"  {'' if ch is None else _signed(ch)}")
+    items = sorted([i for i in (chokepoints or {}).get("items") or [] if i.get("pct_of_normal") is not None],
+                   key=lambda i: i["pct_of_normal"])[:6]
+    if items:
+        lines += ["", "CHOKEPOINT TRAFFIC VS NORMAL: " + ", ".join(f"{i['name']} {i['pct_of_normal']:.0f}%" for i in items),
+                  PORTWATCH_CREDIT]
+    lines += ["", f"Open the dashboard: {website_url}", "",
+              f"Forwarded this? Sign up free: {site}/?utm_source=forward",
+              "The index is built only from published data. The news above does not feed it."]
     if unsubscribe_url:
-        text += f"\nUnsubscribe: {unsubscribe_url}\n"
+        lines.append(f"Unsubscribe: {unsubscribe_url}")
     if postal_address:
-        text += f"{postal_address}\n"
-    return text
+        lines.append(postal_address)
+    return "\n".join(lines) + "\n"
+
 
 def main():
     import argparse
@@ -396,7 +461,6 @@ def main():
         return
 
     # Use pre-computed score from API if available, otherwise compute locally
-    from scoring import get_health_tier
     score = data.get("composite_index")
     if score is None:
         from scoring.engine import snapshot_composite
@@ -404,16 +468,13 @@ def main():
     if score is None:
         logger.error("No composite available (a weighted category is missing). Not sending.")
         return
-    tier = get_health_tier(score)
+    tier = tier_for(score)
     change = data.get("index_change")
+    categories = data.get("categories") or []
+    chokepoints = data.get("chokepoints") or {}
 
     logger.info(f"Dashboard score: {score:.1f} ({tier.get('label')})")
-    briefing = _build_daily_newsletter_briefing(
-        current_scores=current_scores,
-        score=float(score),
-        tier=tier,
-        fallback_briefing=briefing,
-    )
+    stories = _build_daily_stories(fallback_briefing=briefing)
 
     postal_address = os.environ.get("NEWSLETTER_POSTAL_ADDRESS", "").strip()
     if not postal_address:
@@ -458,12 +519,15 @@ def main():
     if args.dry_run:
         sample = subscribers[0]
         text_content = generate_text_email(
-            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address, change
+            score, tier, stories, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address,
+            change, categories, chokepoints,
         )
         html_content = generate_html_email(
-            score, tier, briefing, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address, change
+            score, tier, stories, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address,
+            change, categories, chokepoints,
         )
         logger.info("DRY RUN MODE: Skipping actual SMTP dispatch.")
+        print("Subject:", email_subject(score, tier, change, stories))
         logger.info(
             "Would send to %d subscribers: %s",
             len(subscribers),
@@ -493,13 +557,15 @@ def main():
                 try:
                     unsubscribe_url = _unsubscribe_url(website_url, email)
                     text_content = generate_text_email(
-                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address, change
+                        score, tier, stories, _dashboard_url(website_url), unsubscribe_url, postal_address,
+                        change, categories, chokepoints,
                     )
                     html_content = generate_html_email(
-                        score, tier, briefing, _dashboard_url(website_url), unsubscribe_url, postal_address, change
+                        score, tier, stories, _dashboard_url(website_url), unsubscribe_url, postal_address,
+                        change, categories, chokepoints,
                     )
                     msg = EmailMessage()
-                    msg["Subject"] = f"Global Supply Chain Update: {score:.1f}/100 ({tier.get('label')})"
+                    msg["Subject"] = email_subject(score, tier, change, stories)
                     msg["From"] = from_header
                     msg["To"] = email
 

@@ -114,7 +114,7 @@ data/
 components/
   layout.py               # Terminal grid assembly and the API modal
   terminal.py             # Pane builders: header, readout, quotes, chokepoints, headlines, briefing, category table
-  terminal_data.py        # Pure math: TIER_COLORS, tier_for, category_rows, index_summary, index_history
+  terminal_data.py        # Pure math: TIER_COLORS, AMBER, DIM, tier_for, chokepoint_color, category_rows, index_summary, index_history (the newsletter imports it too)
   workspace.py            # Snapshot helpers: safe text and links, news selection, tab-scoped CSV export (credit column: PortWatch on chokepoints and physical, BOJ credit and terms on BOJ rows)
   workspace_callbacks.py  # Tab switch, in-place refresh, news filters, trend range, CSV
   charts.py               # World map
@@ -570,7 +570,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 
 ```
 GET  /api/v1/latest              # Public, methodology_version 2 (shape below)
-GET  /api/v1/newsletter-data     # Admin: current_scores, briefing, composite_index (stored composite), index_change (the readout's change vs yesterday)
+GET  /api/v1/newsletter-data     # Admin: current_scores, briefing, composite_index (stored composite), plus routes.newsletter_numbers: index_change (the readout's change vs yesterday), categories (the Global table rows), chokepoints (the traffic pane)
 GET  /api/v1/admin/subscribers   # Admin: Authorization: Bearer ADMIN_TOKEN
 GET  /unsubscribe?t=TOKEN        # Confirmation page (does not unsubscribe; mail scanners prefetch)
 POST /unsubscribe?t=TOKEN        # Unsubscribes; also serves RFC 8058 one-click
@@ -619,7 +619,7 @@ Share tags and analytics: `api/share.py` adds Open Graph and Twitter tags (title
 
 Security headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 
-The newsletter (`scripts/send_newsletter.py`) uses `composite_index` from `/api/v1/newsletter-data` (or `snapshot_composite` of the local disk cache) and sends nothing when there is no composite.
+The newsletter (`scripts/send_newsletter.py`) uses `composite_index` from `/api/v1/newsletter-data` (or `snapshot_composite` of the local disk cache) and sends nothing when there is no composite. The email is in the Terminal colors: today's briefing (the stories) first, then the index with its change, the biggest mover (largest change x weight) and the 8 category bars, then the six lowest chokepoints with the PortWatch credit, a dashboard button and a "Forwarded this? Sign up free" footer (`utm_source=forward`). The subject is the lead headline plus the index (`email_subject`); the preview text is the next two headlines.
 
 ---
 
@@ -653,7 +653,7 @@ Call types:
 - `generate_full_report()`: daily Markdown report for `/report` (up to 50 articles). Skipped after a failed scoring call
 - `generate_port_summaries()`: summary + `disruption_penalty` (0–50) for all 37 ports, from up to 100 RSS articles plus up to 25 web searches (`PORT_WEB_SEARCH_MAX_USES`). Map only
 - `run_register_cycle()`: daily disruption register with web search (`REGISTER_WEB_SEARCH_MAX_USES` 8). Score = 100 − min(100, 0.3 × Σ(severity × trade share %)) over open events, stored as `geo_register`, weight `GEO_REGISTER_WEIGHT` = 0 (shadow) until Will turns it on. No key → the stored open events are rescored, never changed
-- `generate_newsletter_briefing()`: newsletter cron, 3 news bullets. The prompt keeps Claude off the index entirely (no score, movement or inputs: the news never feeds it); the email prints the index and `index_change` itself
+- `generate_newsletter_stories()`: newsletter cron, up to 4 stories (headline, two-sentence summary) from fresh RSS articles via `complete_json`. Claude names an article id; the link and source come from that article, never from Claude. The prompt keeps Claude off the index entirely (the news never feeds it). Falls back to the feed's own titles
 
 The daily score explanation (`generate_score_explanation`, `score_explanation`) was removed.
 

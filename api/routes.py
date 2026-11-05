@@ -172,14 +172,40 @@ def get_newsletter_data():
     if not data:
         return jsonify({"error": "No cached data available"}), 503
 
-    from components.terminal_data import index_summary
-
     current_scores = data.get("current_scores", {})
     composite = snapshot_composite(data)
-    change = index_summary(data, "global")["change"]   # the readout's change vs yesterday
     return jsonify({
         "current_scores": current_scores,
         "briefing": data.get("briefing", ""),
         "composite_index": round(composite, 1) if composite is not None else None,
-        "index_change": round(change, 1) if change is not None else None,
+        **newsletter_numbers(data),
     }), 200
+
+
+def _round(value):
+    return round(value, 1) if isinstance(value, (int, float)) and math.isfinite(value) else None
+
+
+def newsletter_numbers(data: dict) -> dict:
+    """The dashboard's own numbers for the daily email: the readout's change vs yesterday,
+    the Global category table and the chokepoint traffic pane."""
+    from components.terminal_data import category_rows, index_summary
+
+    categories = []
+    for row in category_rows(data, "global"):
+        status = ("excluded" if row["is_excluded"] else "stored" if row["is_fallback"]
+                  else "stale" if row["is_stale"] else "")
+        categories.append({"key": row["cat"], "label": row["label"], "weight": row["weight"],
+                           "today": _round(row["today"]), "change": _round(row["change"]),
+                           "status": status})
+    traffic = data.get("chokepoints") or {}
+    chokepoints = {
+        "as_of": traffic.get("as_of"),
+        "items": [{"name": str(item.get("name") or ""), "pct_of_normal": _round(item.get("pct_of_normal"))}
+                  for item in traffic.get("chokepoints") or [] if isinstance(item, dict)],
+    }
+    return {
+        "index_change": _round(index_summary(data, "global")["change"]),
+        "categories": categories,
+        "chokepoints": chokepoints,
+    }
