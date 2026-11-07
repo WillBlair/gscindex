@@ -26,9 +26,6 @@ TIER_COLORS: dict[str, str] = {
     "Critical": "#FF4D5E",
 }
 
-AMBER = "#FFB020"
-DIM = "#8A94A3"
-
 ROW_HISTORY_DAYS = 30
 # Sector inputs publish monthly, so a 30-day row trend is mostly flat; show 90 days.
 SECTOR_ROW_HISTORY_DAYS = 90
@@ -42,22 +39,6 @@ def tier_for(score: float) -> dict:
             tier = candidate
             break
     return {"label": tier["label"], "color": TIER_COLORS[tier["label"]]}
-
-
-def chokepoint_color(pct) -> str:
-    """Red when traffic collapses, green near normal, amber when far above
-    normal (ships rerouted there from a blocked route)."""
-    if pct is None:
-        return DIM
-    if pct < 50:
-        return TIER_COLORS["Critical"]
-    if pct < 80:
-        return TIER_COLORS["Stressed"]
-    if pct < 95:
-        return TIER_COLORS["Stable"]
-    if pct <= 120:
-        return TIER_COLORS["Healthy"]
-    return AMBER
 
 
 def _finite(value) -> float | None:

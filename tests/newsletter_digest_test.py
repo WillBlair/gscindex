@@ -21,11 +21,6 @@ STORIES = [
      "url": "https://example.com/b"},
     {"headline": "Third story", "summary": "Third.", "source": "X", "url": "https://example.com/c"},
 ]
-CATEGORIES = [
-    {"key": "supply_chain", "label": "Supply Chain", "weight": 0.2, "today": 52.8, "change": 0.3, "status": ""},
-    {"key": "chokepoints", "label": "Chokepoints", "weight": 0.15, "today": 28.3, "change": 0.0, "status": "stored"},
-    {"key": "energy", "label": "Energy & Fuel", "weight": 0.15, "today": 32.5, "change": -2.4, "status": ""},
-]
 TIER = {"label": "Stressed", "color": "#FF8A3D"}
 
 
@@ -58,23 +53,6 @@ class NewsletterDigestTests(unittest.TestCase):
         self.assertEqual([s["headline"] for s in stories], ["Port strike in Antwerp", "Carrier raises rates"])
         self.assertEqual(stories[0]["url"], "https://example.com/a")
 
-    def test_change_line_matches_the_readout(self):
-        self.assertEqual(newsletter._change_text(None), "")
-        self.assertEqual(newsletter._change_text(0.04), "No change since yesterday")
-        self.assertEqual(newsletter._change_text(0.5), "+0.5 since yesterday")
-        self.assertEqual(newsletter._change_text(-1.26), "\u22121.3 since yesterday")
-        html = newsletter.generate_html_email(48.4, TIER, STORIES, "https://x", change=0.5)
-        text = newsletter.generate_text_email(48.4, TIER, STORIES, "https://x", change=0.5)
-        self.assertIn("+0.5 since yesterday", html)
-        self.assertIn("+0.5 since yesterday", text)
-        self.assertNotIn("since yesterday", newsletter.generate_html_email(48.4, TIER, STORIES, "https://x"))
-
-    def test_biggest_move_is_by_effect_on_the_index(self):
-        self.assertEqual(newsletter._biggest_move(CATEGORIES), "Biggest move: Energy & Fuel fell 2.4 to 32.5.")
-        flat = [dict(c, change=0.0) for c in CATEGORIES]
-        self.assertEqual(newsletter._biggest_move(flat), "No category moved since yesterday.")
-        self.assertEqual(newsletter._biggest_move([dict(c, change=None) for c in CATEGORIES]), "")
-
     def test_subject_leads_with_the_top_story(self):
         self.assertEqual(newsletter.email_subject(48.5, TIER, -0.3, STORIES),
                          "Antwerp dockers strike for two days | Index 48.5 Stressed (\u22120.3)")
@@ -82,23 +60,19 @@ class NewsletterDigestTests(unittest.TestCase):
                          "Global Supply Chain Index: Index 48.5 Stressed")
         self.assertEqual(newsletter.email_preheader(STORIES), "Carrier adds $500 surcharge. Third story.")
 
-    def test_email_order_is_briefing_then_index_then_chokepoints(self):
-        choke = {"as_of": "2026-10-25", "items": [{"name": "Hormuz", "pct_of_normal": 3.0},
-                                                  {"name": "Suez", "pct_of_normal": 56.0}]}
-        html = newsletter.generate_html_email(48.5, TIER, STORIES, "https://gscindex.com/?utm_source=newsletter",
-                                              "https://gscindex.com/unsubscribe?t=x", "PO Box 1",
-                                              -0.3, CATEGORIES, choke)
-        order = [html.index(s) for s in ("Today's briefing", "The index", "Chokepoint traffic", "OPEN THE DASHBOARD")]
-        self.assertEqual(order, sorted(order))
-        self.assertIn("(last stored)", html)
-        self.assertIn("Sources: UN Global Platform; IMF PortWatch", html)
-        self.assertIn("as of Oct 25", html)
+    def test_email_is_the_briefing_only(self):
+        html = newsletter.generate_html_email(STORIES, "https://gscindex.com/?utm_source=newsletter",
+                                              "https://gscindex.com/unsubscribe?t=x", "PO Box 1")
+        self.assertIn("Today's briefing", html)
         self.assertIn('href="https://example.com/a"', html)
+        self.assertIn("SEE TODAY'S INDEX", html)
         self.assertIn("https://gscindex.com/?utm_source=forward", html)
         self.assertIn("PO Box 1", html)
-        text = newsletter.generate_text_email(48.5, TIER, STORIES, "https://gscindex.com", "", "", -0.3, CATEGORIES, choke)
+        for gone in ("Chokepoint", "Biggest move", "since yesterday", "PortWatch"):
+            self.assertNotIn(gone, html)
+        text = newsletter.generate_text_email(STORIES, "https://gscindex.com", "https://u", "PO Box 1")
         self.assertIn("Example: https://example.com/a", text)
-        self.assertIn("Hormuz 3%", text)
+        self.assertIn("Unsubscribe: https://u", text)
 
     def test_build_stories_uses_today_cache(self):
         cached = {"stories": STORIES}
@@ -121,7 +95,7 @@ class NewsletterDigestTests(unittest.TestCase):
     def test_html_email_escapes_story_text_and_drops_unsafe_links(self):
         stories = [{"headline": "<b>x</b>", "summary": "<script>alert('x')</script>", "source": "S",
                     "url": "javascript:alert(1)"}]
-        html = newsletter.generate_html_email(61.7, TIER, stories, "https://gscindex.com")
+        html = newsletter.generate_html_email(stories, "https://gscindex.com")
         self.assertIn("&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;", html)
         self.assertNotIn("<script>alert", html)
         self.assertNotIn("javascript:", html)
@@ -163,8 +137,9 @@ class NewsletterDigestTests(unittest.TestCase):
             patch("data.database.get_active_subscribers", lambda: ["a@example.com"]),
             patch("data.database.get_db_type", lambda: "sqlite"),
             patch("data.database.get_sent_today", lambda day: set()),
-            patch.object(newsletter, "generate_text_email",
+            patch.object(newsletter, "email_subject",
                          lambda score, tier, *a, **k: sent.append((score, tier["label"])) or ""),
+            patch.object(newsletter, "generate_text_email", lambda *a, **k: ""),
             patch.object(newsletter, "generate_html_email", lambda *a, **k: ""),
             patch("builtins.print", lambda *a, **k: None),
         ):

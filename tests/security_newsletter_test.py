@@ -96,8 +96,8 @@ class NewsletterEmailTests(unittest.TestCase):
         from scripts.send_newsletter import generate_html_email, generate_text_email
 
         tier = {"label": "Stable", "color": "#fff"}
-        html = generate_html_email(70.0, tier, [], "https://x", "https://x/unsubscribe?t=1", "1 Main St")
-        text = generate_text_email(70.0, tier, [], "https://x", "https://x/unsubscribe?t=1", "1 Main St")
+        html = generate_html_email([], "https://x", "https://x/unsubscribe?t=1", "1 Main St")
+        text = generate_text_email([], "https://x", "https://x/unsubscribe?t=1", "1 Main St")
         for body in (html, text):
             self.assertIn("unsubscribe?t=1", body)
             self.assertIn("1 Main St", body)

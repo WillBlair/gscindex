@@ -1,9 +1,9 @@
 """
 Daily Email Newsletter Script
 =============================
-This script fetches the latest global supply chain health index data from the local cache,
-constructs an HTML email containing the overall score, health tier, and the AI-generated
-daily briefing, and sends it to the configured recipient via SMTP.
+This script fetches the index from the live site, writes the morning news briefing from fresh
+public articles, and emails it to every active subscriber via SMTP. The email is the briefing
+only; the subject carries the index and the button leads to the dashboard for everything else.
 
 Intended to be run via a daily cron job (e.g. Render Cron or Heroku Scheduler).
 
@@ -39,9 +39,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from components.terminal_data import AMBER, DIM, TIER_COLORS, chokepoint_color, tier_for
+from components.terminal_data import tier_for
 from data.ai_analyst import generate_newsletter_stories
-from data.providers.chokepoints import CREDIT as PORTWATCH_CREDIT
 from data.cache import get_cached, set_cached
 from data.news_selection import select_fresh_articles
 from data.rss_fetcher import fetch_rss_articles
@@ -111,14 +110,15 @@ def _fetch_dashboard_data(website_url: str, admin_token: str) -> dict | None:
         from scoring.engine import snapshot_composite
         local_data = get_cached_dashboard()
         if local_data:
-            from api.routes import newsletter_numbers
+            from components.terminal_data import index_summary
             scores = local_data.get("current_scores", {})
             composite = snapshot_composite(local_data)
+            change = index_summary(local_data, "global")["change"]
             return {
                 "current_scores": scores,
                 "briefing": local_data.get("briefing", ""),
                 "composite_index": round(composite, 1) if composite is not None else None,
-                **newsletter_numbers(local_data),
+                "index_change": round(change, 1) if change is not None else None,
             }
     except Exception as e:
         logger.warning("Local cache fallback failed: %s", e)
@@ -189,34 +189,13 @@ def _dashboard_url(website_url: str) -> str:
 MINUS = "−"
 # Email palette: the site's Terminal colors (assets/terminal.css). Gmail ignores web fonts,
 # so numbers use the system monospace stack.
-PAGE, CARD, RULE, TEXT, TRACK = "#000000", "#07090C", "#1D232B", "#F2F4F7", "#1D232B"
+PAGE, CARD, RULE, TEXT, DIM, AMBER = "#000000", "#07090C", "#1D232B", "#F2F4F7", "#8A94A3", "#FFB020"
 MONO = "Menlo, Consolas, 'Courier New', monospace"
 SANS = "-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
 
 def _signed(value: float) -> str:
     return "0.0" if round(value, 1) == 0 else f"{value:+.1f}".replace("-", MINUS)
-
-
-def _change_text(change: float | None) -> str:
-    """The index's change since yesterday, as the dashboard readout shows it ("" when unknown)."""
-    if change is None:
-        return ""
-    if round(change, 1) == 0:
-        return "No change since yesterday"
-    return f"{_signed(change)} since yesterday"
-
-
-def _biggest_move(categories: list[dict]) -> str:
-    """One sentence on the category that moved the index most since yesterday (change x weight)."""
-    moved = [c for c in categories or [] if c.get("change") is not None and c.get("today") is not None]
-    if not moved:
-        return ""
-    top = max(moved, key=lambda c: abs(c["change"] * c.get("weight", 0)))
-    if round(top["change"], 1) == 0:
-        return "No category moved since yesterday."
-    verb = "rose" if top["change"] > 0 else "fell"
-    return f"Biggest move: {top['label']} {verb} {abs(top['change']):.1f} to {top['today']:.1f}."
 
 
 def email_subject(score: float, tier: dict, change: float | None, stories: list[dict]) -> str:
@@ -261,80 +240,16 @@ def _stories_html(stories: list[dict]) -> str:
     return out
 
 
-def _categories_html(categories: list[dict]) -> str:
-    rows = ""
-    for cat in categories:
-        today, change = cat.get("today"), cat.get("change")
-        color = tier_for(today)["color"] if today is not None else DIM
-        tag = {"stored": "last stored", "stale": "stale", "excluded": "excluded"}.get(cat.get("status") or "")
-        tag_html = f' <span style="color:{DIM};font-size:11px;">({tag})</span>' if tag else ""
-        width = max(1, round(today)) if today is not None else 0
-        bar = (f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{TRACK};"><tr>'
-               f'<td width="{width}%" height="8" style="background:{color};font-size:0;line-height:0;">&nbsp;</td>'
-               f'<td style="font-size:0;line-height:0;">&nbsp;</td></tr></table>') if today is not None else ""
-        ch_color = DIM if change is None or round(change, 1) == 0 else (TIER_COLORS["Healthy"] if change > 0 else TIER_COLORS["Critical"])
-        rows += (f'<tr><td style="padding:6px 0;font-size:14px;color:{TEXT};">{html_utils.escape(cat.get("label", ""))}{tag_html}</td>'
-                 f'<td style="padding:6px 10px;width:38%;">{bar}</td>'
-                 f'<td align="right" style="padding:6px 0;font-family:{MONO};font-size:14px;font-weight:bold;color:{color};">'
-                 f'{"–" if today is None else f"{today:.1f}"}</td>'
-                 f'<td align="right" style="padding:6px 0 6px 12px;width:46px;font-family:{MONO};font-size:13px;color:{ch_color};">'
-                 f'{"–" if change is None else _signed(change)}</td></tr>')
-    return f'<table width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table>'
-
-
-def _chokepoints_html(chokepoints: dict) -> str:
-    items = [i for i in (chokepoints or {}).get("items") or [] if i.get("pct_of_normal") is not None]
-    if not items:
-        return ""
-    items = sorted(items, key=lambda i: i["pct_of_normal"])[:6]
-    cells = ""
-    for n, item in enumerate(items):
-        if n and n % 3 == 0:
-            cells += "</tr><tr>"
-        pct = item["pct_of_normal"]
-        cells += (f'<td align="center" width="33%" style="padding:10px 4px;border:1px solid {RULE};">'
-                  f'<div style="font-family:{MONO};font-size:20px;font-weight:bold;color:{chokepoint_color(pct)};">{pct:.0f}%</div>'
-                  f'<div style="font-size:11px;color:{DIM};margin-top:4px;">{html_utils.escape(item["name"])}</div></td>')
-    try:
-        as_of = f", as of {datetime.fromisoformat(chokepoints['as_of']).strftime('%b %-d')}"
-    except (KeyError, TypeError, ValueError):
-        as_of = ""
-    return (_label("Chokepoint traffic vs normal")
-            + f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>{cells}</tr></table>'
-            + f'<div style="font-size:12px;line-height:1.5;color:{DIM};margin-top:10px;">Ship transits in the last 7 days '
-            + f'vs the same month in 2022 to 2023{as_of}. {PORTWATCH_CREDIT}</div>')
-
-
 def generate_html_email(
-    score: float,
-    tier: dict,
     stories: list[dict],
     website_url: str,
     unsubscribe_url: str = "",
     postal_address: str = "",
-    change: float | None = None,
-    categories: list[dict] | None = None,
-    chokepoints: dict | None = None,
 ) -> str:
-    """The email: today's briefing first, then the index and its categories, then chokepoints."""
-    color = tier.get("color", TEXT)
-    label = tier.get("label", "Unknown")
+    """The email is the news briefing; the button leads to the dashboard for the index."""
     site = website_url.split("?")[0].rstrip("/")
-    change_html = (f'<span style="font-family:{MONO};font-size:13px;color:{DIM};padding-left:10px;">{_change_text(change)}</span>'
-                   if _change_text(change) else "")
-    move = _biggest_move(categories or [])
-    move_html = (f'<p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:{TEXT};">{html_utils.escape(move)}</p>'
-                 if move else "")
-    index_inner = (_label("The index")
-                   + f'<div style="margin:0 0 14px 0;"><span style="font-family:{MONO};font-size:40px;line-height:1;font-weight:bold;color:{color};">{score:.1f}</span>'
-                   + f'<span style="font-family:{MONO};font-size:14px;font-weight:bold;color:{color};letter-spacing:1px;padding-left:12px;">{html_utils.escape(label.upper())}</span>'
-                   + f'{change_html}</div>' + move_html
-                   + (_categories_html(categories) if categories else ""))
-    choke = _chokepoints_html(chokepoints or {})
     footer = [
         f'Forwarded this? <a href="{site}/?utm_source=forward" style="color:{TEXT};">Sign up free</a> for the daily email.',
-        "The index is built only from published data (NY Fed, IMF PortWatch, FRED, U.S. Treasury and others). "
-        f'The news above does not feed it. <a href="{site}/docs" style="color:{DIM};">How it works</a>',
     ]
     last = []
     if unsubscribe_url:
@@ -358,10 +273,8 @@ def generate_html_email(
     </tr></table>
   </td></tr>
   {_section(_label("Today's briefing") + _stories_html(stories), "26px 28px")}
-  {_section(index_inner)}
-  {_section(choke) if choke else ""}
   <tr><td align="center" style="padding:24px 28px 28px 28px;border-top:1px solid {RULE};">
-    <a href="{html_utils.escape(website_url)}" style="display:inline-block;background:{AMBER};color:#000000;font-family:{MONO};font-size:14px;font-weight:bold;letter-spacing:1px;text-decoration:none;padding:14px 28px;">OPEN THE DASHBOARD</a>
+    <a href="{html_utils.escape(website_url)}" style="display:inline-block;background:{AMBER};color:#000000;font-family:{MONO};font-size:14px;font-weight:bold;letter-spacing:1px;text-decoration:none;padding:14px 28px;">SEE TODAY'S INDEX</a>
   </td></tr>
   <tr><td style="padding:20px 28px;border-top:1px solid {RULE};font-size:12px;line-height:1.6;color:{DIM};">{"<br>".join(footer)}</td></tr>
 </table>
@@ -370,17 +283,12 @@ def generate_html_email(
 
 
 def generate_text_email(
-    score: float,
-    tier: dict,
     stories: list[dict],
     website_url: str,
     unsubscribe_url: str = "",
     postal_address: str = "",
-    change: float | None = None,
-    categories: list[dict] | None = None,
-    chokepoints: dict | None = None,
 ) -> str:
-    """Plain text version, same order as the HTML."""
+    """Plain text version of the briefing."""
     site = website_url.split("?")[0].rstrip("/")
     lines = [f"GLOBAL SUPPLY CHAIN INDEX, {datetime.now(timezone.utc).strftime('%b %-d, %Y')}", "", "TODAY'S BRIEFING", ""]
     for story in stories or []:
@@ -392,24 +300,8 @@ def generate_text_email(
         lines.append("")
     if not stories:
         lines += ["No fresh supply chain news cleared our filters this morning.", ""]
-    index_line = f"THE INDEX: {score:.1f} ({tier.get('label', 'Unknown')})"
-    if _change_text(change):
-        index_line += f", {_change_text(change)}"
-    lines += [index_line]
-    if _biggest_move(categories or []):
-        lines.append(_biggest_move(categories or []))
-    for cat in categories or []:
-        today, ch = cat.get("today"), cat.get("change")
-        lines.append(f"  {cat.get('label', ''):<20} {'–' if today is None else f'{today:.1f}':>6}"
-                     f"  {'' if ch is None else _signed(ch)}")
-    items = sorted([i for i in (chokepoints or {}).get("items") or [] if i.get("pct_of_normal") is not None],
-                   key=lambda i: i["pct_of_normal"])[:6]
-    if items:
-        lines += ["", "CHOKEPOINT TRAFFIC VS NORMAL: " + ", ".join(f"{i['name']} {i['pct_of_normal']:.0f}%" for i in items),
-                  PORTWATCH_CREDIT]
-    lines += ["", f"Open the dashboard: {website_url}", "",
-              f"Forwarded this? Sign up free: {site}/?utm_source=forward",
-              "The index is built only from published data. The news above does not feed it."]
+    lines += [f"See today's index: {website_url}", "",
+              f"Forwarded this? Sign up free: {site}/?utm_source=forward"]
     if unsubscribe_url:
         lines.append(f"Unsubscribe: {unsubscribe_url}")
     if postal_address:
@@ -470,8 +362,6 @@ def main():
         return
     tier = tier_for(score)
     change = data.get("index_change")
-    categories = data.get("categories") or []
-    chokepoints = data.get("chokepoints") or {}
 
     logger.info(f"Dashboard score: {score:.1f} ({tier.get('label')})")
     stories = _build_daily_stories(fallback_briefing=briefing)
@@ -519,12 +409,10 @@ def main():
     if args.dry_run:
         sample = subscribers[0]
         text_content = generate_text_email(
-            score, tier, stories, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address,
-            change, categories, chokepoints,
+            stories, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address
         )
         html_content = generate_html_email(
-            score, tier, stories, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address,
-            change, categories, chokepoints,
+            stories, _dashboard_url(website_url), _unsubscribe_url(website_url, sample), postal_address
         )
         logger.info("DRY RUN MODE: Skipping actual SMTP dispatch.")
         print("Subject:", email_subject(score, tier, change, stories))
@@ -557,12 +445,10 @@ def main():
                 try:
                     unsubscribe_url = _unsubscribe_url(website_url, email)
                     text_content = generate_text_email(
-                        score, tier, stories, _dashboard_url(website_url), unsubscribe_url, postal_address,
-                        change, categories, chokepoints,
+                        stories, _dashboard_url(website_url), unsubscribe_url, postal_address
                     )
                     html_content = generate_html_email(
-                        score, tier, stories, _dashboard_url(website_url), unsubscribe_url, postal_address,
-                        change, categories, chokepoints,
+                        stories, _dashboard_url(website_url), unsubscribe_url, postal_address
                     )
                     msg = EmailMessage()
                     msg["Subject"] = email_subject(score, tier, change, stories)
