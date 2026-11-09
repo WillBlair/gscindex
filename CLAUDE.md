@@ -531,7 +531,7 @@ The `_DATA_CACHE` dict returned by `aggregate_data()`:
 - Tier colors for the UI are `TIER_COLORS` in `components/terminal_data.py`: Healthy `#35D07F`, Stable `#F5C542`, Stressed `#FF8A3D`, Critical `#FF4D5E`. `config.HEALTH_TIERS` keeps its own colors for the newsletter and stored metadata. `config.COLORS` is the old palette, still used by the newsletter email
 - Fonts: JetBrains Mono for numbers, labels, tables and chrome; Inter for headlines and prose. Loaded from Google Fonts in `app.py`, `/report` and `/docs`
 - Dash Bootstrap Components (default theme, `data-bs-theme="dark"`) is still loaded for the modal, popover, tooltip and select, restyled by `terminal.css`
-- Responsive: desktop grid is `300px | 1fr | 300px`; at 1100px and below it is two columns; at 760px and below it is one column for phones
+- Responsive: desktop grid is `300px | 1fr | 300px`; at 1100px and below it is two columns; at 760px and below it is one column for phones, ordered header, sign-up bar, readout, map, briefing, then the rest (CSS `order`, Will's call 2026-11-08)
 - The world map uses `dragmode="pan"` on desktop. `assets/terminal.js` turns off map drag and scroll zoom on phones and touch screens so swipes scroll the page. A tap on a port still shows its hover box
 
 ### Terminal panes (layout.py, terminal.py)

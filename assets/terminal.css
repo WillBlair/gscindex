@@ -436,8 +436,8 @@ td.h a:hover { text-decoration: underline; }
 }
 
 /* ── Phones ───────────────────────────────────────────────────────── */
-/* One column: readout, map, chokepoint traffic (moved out of the readout), quotes, headlines,
-   briefing, categories. The header wraps to name + Subscribe, then the
+/* One column: readout, map, briefing, then chokepoint traffic (moved out of the readout),
+   quotes, categories and headlines. The header wraps to name + Subscribe, then the
    profile switch, then Updated / Methodology / API / CSV. Tables drop the
    low-value columns (.hide-s) instead of scrolling sideways. */
 @media (max-width: 760px) {
@@ -456,6 +456,10 @@ td.h a:hover { text-decoration: underline; }
   .map-pane { min-height: 260px; }
   .read .choke { display: none; }
   .choke-phone { display: block; }
+  /* Phone order: header, sign-up bar, index, map, then the briefing; the rest keep their order. */
+  .shell > * { order: 3; }
+  .shell > header, .signup-bar, .read-cell, .map-pane { order: 1; }
+  .briefing-pane { order: 2; }
 
   /* 16px inputs stop iOS from zooming the page on focus. */
   .newsletter-input, .flt-search .dash-input-element, .flt.form-select { font-size: 16px; }
