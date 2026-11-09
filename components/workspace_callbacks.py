@@ -6,7 +6,7 @@ from dash import Input, Output, State, dcc
 from components.charts import build_world_map
 from components.layout import DEFAULT_TREND_DAYS, TREND_DAYS, map_caption
 from components.terminal import (
-    build_briefing, build_category_table, build_headlines,
+    build_briefing, build_category_table, build_chokepoints, build_headlines,
     build_quotes, build_readout, updated_label,
 )
 from components.terminal_data import SECTOR_ROW_HISTORY_DAYS as SECTOR_TREND_DAYS, tab_key
@@ -42,7 +42,7 @@ def register_workspace_callbacks(app, get_snapshot):
     @app.callback(
         Output("world-map", "figure"), Output("quotes", "children"), Output("briefing", "children"),
         Output("updated-label", "children"), Output("map-caption", "children"),
-        Output("refresh-interval", "interval"),
+        Output("choke-phone", "children"), Output("refresh-interval", "interval"),
         Input("refresh-interval", "n_intervals"), prevent_initial_call=True,
     )
     def update_context(_):
@@ -53,6 +53,7 @@ def register_workspace_callbacks(app, get_snapshot):
             build_briefing(data.get("briefing", "")),
             updated_label(data),
             map_caption(data.get("map_markers", [])),
+            build_chokepoints(data.get("chokepoints")),
             300_000 if fresh else 20_000,
         )
 

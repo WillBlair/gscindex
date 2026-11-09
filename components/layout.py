@@ -15,7 +15,7 @@ from dash import dcc, html
 
 from components.charts import _finite_score, build_world_map
 from components.terminal import (
-    build_briefing, build_category_table, build_header, build_headlines,
+    build_briefing, build_category_table, build_chokepoints, build_header, build_headlines,
     build_quotes, build_readout, build_signup_bar, updated_label,
 )
 from config import CATEGORY_LABELS, CATEGORY_WEIGHTS, DEFAULT_TAB
@@ -107,6 +107,8 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
             dcc.Graph(id="world-map", figure=build_world_map(markers), config=MAP_CONFIG,
                       responsive=True, className="map-graph"),
         ], className="pane map-pane", **{"aria-label": "Port map"}),
+        # Phones only: the chokepoint list moves below the map (the readout's copy is hidden there).
+        html.Section(build_chokepoints(data.get("chokepoints")), id="choke-phone", className="pane choke-phone"),
         html.Section([
             _title("Markets"),
             html.Div(build_quotes(data.get("market_data", {})), id="quotes", className="quotes-scroll"),

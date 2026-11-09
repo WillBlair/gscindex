@@ -248,8 +248,9 @@ def test_trend_range_drives_the_readout_line(terminal_app):
 
 def test_refresh_updates_context_panes_and_interval(terminal_app, monkeypatch):
     refresh = _callback(terminal_app.app, "refresh-interval.interval")
-    figure, quotes, briefing, updated, caption, interval = refresh(3)
+    figure, quotes, briefing, updated, caption, choke, interval = refresh(3)
     assert figure.data[0].type == "scattergeo"
+    assert "Chokepoint traffic" in _text(choke)   # the phone copy below the map refreshes too
     assert "Read full report" in _text(briefing)
     assert updated.startswith("Updated")
     assert caption.endswith("ports, colored by relative risk")

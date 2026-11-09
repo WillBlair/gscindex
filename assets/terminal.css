@@ -257,6 +257,8 @@ button { font: inherit; color: inherit; }
 .choke-bar u { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--text); opacity: 0.45; }
 .choke-pct { text-align: right; }
 .choke-note { font-size: 11px; margin-top: 8px; line-height: 1.4; }
+.choke-phone { display: none; }   /* phones show this copy below the map instead of the readout's */
+.choke-phone .choke { margin-top: 0; padding-top: 0; border-top: 0; }
 .kv {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -434,7 +436,7 @@ td.h a:hover { text-decoration: underline; }
 }
 
 /* ── Phones ───────────────────────────────────────────────────────── */
-/* One column in the desktop order: readout, map, quotes, headlines,
+/* One column: readout, map, chokepoint traffic (moved out of the readout), quotes, headlines,
    briefing, categories. The header wraps to name + Subscribe, then the
    profile switch, then Updated / Methodology / API / CSV. Tables drop the
    low-value columns (.hide-s) instead of scrolling sideways. */
@@ -452,6 +454,8 @@ td.h a:hover { text-decoration: underline; }
   .head .updated { margin-right: auto; }
 
   .map-pane { min-height: 260px; }
+  .read .choke { display: none; }
+  .choke-phone { display: block; }
 
   /* 16px inputs stop iOS from zooming the page on focus. */
   .newsletter-input, .flt-search .dash-input-element, .flt.form-select { font-size: 16px; }
