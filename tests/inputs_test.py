@@ -462,3 +462,11 @@ def test_history_records_nothing_when_every_input_loads(monkeypatch):
     provider = InputsProvider()
     provider.fetch_history(90)
     assert provider.history_input_failures == {}
+
+
+def test_history_records_every_metal_when_cpi_fails(monkeypatch):
+    Env(monkeypatch, cpi=ValueError("down"))
+    provider = InputsProvider()
+    provider.fetch_history(60)
+    assert set(provider.history_input_failures) == set(inputs._METALS)
+    assert "prices_paid" not in provider.history_input_failures

@@ -242,6 +242,8 @@ class InputsProvider(BaseProvider):
         except RuntimeError as exc:
             logger.warning("Input Costs metal history skipped: %s", exc)
             ratios = None
+            for leg in _METALS:
+                self.history_input_failures[leg] = f"{type(exc).__name__}: {exc}"
 
         builders = {_PP: lambda: self._prices_paid_history(today, anchors[_PP], stats)}
         if ratios is not None:
