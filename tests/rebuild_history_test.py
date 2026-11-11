@@ -181,6 +181,69 @@ def test_dry_run_on_postgres_is_allowed_without_confirm(monkeypatch):
     rebuild.check_write_allowed(write=False)
 
 
+class _FakeCursor:
+    pass
+
+
+class _FakePgConnection:
+    def __init__(self):
+        self.entered = 0
+        self.exited = 0
+        self.closed = 0
+        self.cur = _FakeCursor()
+
+    def __enter__(self):
+        self.entered += 1
+        return self
+
+    def __exit__(self, *exc):
+        self.exited += 1
+        return False
+
+    def cursor(self):
+        return self.cur
+
+    def close(self):
+        self.closed += 1
+
+
+def _fake_postgres(monkeypatch, recorder):
+    import psycopg2.extras
+    conn = _FakePgConnection()
+    monkeypatch.setattr(database, "get_db_type", lambda: "postgres")
+    monkeypatch.setattr(database, "get_connection", lambda: conn)
+    monkeypatch.setattr(psycopg2.extras, "execute_batch", recorder)
+    return conn
+
+
+def test_postgres_upsert_sends_rows_in_pages_inside_one_transaction(monkeypatch):
+    calls = []
+    conn = _fake_postgres(monkeypatch, lambda *a, **k: calls.append((a, k)))
+    d = date(2026, 10, 1)
+    rows = [(d, "energy", 50), (d, "freight", 40.0), (d, "inputs", 30.0)]
+    assert database.upsert_scores_for_dates(rows) == 3
+    assert len(calls) == 1
+    (cur, sql, sent), kwargs = calls[0]
+    assert cur is conn.cur
+    assert "INSERT INTO daily_category_scores" in sql and "ON CONFLICT" in sql
+    assert list(sent) == [(d, "energy", 50.0), (d, "freight", 40.0), (d, "inputs", 30.0)]
+    assert all(isinstance(r[2], float) for r in sent)
+    assert kwargs["page_size"] == database.UPSERT_PAGE_SIZE
+    assert (conn.entered, conn.exited, conn.closed) == (1, 1, 1)
+
+
+def test_postgres_upsert_failure_returns_minus_one_and_closes(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("connection already closed")
+    conn = _fake_postgres(monkeypatch, boom)
+    assert database.upsert_scores_for_dates([(date(2026, 10, 1), "energy", 50.0)]) == -1
+    assert conn.closed == 1
+
+
+def test_upsert_page_size_is_a_few_hundred():
+    assert 100 <= database.UPSERT_PAGE_SIZE <= 1000
+
+
 def test_upsert_helpers_skip_non_finite(sqlite_db):
     d = date(2026, 10, 1)
     assert database.upsert_scores_for_dates([(d, "energy", float("nan")), (d, "freight", 40.0)]) == 1

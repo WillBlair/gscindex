@@ -816,6 +816,10 @@ def upsert_composite_for_dates(rows: list[tuple[date, float]]) -> int:
             ON CONFLICT(date) DO UPDATE SET score = excluded.score""")
 
 
+# One round trip per page of rows instead of per row: a 15-minute single-row transaction was closed by Neon.
+UPSERT_PAGE_SIZE = 500
+
+
 def _upsert_dated(rows: list[tuple], postgres_sql: str, sqlite_sql: str) -> int:
     if not rows:
         return 0
@@ -827,7 +831,8 @@ def _upsert_dated(rows: list[tuple], postgres_sql: str, sqlite_sql: str) -> int:
         with conn:
             cursor = conn.cursor()
             if db_type == "postgres":
-                cursor.executemany(postgres_sql, rows)
+                import psycopg2.extras
+                psycopg2.extras.execute_batch(cursor, postgres_sql, rows, page_size=UPSERT_PAGE_SIZE)
             else:
                 cursor.executemany(sqlite_sql, [(d.isoformat(), *rest) for d, *rest in rows])
         return len(rows)
