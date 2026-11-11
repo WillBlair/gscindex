@@ -234,6 +234,12 @@ if not startup_data:
 if not startup_data:
     logging.getLogger(__name__).info("Cold start: no cache or fallback. Showing skeleton until background fetch completes.")
 
+try:
+    from data import long_history
+    long_history.prime_from_disk()
+except Exception as e:
+    logging.getLogger(__name__).warning("Long history prime failed: %s", e)
+
 # _DATA_CACHE = None on cold start; populated by background thread in ~60s
 _DATA_CACHE = startup_data
 _LAST_UPDATE = _extract_last_updated(startup_data) if startup_data else None

@@ -326,12 +326,13 @@ class _NoWeather:
 
 def _run_aggregate(monkeypatch, register_result):
     from config import CATEGORY_WEIGHTS
-    from data import aggregator, cache, status
+    from data import aggregator, cache, long_history, status
 
     recorded = {}
     monkeypatch.setattr(aggregator, "_FETCH_TASKS", _InlineTasks())
     monkeypatch.setattr(aggregator, "_PROVIDERS", [_FakeProvider(c) for c in CATEGORY_WEIGHTS])
     monkeypatch.setattr(aggregator, "_WEATHER", _NoWeather())
+    monkeypatch.setattr(long_history, "refresh_if_due", lambda today=None: True)
     monkeypatch.setattr(aggregator, "fetch_supply_chain_news", mock.Mock(side_effect=RuntimeError("off")))
     monkeypatch.setattr(aggregator, "_fetch_market_data", lambda: {})
     monkeypatch.setattr(aggregator, "generate_port_summaries", lambda: {})

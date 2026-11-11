@@ -40,7 +40,7 @@ from config import (
     DISRUPTION_SCORE_THRESHOLD,
     HISTORY_DAYS,
 )
-from data import database
+from data import database, long_history
 from data.ports_data import MAJOR_PORTS
 
 from data.providers.chokepoints import ChokepointsProvider
@@ -339,6 +339,14 @@ def _once_per_hour(key: str, load, keep=lambda value: True):
         with _HOURLY_LOCK:
             _HOURLY[key] = (hour, value)
     return value
+
+
+def _refresh_long_history() -> None:
+    """Load the long history once per UTC clock hour's first cycle (itself once a day)."""
+    try:
+        _once_per_hour("long_history", long_history.refresh_if_due)
+    except Exception as exc:
+        logger.warning("Long history refresh failed: %s", exc)
 
 
 def _stored_daily_history() -> dict:
@@ -809,6 +817,7 @@ def aggregate_data(status_callback=None) -> dict:
     logger.info("Data aggregation complete in %.2fs", elapsed)
 
     daily_history = _stored_daily_history()
+    _refresh_long_history()
 
     result = {
         "last_updated_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),

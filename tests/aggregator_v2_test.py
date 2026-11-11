@@ -15,7 +15,7 @@ import pytest
 
 import config
 from config import CATEGORY_WEIGHTS
-from data import aggregator, cache, database, status
+from data import aggregator, cache, database, long_history, status
 from data.runtime import RefreshTasks
 from scoring.engine import renormalized_weights
 
@@ -69,6 +69,8 @@ class _Weather:
     def fetch_batch_port_weather(self, coords):
         return {}
 
+_REAL_REFRESH = long_history.refresh_if_due
+
 
 @pytest.fixture
 def harness(monkeypatch):
@@ -76,7 +78,7 @@ def harness(monkeypatch):
     recorded = {"record": [], "snapshot": 0}
 
     def run(providers=None, *, last=None, register=None, news=None, tasks=None, daily=None,
-            sector_tasks=None):
+            sector_tasks=None, history=None):
         aggregator._HOURLY.clear()   # each run starts with no remembered database reads
         monkeypatch.setattr(aggregator, "_FETCH_TASKS", tasks or _SyncTasks())
         monkeypatch.setattr(aggregator, "_SECTOR_TASKS", sector_tasks or _SyncTasks())
@@ -84,6 +86,7 @@ def harness(monkeypatch):
             aggregator, "_PROVIDERS",
             providers if providers is not None else [_Provider(c) for c in CATEGORY_WEIGHTS])
         monkeypatch.setattr(aggregator, "_WEATHER", _Weather())
+        monkeypatch.setattr(long_history, "refresh_if_due", history or (lambda today=None: True))
         monkeypatch.setattr(
             aggregator, "fetch_supply_chain_news",
             news or mock.Mock(side_effect=RuntimeError("off")))
@@ -466,6 +469,8 @@ def test_second_cycle_in_an_hour_opens_no_database_connection(harness, monkeypat
     run(providers)                                   # sets every non-database mock
     for name, function in real.items():
         monkeypatch.setattr(database, name, function)
+    monkeypatch.setattr(long_history, "refresh_if_due", _REAL_REFRESH)
+    long_history.reset()
     monkeypatch.setattr(database, "_resolve_db_config", lambda: ("sqlite", None))
     monkeypatch.setattr(database, "SQLITE_PATH", str(tmp_path / "scores.db"))
     monkeypatch.setattr(database, "_daily_scores_written_hour", None)
@@ -482,10 +487,18 @@ def test_second_cycle_in_an_hour_opens_no_database_connection(harness, monkeypat
 
     monkeypatch.setattr(database, "get_connection", counting_connection)
     aggregator.aggregate_data()
-    assert len(connections) >= 3                     # fallback lookup, history read, score write
+    assert len(connections) >= 4                     # fallback lookup, history read, long history, score write
     connections.clear()
     aggregator.aggregate_data()
     assert connections == []
+
+
+def test_long_history_refresh_runs_in_the_first_cycle_of_the_hour_only(harness):
+    run, _ = harness
+    calls = []
+    run(history=lambda today=None: calls.append(1) or True)
+    aggregator.aggregate_data()
+    assert calls == [1]
 
 
 # -- history alignment ---------------------------------------------------------------------------
