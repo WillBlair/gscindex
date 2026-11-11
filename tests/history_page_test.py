@@ -144,3 +144,12 @@ def test_signups_are_rate_limited_per_visitor(monkeypatch):
     c = client(monkeypatch, history(), snapshot(TODAY))
     codes = [c.post("/history/signup", data={"email": "a@b.co"}).status_code for _ in range(3)]
     assert codes == [303, 303, 429]
+
+
+def test_every_episode_has_one_sentence_and_an_https_source():
+    assert [e["date"] for e in config.HISTORY_EPISODES] == [
+        "2020-04-15", "2021-03-29", "2021-12-15", "2024-02-15", "2025-04-15", "2026-03-20"]
+    for episode in config.HISTORY_EPISODES:
+        assert 40 <= len(episode["text"]) <= 240 and episode["text"].endswith(".")
+        assert "—" not in episode["text"] and "–" not in episode["text"]
+        assert episode["source_url"].startswith("https://")

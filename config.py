@@ -189,13 +189,13 @@ HISTORY_SIGNUP_RATE_LIMIT = "5 per minute;30 per hour"
 HISTORY_PAGE_TITLE = "Global Supply Chain Index history, daily since January 2019"
 HISTORY_PAGE_DESCRIPTION = ("The Global Supply Chain Index for every day since 11 January 2019, "
                             "with six past disruptions marked and a CSV download.")
-HISTORY_EPISODES: list[dict] = [           # the v2 research episodes; text and source_url are filled in Task 9
-    {"date": "2020-04-15", "label": "COVID lockdowns", "text": "", "source_url": ""},
-    {"date": "2021-03-29", "label": "Ever Given, Suez Canal", "text": "", "source_url": ""},
-    {"date": "2021-12-15", "label": "NY Fed GSCPI record high", "text": "", "source_url": ""},
-    {"date": "2024-02-15", "label": "Red Sea diversions", "text": "", "source_url": ""},
-    {"date": "2025-04-15", "label": "US tariffs", "text": "", "source_url": ""},
-    {"date": "2026-03-20", "label": "Hormuz", "text": "", "source_url": ""},
+HISTORY_EPISODES: list[dict] = [           # the v2 research episodes
+    {"date": "2020-04-15", "label": "COVID lockdowns", "text": "On 14 April 2020 the IMF projected that global growth in 2020 would fall to negative 3 percent, a 6.3 point cut from January, and called the downturn the Great Lockdown.", "source_url": "https://www.imf.org/en/Blogs/Articles/2020/04/14/blog-weo-the-great-lockdown-worst-economic-downturn-since-the-great-depression"},
+    {"date": "2021-03-29", "label": "Ever Given, Suez Canal", "text": "The container ship Ever Given ran aground in the Suez Canal on 23 March 2021 and was freed on 29 March 2021, with more than 350 vessels waiting to pass.", "source_url": "https://maritime-executive.com/article/salvors-refloat-bow-of-the-grounded-boxship-ever-given"},
+    {"date": "2021-12-15", "label": "NY Fed GSCPI record high", "text": "In March 2022 the New York Fed said its Global Supply Chain Pressure Index showed pressures peaking in December 2021 and still at historically high levels.", "source_url": "https://libertystreeteconomics.newyorkfed.org/2022/03/global-supply-chain-pressure-index-march-2022-update/"},
+    {"date": "2024-02-15", "label": "Red Sea diversions", "text": "On 22 February 2024 UNCTAD said Suez Canal transits were down 42 percent from their peak after attacks on Red Sea shipping, as ships rerouted around the Cape of Good Hope.", "source_url": "https://unctad.org/press-material/disruptions-key-global-shipping-route-suez-canal-panama-canal-and-black-sea-signal"},
+    {"date": "2025-04-15", "label": "US tariffs", "text": "The US order of 9 April 2025 suspended the country tariffs set on 2 April for trading partners other than China until 9 July, applying 10 percent instead, and raised the China rate to 125 percent.", "source_url": "https://www.whitehouse.gov/presidential-actions/2025/04/modifying-reciprocal-tariff-rates-to-reflect-trading-partner-retaliation-and-alignment/"},
+    {"date": "2026-03-20", "label": "Hormuz", "text": "After military action in the Middle East on 28 February 2026, most ship traffic stopped using the Strait of Hormuz, and Brent crude passed $100 a barrel on 12 March 2026.", "source_url": "https://www.eia.gov/todayinenergy/detail.php?id=67424"},
 ]
 # Cloudflare Web Analytics site token for gscindex.com (cookieless). Not a secret: it is
 # printed in every page's HTML. The beacon is sent only on SITE_URL's host, never on
