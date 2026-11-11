@@ -222,3 +222,7 @@ def test_docs_states_the_sector_timeout_overrides(body):
     assert (f"{config.SECTOR_PROVIDER_TIMEOUT_SECONDS:g} seconds each (up to {longest:g} for the Aero "
             "categories that read several series)") in text
     assert "collected after the global ones" in text
+
+
+def test_docs_limitations_link_to_the_history_page(body):
+    assert '<a href="/history">history page</a>' in body

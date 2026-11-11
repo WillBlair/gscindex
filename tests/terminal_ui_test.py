@@ -107,6 +107,7 @@ def test_header_has_one_button_and_no_removed_controls():
     author = [c for c in walk(header) if isinstance(c, html.A) and c.href == config.APP_AUTHOR_URL]
     assert len(author) == 1 and "William Blair" in text_of(author[0])
     assert author[0].target == "_blank" and author[0].rel == "noopener noreferrer"
+    assert any(isinstance(c, html.A) and c.href == "/history" and c.children == "History" for c in walk(header))
     brand = next(c for c in walk(header) if "brand" in (getattr(c, "className", "") or ""))
     assert isinstance(brand, html.A) and brand.href == "/"
 

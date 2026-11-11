@@ -25,7 +25,8 @@ from typing import Callable
 from flask import Flask, Response, request
 from markupsafe import escape
 
-from config import APP_TITLE, CF_ANALYTICS_TOKEN, SECTORS, SITE_URL, SITEMAP_PATHS
+from config import (APP_TITLE, CF_ANALYTICS_TOKEN, HISTORY_PAGE_DESCRIPTION, SECTORS, SITE_URL,
+                    SITEMAP_PATHS)
 
 SnapshotGetter = Callable[[], tuple[dict | None, bool]]
 
@@ -41,7 +42,9 @@ _SCALE_BANDS = ((0, 40, "Critical"), (40, 60, "Stressed"), (60, 80, "Stable"), (
 _PAGE_TITLES = {
     "/docs": f"Methodology | {APP_TITLE}",
     "/report": f"Daily report | {APP_TITLE}",
+    "/history": f"History since 2019 | {APP_TITLE}",
 }
+_PAGE_DESCRIPTIONS = {"/history": HISTORY_PAGE_DESCRIPTION}
 _DESCRIPTION = ("A daily 0 to 100 health score for global supply chains, built only from "
                 "published data: NY Fed GSCPI, chokepoint transits, energy, tariffs, freight, "
                 "input costs and port hazards.")
@@ -112,7 +115,7 @@ def share_description(numbers: dict) -> str:
 def share_tags(path: str, data: dict | None) -> str:
     numbers = card_numbers(data)
     title = _PAGE_TITLES.get(path) or share_title(numbers)
-    description = share_description(numbers)
+    description = _PAGE_DESCRIPTIONS.get(path) or share_description(numbers)
     image = f"{SITE_URL}/og.png?v={_version(data)}"
     url = SITE_URL + path
     tags = [

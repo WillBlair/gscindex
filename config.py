@@ -175,7 +175,7 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 
 # Public pages, share card and analytics (api/share.py)
 SITE_URL = "https://gscindex.com"           # canonical origin for share tags, robots.txt and the sitemap
-SITEMAP_PATHS = ("/", "/docs", "/report")   # public pages listed in /sitemap.xml and tracked by analytics
+SITEMAP_PATHS = ("/", "/docs", "/report", "/history")   # public pages listed in /sitemap.xml and tracked by analytics
 
 # History page (/history): the Global index for every day since the first day all eight categories exist
 HISTORY_START_DATE = "2019-01-11"          # first day with all eight categories; the page shows nothing older

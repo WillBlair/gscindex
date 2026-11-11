@@ -186,6 +186,7 @@ def build_header(updated_label: str) -> html.Header:
         html.Div([
             html.Span(updated_label, id="updated-label", className="updated"),
             html.A("Methodology", href="/docs", className="opt"),
+            html.A("History", href="/history", className="opt"),
             html.Button("API", id="api-btn", n_clicks=0, className="opt link-button"),
             html.Button("CSV", id="export-btn", n_clicks=0, className="opt link-button"),
             html.A("William Blair", href=config.APP_AUTHOR_URL, target="_blank",

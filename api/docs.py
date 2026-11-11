@@ -1105,6 +1105,7 @@ flowchart LR
 <p>The index measures supply-side stress and input costs. In a demand collapse, such as April 2020, oil and metal prices fall, so the Energy and Input Costs categories read as healthy and offset the disruption elsewhere. The backtest reads April 2020 at about 70 (Stable), even though the NY Fed index (Supply Chain 30) and freight (51) were stressed.</p>
 <p>This is a property of averaging cost categories with disruption categories. It is disclosed here and has not been tuned away.</p>
 <p>The sector indexes have their own limitations, listed in section 5.</p>
+<p>The <a href="/history">history page</a> shows the index for every day since January 2019, including April 2020.</p>
 
 <div class="section-heading"><span class="section-num">12.</span><h2>Data sources and credits</h2></div>
 <hr class="section-rule">

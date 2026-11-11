@@ -39,7 +39,7 @@ def _clear_card_cache():
 
 def _client(data):
     app = Flask(__name__)
-    for path in ("/", "/docs", "/unsubscribe"):
+    for path in ("/", "/docs", "/history", "/unsubscribe"):
         app.add_url_rule(path, path, lambda: PAGE)
     share.register_share_routes(app, lambda: (data, True))
     return app.test_client()
@@ -59,6 +59,14 @@ def test_sitemap_lists_the_public_pages():
     body = resp.get_data(as_text=True)
     for path in config.SITEMAP_PATHS:
         assert f"<loc>{config.SITE_URL}{path}</loc>" in body
+
+
+def test_history_is_in_the_sitemap_with_its_own_title_and_description():
+    assert "/history" in config.SITEMAP_PATHS
+    assert f"<loc>{config.SITE_URL}/history</loc>" in _client(None).get("/sitemap.xml").get_data(as_text=True)
+    body = _client(_snapshot()).get("/history").get_data(as_text=True)
+    assert 'property="og:title" content="History since 2019 | Global Supply Chain Index"' in body
+    assert f'property="og:description" content="{config.HISTORY_PAGE_DESCRIPTION}"' in body
 
 
 def test_card_is_a_1200x630_png_and_cached_per_snapshot(monkeypatch):
