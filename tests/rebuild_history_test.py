@@ -642,3 +642,94 @@ def test_main_passes_sectors_only(monkeypatch, sqlite_db, capsys):
     assert seen["sectors_only"] is True and seen["write"] is False
     assert rebuild.rebuild_categories(sectors_only=True) == tuple(SECTOR_CATEGORIES)
     assert "composite" not in capsys.readouterr().out.split("CSV:")[0]
+
+
+# ---- backfill mode (--global-only with --start and --end) ----
+
+GLOBAL = tuple(config.CATEGORY_WEIGHTS)
+S, E = TODAY - timedelta(days=10), TODAY - timedelta(days=4)
+
+
+def test_global_only_fetches_no_sector_provider(sqlite_db, tmp_path):
+    providers = _providers()
+    result = rebuild.run(days=5, providers=providers, today=TODAY, backup_dir=tmp_path, global_only=True)
+    assert result.keys == (*GLOBAL, "composite")
+    assert all(p.asked_days is None for cat, p in providers.items() if cat not in GLOBAL)
+
+
+def test_start_and_end_are_inclusive_and_rows_after_end_stay(sqlite_db, tmp_path):
+    after = (E + timedelta(days=1)).isoformat()
+    _seed(sqlite_db, [(after, "energy", 10.0)], [(after, 11.0)])
+    providers = _providers()
+    result = rebuild.run(write=True, providers=providers, today=TODAY, backup_dir=tmp_path,
+                         global_only=True, start=S, end=E)
+    assert result.dates[0] == S and result.dates[-1] == E and len(result.dates) == 7
+    assert providers["energy"].asked_days == 10 + rebuild.EXTRA_FETCH_DAYS
+    cats, comp = _all_rows(sqlite_db)
+    assert (after, "energy", 10.0) in cats and (after, 11.0) in comp
+    assert result.written == 7 * 9 and result.backup_path.name.startswith("category_scores_pre_backfill_")
+    assert result.csv_path.name == f"rebuild_dryrun_backfill_{TODAY.isoformat()}.csv"
+
+
+def test_backfill_widens_fred_windows_only_during_the_fetch(sqlite_db, tmp_path, monkeypatch):
+    from scripts import backtest_composite
+    seen = []
+    providers = _providers()
+    real = providers["energy"].fetch_history
+    providers["energy"].fetch_history = lambda days: (seen.append(config.ENERGY_FRED_LOOKBACK_DAYS), real(days))[1]
+    before = config.ENERGY_FRED_LOOKBACK_DAYS
+    rebuild.run(providers=providers, today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    rebuild.run(days=5, providers=providers, today=TODAY, backup_dir=tmp_path)
+    assert seen == [backtest_composite.WIDE_FRED_DAYS, before] and config.ENERGY_FRED_LOOKBACK_DAYS == before
+
+
+def test_backfill_refuses_when_a_stored_row_would_keep_its_old_value(sqlite_db, tmp_path):
+    day = S + timedelta(days=2)
+    _seed(sqlite_db, [(day.isoformat(), "energy", 10.0)], [(day.isoformat(), 11.0)])
+    before = _all_rows(sqlite_db)
+    providers = _providers(missing={"energy": {day}})
+    with pytest.raises(rebuild.WriteRefused, match="2 stored rows"):
+        rebuild.run(write=True, providers=providers, today=TODAY, backup_dir=tmp_path,
+                    global_only=True, start=S, end=E)
+    assert _all_rows(sqlite_db) == before and not list(tmp_path.glob("category_scores_pre_*"))
+
+
+def test_write_refused_when_an_input_history_failed(sqlite_db, tmp_path):
+    providers = _providers()
+    providers["energy"].history_input_failures = {"ulsd": "TimeoutError: slow"}
+    dry = rebuild.run(providers=providers, today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    assert dry.failed_inputs == {"energy": {"ulsd": "TimeoutError: slow"}}
+    assert "FAILED INPUT energy.ulsd: TimeoutError: slow" in rebuild.summarize(dry)
+    with pytest.raises(rebuild.WriteRefused, match="energy.ulsd"):
+        rebuild.run(write=True, providers=providers, today=TODAY, backup_dir=tmp_path,
+                    global_only=True, start=S, end=E)
+    assert not list(tmp_path.glob("category_scores_pre_*"))
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"start": S}, {"end": E}, {"start": E, "end": S}, {"start": S, "end": TODAY},
+    {"start": S, "end": E, "global_only": False}, {"sectors_only": True},
+    {"start": S, "end": E, "allow_partial": True},
+])
+def test_bad_backfill_arguments_are_refused(kwargs, sqlite_db, tmp_path):
+    args = {"global_only": True, "today": TODAY, "providers": _providers(), "backup_dir": tmp_path} | kwargs
+    with pytest.raises(rebuild.WriteRefused):
+        rebuild.run(**args)
+
+
+def test_first_stored_shows_where_existing_rows_begin(sqlite_db, tmp_path):
+    later = (E + timedelta(days=3)).isoformat()
+    _seed(sqlite_db, [(later, "chokepoints", 90.0)], [])
+    result = rebuild.run(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    assert result.first_stored["chokepoints"] == E + timedelta(days=3)
+    assert f"chokepoints {later}" in rebuild.summarize(result)
+
+
+def test_main_passes_the_backfill_flags(monkeypatch, sqlite_db):
+    seen = {}
+    monkeypatch.setattr(rebuild, "run", lambda **kw: seen.update(kw) or rebuild.RebuildResult([S], {}, {}, {}, []))
+    monkeypatch.setattr(rebuild, "summarize", lambda result: "")
+    assert rebuild.main(["--global-only", "--start", "2019-01-11", "--end", "2026-07-22"]) == 0
+    assert seen["global_only"] and seen["start"] == date(2019, 1, 11) and seen["end"] == date(2026, 7, 22)
+    with pytest.raises(SystemExit):
+        rebuild.main(["--start", "2019-13-40", "--end", "2026-07-22"])

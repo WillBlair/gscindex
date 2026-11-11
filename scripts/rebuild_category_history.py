@@ -4,6 +4,7 @@ Rebuild the stored daily category scores with the new methodology (v2).
     DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/rebuild_category_history.py
     ... scripts/rebuild_category_history.py --days 92 --write
     ... scripts/rebuild_category_history.py --sectors-only --days 92 --write   (the sector backfill)
+    ... scripts/rebuild_category_history.py --global-only --start 2019-01-11 --end 2026-07-22   (the global backfill)
 
 For each weighted category, and for each sector category (the three Semis and four Aero
 categories in ``config.SECTORS``), the provider's own ``fetch_history`` supplies the real
@@ -19,6 +20,17 @@ and the retired industry categories (``chip_*``, ``aero_metals`` and the like) a
 written and no ``daily_scores`` composite row is written, so the live-recorded global history
 stays exactly as it is. The backup, the COUNT check and the partial-write refusal then cover the
 sector rows only. The sector backfill uses this flag.
+
+``--global-only --start YYYY-MM-DD --end YYYY-MM-DD`` is the backfill mode: the eight global
+categories and the composite for every date from start to end inclusive (end must be before
+today; rows after end are not touched). Each provider is asked for the days since start plus
+``EXTRA_FETCH_DAYS``, with the FRED lookbacks widened to ``backtest_composite.WIDE_FRED_DAYS``
+for the fetch only. No sector provider is called. ``--write`` in this mode refuses (nothing
+written, no backup file) when any provider recorded a failed input (``history_input_failures``;
+reported as ``category.input``), or when a stored composite or global row inside the window
+would get no new value and so keep its old one. ``--start`` needs ``--global-only`` and cannot
+be combined with ``--allow-partial`` or ``--sectors-only``. Files: dry run
+``rebuild_dryrun_backfill_<date>.csv``, backup ``category_scores_pre_backfill_<stamp>.csv``.
 
 Default is a dry run: it reads the current rows, writes
 ``data/backups/rebuild_dryrun_<date>.csv`` (``rebuild_dryrun_sectors_<date>.csv`` with
@@ -74,9 +86,13 @@ class BackupError(RuntimeError):
     """The pre-rebuild export could not be made or verified, so nothing was written."""
 
 
-def rebuild_categories(sectors_only: bool = False) -> tuple[str, ...]:
+def rebuild_categories(sectors_only: bool = False, global_only: bool = False) -> tuple[str, ...]:
     """Every category the rebuild covers: the global weighted ones, then each sector's.
-    With ``sectors_only``, the sector categories alone."""
+    With ``sectors_only``, the sector categories alone; with ``global_only``, the global ones alone."""
+    if sectors_only and global_only:
+        raise ValueError("sectors_only and global_only cannot be combined")
+    if global_only:
+        return tuple(config.CATEGORY_WEIGHTS)
     sector = tuple(cat for spec in config.SECTORS.values() for cat in spec["weights"])
     return sector if sectors_only else (*config.CATEGORY_WEIGHTS, *sector)
 
@@ -125,10 +141,14 @@ class RebuildResult:
     written: int = 0
     failed_categories: dict[str, str] = field(default_factory=dict)
     sectors_only: bool = False
+    global_only: bool = False
+    backfill: bool = False                    # a --start/--end run
+    failed_inputs: dict[str, dict[str, str]] = field(default_factory=dict)   # category -> input -> reason
+    first_stored: dict[str, date] = field(default_factory=dict)   # first stored row from the window start on, per key
 
     @property
     def categories(self) -> tuple[str, ...]:
-        return rebuild_categories(self.sectors_only)
+        return rebuild_categories(self.sectors_only, self.global_only)
 
     @property
     def keys(self) -> tuple[str, ...]:
@@ -140,6 +160,19 @@ class RebuildResult:
 
     def composite_rows(self) -> list[tuple[date, float]]:
         return sorted(self.composite.items())
+
+    def stored_without_new(self) -> list[tuple[date, str]]:
+        """Stored (date, key) rows inside the window that this run has no new value for, so a
+        write would leave them as they are. Ascending by date, then key."""
+        out = []
+        for (d, cat) in self.old:
+            if cat == COMPOSITE:
+                missing = d not in self.composite
+            else:
+                missing = not math.isfinite(self.new[cat].get(d, float("nan")))
+            if missing:
+                out.append((d, cat))
+        return sorted(out)
 
 
 def _window(days: int, today: date) -> list[date]:
@@ -160,20 +193,27 @@ def _history_on(series: pd.Series, dates: list[date]) -> pd.Series:
     return out.astype(float)
 
 
-def build_new_scores(providers: dict, days: int, today: date,
-                     sectors_only: bool = False) -> tuple[dict[str, pd.Series], dict[str, str]]:
-    """Each rebuilt category's (global and sector, or sector only) scores on the window, and why
-    any category failed.
+def build_new_scores(providers: dict, days: int, today: date, sectors_only: bool = False,
+                     global_only: bool = False, dates: list[date] | None = None,
+                     fetch_days: int | None = None,
+                     input_failures: dict[str, dict[str, str]] | None = None,
+                     ) -> tuple[dict[str, pd.Series], dict[str, str]]:
+    """Each rebuilt category's (global and sector, global only, or sector only) scores on the
+    window, and why any category failed.
 
     A history with no finite value inside the window counts as failed, the same as a raise:
-    writing the other categories alone would leave mixed-method rows.
+    writing the other categories alone would leave mixed-method rows. ``dates`` and
+    ``fetch_days`` override the window and the days asked of each provider (backfill mode).
+    ``input_failures``, when given, is filled with each provider's ``history_input_failures``
+    (category -> input -> reason), also for a category whose fetch raised.
     """
-    dates = _window(days, today)
+    dates = dates if dates is not None else _window(days, today)
+    fetch_days = fetch_days if fetch_days is not None else days + EXTRA_FETCH_DAYS
     new: dict[str, pd.Series] = {}
     failed: dict[str, str] = {}
-    for cat in rebuild_categories(sectors_only):
+    for cat in rebuild_categories(sectors_only, global_only):
         try:
-            history = providers[cat].fetch_history(days + EXTRA_FETCH_DAYS)
+            history = providers[cat].fetch_history(fetch_days)
             new[cat] = _history_on(history, dates)
             if not new[cat].notna().any():
                 failed[cat] = f"no finite values in the rebuild window ({dates[0]} to {dates[-1]})"
@@ -181,6 +221,9 @@ def build_new_scores(providers: dict, days: int, today: date,
             logger.warning("%s history unavailable: %s", cat, exc)
             failed[cat] = f"{type(exc).__name__}: {exc}"
             new[cat] = pd.Series(np.nan, index=list(dates), dtype=float)
+        inputs = getattr(providers[cat], "history_input_failures", None) or {}
+        if inputs and input_failures is not None:
+            input_failures[cat] = dict(inputs)
         logger.info("%s: %d of %d dates have a value", cat, int(new[cat].notna().sum()), len(dates))
     return new, failed
 
@@ -226,25 +269,56 @@ def write_backup_csv(rows: list[tuple], path: Path) -> None:
 def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = None,
         today: date | None = None, backup_dir: Path | None = None,
         allow_partial: bool = False, now: datetime | None = None,
-        sectors_only: bool = False) -> RebuildResult:
+        sectors_only: bool = False, global_only: bool = False,
+        start: date | None = None, end: date | None = None) -> RebuildResult:
+    backfill = start is not None or end is not None
+    if backfill:
+        if start is None or end is None:
+            raise WriteRefused("Backfill needs both a start and an end date.")
+        if start > end:
+            raise WriteRefused(f"Backfill start {start} is after its end {end}.")
+        if not global_only:
+            raise WriteRefused("Backfill (--start/--end) covers the global categories only: add --global-only.")
+        if allow_partial:
+            raise WriteRefused("--allow-partial cannot be combined with --start/--end: a backfill must be complete.")
+    if global_only and sectors_only:
+        raise WriteRefused("--global-only and --sectors-only cannot be combined.")
     check_write_allowed(write)
     now = now or datetime.now(timezone.utc)
     today = today or now.date()
+    if backfill and end >= today:
+        raise WriteRefused(f"Backfill end {end} must be before today ({today}); today's row belongs to the live aggregator.")
     backup_dir = Path(backup_dir) if backup_dir is not None else BACKUP_DIR
     providers = providers if providers is not None else default_providers()
 
-    dates = _window(days, today)
-    new, failed = build_new_scores(providers, days, today, sectors_only)
+    failed_inputs: dict[str, dict[str, str]] = {}
+    if backfill:
+        from scripts.backtest_composite import widened_fred_windows    # imported here: the modules import each other
+        dates = [start + timedelta(days=n) for n in range((end - start).days + 1)]
+        with widened_fred_windows():
+            new, failed = build_new_scores(
+                providers, 0, today, sectors_only, global_only, dates=dates,
+                fetch_days=(today - start).days + EXTRA_FETCH_DAYS, input_failures=failed_inputs)
+    else:
+        dates = _window(days, today)
+        new, failed = build_new_scores(providers, days, today, sectors_only, global_only,
+                                       input_failures=failed_inputs)
     if write and failed and not allow_partial:
         raise WriteRefused(
             f"Refusing --write: {', '.join(sorted(failed))} failed to fetch or returned no values in "
             "the window, so the rebuild would be partial and leave mixed-method rows. Fix the source, "
             "or pass --allow-partial to write the categories that did load.")
+    if write and failed_inputs and not allow_partial:
+        names = sorted(f"{cat}.{name}" for cat, inputs in failed_inputs.items() for name in inputs)
+        raise WriteRefused(
+            f"Refusing --write: input history failed for {', '.join(names)}, so those categories would "
+            "be rebuilt from fewer inputs than the live score uses. Fix the source and run again.")
     composite = {} if sectors_only else compute_composites(new, dates)
 
     if write and database.get_db_type() == "sqlite":
         database.init_db()              # a fresh dev database has no tables yet
-    keys = rebuild_categories(sectors_only) if sectors_only else (*rebuild_categories(), COMPOSITE)
+    categories = rebuild_categories(sectors_only, global_only)
+    keys = categories if sectors_only else (*categories, COMPOSITE)
     # On the write path the read is strict: a query error must abort, never yield an empty backup.
     try:
         stored = database.export_category_rows(dates[0], list(keys), strict=write)
@@ -254,12 +328,24 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
         raise BackupError(f"Could not read the existing rows for the backup ({exc}). Nothing was written.") from exc
     in_window = set(dates)
     old = {(d, cat): score for d, cat, score in stored if d in in_window}
+    first_stored: dict[str, date] = {}
+    for d, cat, _ in stored:                  # everything stored from the window start on, not cut at end
+        if cat not in first_stored or d < first_stored[cat]:
+            first_stored[cat] = d
 
     result = RebuildResult(
         dates=dates, old=old, new=new, composite=composite,
         dates_without_composite=[] if sectors_only else [d for d in dates if d not in composite],
-        failed_categories=failed, sectors_only=sectors_only)
-    scope = "sectors_" if sectors_only else ""
+        failed_categories=failed, sectors_only=sectors_only, global_only=global_only,
+        backfill=backfill, failed_inputs=failed_inputs, first_stored=first_stored)
+    if write and backfill:
+        kept = result.stored_without_new()
+        if kept:
+            first = ", ".join(f"{cat} {d}" for d, cat in kept[:3])
+            raise WriteRefused(
+                f"Refusing --write: {len(kept)} stored rows inside the window would keep their old value "
+                f"because this run has no new value for them (first three: {first}). Nothing was written.")
+    scope = "backfill_" if backfill else "sectors_" if sectors_only else ""
     result.csv_path = backup_dir / f"rebuild_dryrun_{scope}{today.isoformat()}.csv"
     write_dryrun_csv(result, result.csv_path)
 
@@ -272,7 +358,8 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
             raise BackupError(
                 f"Backup check failed: {len(existing)} rows exported but the database holds {in_db} "
                 "for the rows about to be overwritten. Nothing was written.")
-        result.backup_path = backup_dir / f"category_scores_pre_v2_{now:%Y-%m-%d_%H%M%S}.csv"
+        stem = "category_scores_pre_backfill" if backfill else "category_scores_pre_v2"
+        result.backup_path = backup_dir / f"{stem}_{now:%Y-%m-%d_%H%M%S}.csv"
         try:
             write_backup_csv(existing, result.backup_path)
         except OSError as exc:
@@ -322,10 +409,14 @@ def summarize(result: RebuildResult) -> str:
         gaps = result.dates_without_composite
         lines.append(f"Dates without a composite: {len(gaps)} of {len(result.dates)}"
                      + (f" ({gaps[0]} to {gaps[-1]})" if gaps else ""))
-    unmatched = sum(1 for (d, cat) in result.old
-                    if cat != COMPOSITE and not math.isfinite(result.new[cat].get(d, float("nan"))))
-    unmatched += sum(1 for (d, cat) in result.old if cat == COMPOSITE and d not in result.composite)
-    lines.append(f"Stored rows left as they are (no new value for that date, never deleted): {unmatched}")
+    for cat, inputs in result.failed_inputs.items():
+        for name, why in inputs.items():
+            lines.append(f"FAILED INPUT {cat}.{name}: {why}")
+    if result.backfill:
+        firsts = ", ".join(f"{key} {result.first_stored[key]}" for key in result.keys if key in result.first_stored)
+        lines.append(f"First stored row on or after {result.dates[0]}: {firsts or 'none'}")
+    lines.append("Stored rows left as they are (no new value for that date, never deleted): "
+                 f"{len(result.stored_without_new())}")
     return "\n".join(lines)
 
 
@@ -339,6 +430,13 @@ def _positive_int(text: str) -> int:
     return value
 
 
+def _iso_date(text: str) -> date:
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a date (YYYY-MM-DD)") from None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--days", type=_positive_int, default=DEFAULT_DAYS,
@@ -349,12 +447,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sectors-only", action="store_true",
                         help="rebuild the sector categories only; global category and composite rows "
                              "are not touched (use this for the sector backfill)")
+    parser.add_argument("--global-only", action="store_true",
+                        help="rebuild the eight global categories and the composite only; no sector provider is called")
+    parser.add_argument("--start", type=_iso_date, help="backfill: first date, YYYY-MM-DD (needs --global-only and --end)")
+    parser.add_argument("--end", type=_iso_date, help="backfill: last date, YYYY-MM-DD, before today (needs --start)")
     args = parser.parse_args(argv)
+    if (args.start is None) != (args.end is None):
+        parser.error("--start and --end go together")
+    if args.start is not None and not args.global_only:
+        parser.error("--start/--end need --global-only")
+    if args.global_only and args.sectors_only:
+        parser.error("--global-only and --sectors-only cannot be combined")
+    if args.start is not None and args.allow_partial:
+        parser.error("--allow-partial cannot be combined with --start/--end")
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     try:
         result = run(days=args.days, write=args.write, allow_partial=args.allow_partial,
-                     sectors_only=args.sectors_only)
+                     sectors_only=args.sectors_only, global_only=args.global_only,
+                     start=args.start, end=args.end)
     except (WriteRefused, BackupError) as exc:
         logger.error("%s", exc)
         return 2
