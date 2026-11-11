@@ -104,7 +104,8 @@ def chart_html(points: list[tuple[date, float | None]], episodes: list[dict], li
     if not points:
         return ""
     # Normalize onto every consecutive calendar day, first to last date. A date not
-    # passed becomes a gap; if a date repeats the last value wins. Never raises.
+    # passed becomes a gap; if a date repeats the last value wins. Never raises for `date` keys and
+    # finite or `None` values.
     by_day = {d: v for d, v in points}
     first, last = min(by_day), max(by_day)
     n = (last - first).days + 1

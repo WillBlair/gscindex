@@ -84,12 +84,24 @@ def test_csv_has_one_row_per_day_the_credit_and_empty_cells_for_gaps():
     assert not any(key in "\n".join(lines) for key in SECTOR_CATS)
 
 
-def test_csv_under_an_exclusion_has_no_today_row_and_keeps_the_credit():
+def test_csv_under_an_exclusion_has_a_today_row_with_an_empty_index_and_keeps_the_credit():
     h = hd.build_history(rows(START, 5), START, START)
     today = START + timedelta(days=6)
-    lines = hd.history_csv(h, snapshot(today, excluded=("energy",))).strip().splitlines()
-    assert lines[-1].startswith((START + timedelta(days=5)).isoformat()) and len(lines) == 7
-    assert all(line.endswith(CREDIT) or CREDIT in line for line in lines[1:])
+    lines = hd.history_csv(h, snapshot(today, excluded=("energy",), score=41.0)).strip().splitlines()
+    assert len(lines) == 8
+    cells = next(csv.reader([lines[-1]]))
+    assert cells[0] == today.isoformat() and cells[1] == ""
+    assert cells[2 + CATS.index("energy")] == "" and cells[2 + CATS.index("freight")] == "41.00"
+    assert all(CREDIT in line for line in lines[1:])
+
+
+def test_is_stale_only_when_the_history_holds_a_later_day_than_the_snapshot():
+    h = hd.build_history(rows(START, 5), START, START)
+    assert hd.is_stale(h, snapshot(START + timedelta(days=2)))
+    assert not hd.is_stale(h, snapshot(START + timedelta(days=4)))
+    assert not hd.is_stale(h, snapshot(START + timedelta(days=9)))
+    assert not hd.is_stale(h, None)
+    assert not hd.is_stale(hd.build_history([], START, START), snapshot(START))
 
 
 def test_a_snapshot_older_than_the_stored_days_is_stale_and_hides_nothing():

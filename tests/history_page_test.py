@@ -164,3 +164,40 @@ def test_a_failing_signup_is_logged_without_the_email(monkeypatch, caplog):
         resp = client(monkeypatch, history(), snapshot(TODAY)).post("/history/signup", data={"email": "secret@example.com"})
     assert "signup=error" in resp.headers["Location"]
     assert "history signup failed" in caplog.text and "secret@example.com" not in caplog.text
+
+
+def test_a_stale_snapshot_blanks_the_today_tile(monkeypatch):
+    stale = snapshot(START + timedelta(days=2), score=41.0, excluded=("energy",))
+    body = client(monkeypatch, history(), stale).get("/history").get_data(as_text=True)
+    assert "Excluded today" not in body
+    tile = re.search(r'<div class="lab">Today</div>\s*<div class="num"[^>]*>(.*?)</div>\s*<div class="sub">(.*?)</div>', body, re.S)
+    assert tile.group(1) == "–" and tile.group(2) == ""
+    assert "41.0" not in body
+
+
+def test_the_how_it_was_made_dates_come_from_config(monkeypatch):
+    body = client(monkeypatch, history(), snapshot(TODAY)).get("/history").get_data(as_text=True)
+    assert ("Days from 23 July 2026 to 22 October 2026 were calculated on 23 October 2026." in body
+            and "from 11 January 2019 to 22 July 2026 were calculated in" in body)
+    monkeypatch.setattr(config, "HISTORY_BACKFILL_END_DATE", "2026-08-31")
+    monkeypatch.setattr(config, "HISTORY_LIVE_FROM_DATE", "2026-11-02")
+    body = client(monkeypatch, history(), snapshot(TODAY)).get("/history").get_data(as_text=True)
+    assert "Days from 1 September 2026 to 1 November 2026 were calculated on 2 November 2026." in body
+
+
+def test_a_filled_honeypot_stores_nothing_and_looks_like_success(monkeypatch):
+    resp, calls = signup(monkeypatch, email="a@b.co", website="http://spam.example")
+    assert resp.status_code == 303 and "signup=ok#signup" in resp.headers["Location"] and calls == []
+    assert signup(monkeypatch, email="a@b.co", website="")[1] == [("a@b.co", "history")]
+
+
+def test_the_form_has_a_hidden_honeypot_field(monkeypatch):
+    body = client(monkeypatch, history(), snapshot(TODAY)).get("/history").get_data(as_text=True)
+    tag = re.search(r'<input[^>]*name="website"[^>]*>', body).group(0)
+    assert all(attr in tag for attr in ('tabindex="-1"', 'autocomplete="off"', 'aria-hidden="true"', 'type="text"'))
+
+
+def test_only_the_loading_page_is_noindex(monkeypatch):
+    marker = '<meta name="robots" content="noindex"'
+    assert marker in client(monkeypatch, None, snapshot(TODAY)).get("/history").get_data(as_text=True)
+    assert marker not in client(monkeypatch, history(), snapshot(TODAY)).get("/history").get_data(as_text=True)

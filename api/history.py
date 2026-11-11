@@ -8,7 +8,7 @@ how the history was made, a sign-up form and /history.csv. Everything is read fr
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable
 from urllib.parse import urlencode
 
@@ -68,10 +68,13 @@ def build_context(hist: dict | None, snapshot: dict | None) -> dict:
         return ctx
 
     points = history_data.series(hist, snapshot)
-    summary = terminal_data.index_summary(snapshot, "global") if snapshot else {"today": None, "tier": None}
+    stale = history_data.is_stale(hist, snapshot)       # a stale snapshot says nothing about today
+    summary = (terminal_data.index_summary(snapshot, "global") if snapshot and not stale
+               else {"today": None, "tier": None})
     ext = history_data.extremes(points)
     low, high = ext["low"], ext["high"]
-    excluded = [config.CATEGORY_LABELS.get(c, c) for c in (snapshot or {}).get("excluded_categories") or []]
+    excluded = [] if stale else [config.CATEGORY_LABELS.get(c, c)
+                                 for c in (snapshot or {}).get("excluded_categories") or []]
     tier = summary.get("tier")
     ctx["numbers"] = [
         {"label": "Today", "value": fmt_value(summary.get("today")), "color": tier["color"] if tier else None,
@@ -105,6 +108,8 @@ def build_context(hist: dict | None, snapshot: dict | None) -> dict:
         "live_from": fmt_date(live_from),
         "start": fmt_date(start),
         "backfill_end": fmt_date(date.fromisoformat(config.HISTORY_BACKFILL_END_DATE)),
+        "gap_start": fmt_date(date.fromisoformat(config.HISTORY_BACKFILL_END_DATE) + timedelta(days=1)),
+        "gap_end": fmt_date(live_from - timedelta(days=1)),
         "backfill_month": config.HISTORY_BACKFILL_MONTH,
         "value_2020": None if value_2020 is None else f"{value_2020:.1f}",
     })
@@ -159,6 +164,7 @@ td.r, th.r { text-align: right; }
 .badge { background: #FFB020; color: #07090C; font-weight: 800; font-size: 15px; letter-spacing: 0.04em; padding: 4px 9px; line-height: 1.2; }
 .signup-row p { margin: 0; }
 form { display: flex; margin-top: 14px; max-width: 520px; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 input[type=email] { flex: 1 1 auto; min-width: 0; background: #000000; color: #F2F4F7; border: 1px solid #1D232B; border-right: 0;
                     border-radius: 0; padding: 10px; font: inherit; font-size: 16px; }
@@ -191,7 +197,8 @@ _TEMPLATE = """<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-<style>{{ page_css }}{{ chart_css }}</style>
+{% if loading %}<meta name="robots" content="noindex" />
+{% endif %}<style>{{ page_css }}{{ chart_css }}</style>
 </head>
 <body>
 <nav class="topbar">
@@ -249,7 +256,7 @@ _TEMPLATE = """<!DOCTYPE html>
 </section>
 <section id="how">
 <h2>How this history was made</h2>
-<p>Recomputed, then recorded. Days before {{ live_from }} were calculated afterwards from the source data, so they include later revisions and are not what a live site showed that day. Days from {{ start }} to {{ backfill_end }} were calculated in {{ backfill_month }}. Days from 23 July 2026 to 22 October 2026 were calculated on 23 October 2026. Monthly and weekly figures sit on the day they were published. Daily figures (oil and diesel prices, the geopolitical risk and trade policy uncertainty indexes) sit on their own day.</p>
+<p>Recomputed, then recorded. Days before {{ live_from }} were calculated afterwards from the source data, so they include later revisions and are not what a live site showed that day. Days from {{ start }} to {{ backfill_end }} were calculated in {{ backfill_month }}. Days from {{ gap_start }} to {{ gap_end }} were calculated on {{ live_from }}. Monthly and weekly figures sit on the day they were published. Daily figures (oil and diesel prices, the geopolitical risk and trade policy uncertainty indexes) sit on their own day.</p>
 <p>The scale was set on this same history. In each category, 0 is the worst month on record through 2025, so the worst months of 2021 score near 0 in their category by construction. The chart shows how the scale reads the past. It is not a test of prediction.</p>
 <p>{% if value_2020 %}A demand collapse reads as healthy costs. On 15 April 2020 the index was {{ value_2020 }}, because oil and metal prices fell.{% else %}In a demand collapse oil and metal prices fall, so the cost categories read as healthy.{% endif %} <a href="/docs">Limitations</a></p>
 <p>Chokepoint traffic is compared with 2022 to 2023 volumes for every year, including 2019 to 2021.</p>
@@ -261,6 +268,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <form method="post" action="/history/signup">
     {% if utm_source %}<input type="hidden" name="utm_source" value="{{ utm_source }}" />{% endif %}
     {% if utm_campaign %}<input type="hidden" name="utm_campaign" value="{{ utm_campaign }}" />{% endif %}
+    <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
     <label for="history-email" class="sr">Email address</label>
     <input type="email" id="history-email" name="email" autocomplete="email" placeholder="you@email.com" required />
     <button type="submit" class="btn">Sign up free</button>
@@ -306,6 +314,8 @@ def register_history_routes(server: Flask, get_snapshot: Callable[[], tuple[dict
     @server.route("/history/signup", methods=["POST"])
     @limiter.limit(config.HISTORY_SIGNUP_RATE_LIMIT)
     def history_signup():
+        if request.form.get("website"):          # honeypot: people never see this field
+            return redirect("/history?signup=ok#signup", code=303)
         email = request.form.get("email", "").strip().lower()
         if not valid_email(email):
             code = "invalid"

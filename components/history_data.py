@@ -66,6 +66,13 @@ def _live_point(snapshot: dict | None) -> tuple[date, float] | None:
     return terminal_data._today_utc(snapshot), value
 
 
+def is_stale(history: dict, snapshot: dict | None) -> bool:
+    """True when the snapshot is dated before the last stored day, so it no longer describes today."""
+    if snapshot is None or not history.get("dates"):
+        return False
+    return date.fromisoformat(history["dates"][-1]) > terminal_data._today_utc(snapshot)
+
+
 def series(history: dict, snapshot: dict | None) -> list[tuple[date, float | None]]:
     """Stored days, plus (with a snapshot) None for missing days up to yesterday and one live point.
 
@@ -74,7 +81,7 @@ def series(history: dict, snapshot: dict | None) -> list[tuple[date, float | Non
     if snapshot is None:
         return points
     today = terminal_data._today_utc(snapshot)
-    if points and points[-1][0] > today:
+    if is_stale(history, snapshot):
         return points  # the snapshot is older than the stored days: keep them all, add no live point
     points = [(d, v) for d, v in points if d < today]
     if points:
@@ -156,18 +163,24 @@ def _cell(value: float | None) -> str:
 
 
 def history_csv(history: dict, snapshot: dict | None) -> str:
-    """Header, then one row per ``series`` day. Today's category cells come from the snapshot."""
+    """Header, then one row per day. Today's row (unless the snapshot is stale) takes its category
+    cells from the snapshot; its index cell is empty under an exclusion, like any day without a value."""
     cats = _cats()
     dates = _date_map(history)
-    live = _live_point(snapshot)
-    if live is not None and history["dates"] and date.fromisoformat(history["dates"][-1]) > live[0]:
-        live = None
+    stale = is_stale(history, snapshot)
+    live = None if stale else _live_point(snapshot)
+    points = series(history, snapshot)
+    today = None
+    if snapshot is not None and not stale:
+        today = terminal_data._today_utc(snapshot)
+        if not points or points[-1][0] != today:
+            points.append((today, None))
     current = (snapshot or {}).get("current_scores") or {}
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(["date", "index", *cats, "credit"])
-    for day, value in series(history, snapshot):
-        if live is not None and day == live[0]:
+    for day, value in points:
+        if day == today:
             cells = [terminal_data._finite(current.get(c)) for c in cats]
         else:
             cells = [_score_at(history, c, day, dates) for c in cats]

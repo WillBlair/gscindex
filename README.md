@@ -265,6 +265,17 @@ gscindex/
 └── requirements.txt
 ```
 
+**Rebuilding stored history.** The rebuild script loads `.env`, whose `DATABASE_URL` is the production database, so a run without `DATABASE_URL=` in front targets production. The summary's first line, `Database:`, shows the target (never the connection string).
+
+```bash
+# Local (SQLite)
+DATABASE_URL= GSC_DISABLE_BACKGROUND=1 venv/bin/python scripts/rebuild_category_history.py --global-only --start 2019-01-11 --end 2026-07-22
+# Production: the same command without DATABASE_URL=; --write also needs CONFIRM_PROD_REBUILD=yes
+GSC_DISABLE_BACKGROUND=1 CONFIRM_PROD_REBUILD=yes venv/bin/python scripts/rebuild_category_history.py --global-only --start 2019-01-11 --end 2026-07-22 --write
+```
+
+Both are dry runs without `--write`. On Postgres the backfill refuses an `--end` on or after `HISTORY_LIVE_FROM_DATE`, so live-recorded rows are never rebuilt.
+
 ## Architecture (Brief)
 
 ```
