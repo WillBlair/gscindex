@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time
 from datetime import date, datetime, timezone
 
@@ -310,6 +311,60 @@ def _drop_after_days(category: str) -> int | None:
     return config.CATEGORY_DROP_AFTER_DAYS.get(category)
 
 
+# Stored scores change only with the hourly write (database.record_daily_scores), so each
+# database read below is answered from memory for the rest of the UTC clock hour. Neon
+# suspends a compute after 5 idle minutes and bills it while it runs: a read on every
+# 5-minute cycle kept the production compute running (and billed) around the clock.
+_HOURLY_LOCK = threading.Lock()
+_HOURLY: dict[str, tuple[datetime, object]] = {}
+
+
+def _utc_hour() -> datetime:
+    return datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+
+def _once_per_hour(key: str, load, keep=lambda value: True):
+    """``load()`` at most once per UTC clock hour per key; later calls get the same value.
+
+    A value ``keep`` rejects, or a ``load`` that raises, is not remembered, so a failed
+    read is tried again on the next cycle.
+    """
+    hour = _utc_hour()
+    with _HOURLY_LOCK:
+        hit = _HOURLY.get(key)
+    if hit is not None and hit[0] == hour:
+        return hit[1]
+    value = load()
+    if keep(value):
+        with _HOURLY_LOCK:
+            _HOURLY[key] = (hour, value)
+    return value
+
+
+def _stored_daily_history() -> dict:
+    """The last 91 days of stored daily scores plus today, read once per clock hour.
+
+    Returns a fresh copy each call (callers edit it) without the retired industry
+    categories, whose rows stay in the database and are never read. A failed read gives
+    the empty shape and is not remembered.
+    """
+    try:
+        history = _once_per_hour(
+            "daily_history", lambda: database.get_daily_category_scores(91),
+            keep=lambda value: bool(value and value.get("dates")))
+    except Exception as exc:
+        logger.warning("Failed to load daily history: %s", exc)
+        history = None
+    history = history or {}
+    return {
+        "dates": list(history.get("dates") or []),
+        "scores": {
+            cat: list(values) for cat, values in (history.get("scores") or {}).items()
+            if cat not in config.RETIRED_CATEGORIES
+        },
+    }
+
+
 def _recent_stored_score(category: str, today: date) -> tuple[date, float] | None:
     """The category's last stored daily score while it is younger than its drop limit.
 
@@ -319,7 +374,8 @@ def _recent_stored_score(category: str, today: date) -> tuple[date, float] | Non
     if limit is None:
         return None
     try:
-        row = database.get_last_category_score(category)
+        row = _once_per_hour(
+            f"last_score:{category}", lambda: database.get_last_category_score(category))
     except Exception as exc:
         logger.warning("Stored score lookup failed for %s: %s", category, exc)
         return None
@@ -752,16 +808,7 @@ def aggregate_data(status_callback=None) -> dict:
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info("Data aggregation complete in %.2fs", elapsed)
 
-    try:
-        daily_history = database.get_daily_category_scores(91)
-    except Exception as e:
-        logger.warning("Failed to load daily history: %s", e)
-        daily_history = {"dates": [], "scores": {}}
-    # Rows of the retired industry categories stay in the database and are never read.
-    daily_history["scores"] = {
-        cat: values for cat, values in (daily_history.get("scores") or {}).items()
-        if cat not in config.RETIRED_CATEGORIES
-    }
+    daily_history = _stored_daily_history()
 
     result = {
         "last_updated_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),

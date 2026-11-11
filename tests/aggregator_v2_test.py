@@ -77,6 +77,7 @@ def harness(monkeypatch):
 
     def run(providers=None, *, last=None, register=None, news=None, tasks=None, daily=None,
             sector_tasks=None):
+        aggregator._HOURLY.clear()   # each run starts with no remembered database reads
         monkeypatch.setattr(aggregator, "_FETCH_TASKS", tasks or _SyncTasks())
         monkeypatch.setattr(aggregator, "_SECTOR_TASKS", sector_tasks or _SyncTasks())
         monkeypatch.setattr(
@@ -387,6 +388,104 @@ def test_weather_is_map_only():
     assert all(p.category != "weather" for p in aggregator._PROVIDERS)
     sector_categories = {c for s in config.SECTORS.values() for c in s["weights"]}
     assert {p.category for p in aggregator._PROVIDERS} == set(CATEGORY_WEIGHTS) | sector_categories
+
+
+# -- database reads happen once per clock hour ---------------------------------------------------
+# Neon suspends a compute after 5 idle minutes; a read every 5-minute cycle keeps it running
+# (and billed) around the clock. Stored scores only change with the hourly write.
+
+def test_stored_history_is_read_once_per_hour(harness, monkeypatch):
+    run, _ = harness
+    hour = datetime(2026, 11, 10, 14, tzinfo=timezone.utc)
+    monkeypatch.setattr(aggregator, "_utc_hour", lambda: hour)
+    stored = {"dates": ["2026-11-09", "2026-11-10"], "scores": {"energy": [60.0, 61.0]}}
+    first = run(daily={"dates": list(stored["dates"]), "scores": {"energy": [60.0, 61.0]}})
+    assert first["daily_history"] == stored
+
+    # A consumer changing its copy must not change what later cycles are given.
+    first["daily_history"]["scores"]["energy"].append(99.0)
+    first["daily_history"]["dates"].append("2026-11-11")
+
+    reads = mock.Mock(return_value={"dates": ["2026-11-10"], "scores": {"energy": [10.0]}})
+    monkeypatch.setattr(database, "get_daily_category_scores", reads)
+    second = aggregator.aggregate_data()            # same hour: no database read
+    reads.assert_not_called()
+    assert second["daily_history"] == stored
+
+    monkeypatch.setattr(aggregator, "_utc_hour", lambda: hour + timedelta(hours=1))
+    third = aggregator.aggregate_data()             # next hour: read again
+    reads.assert_called_once_with(91)
+    assert third["daily_history"] == {"dates": ["2026-11-10"], "scores": {"energy": [10.0]}}
+
+
+def test_failed_history_read_is_retried_next_cycle(harness, monkeypatch):
+    run, _ = harness
+    assert run()["daily_history"] == {"dates": [], "scores": {}}     # the failed-read shape
+    reads = mock.Mock(return_value={"dates": ["2026-11-10"], "scores": {"energy": [61.0]}})
+    monkeypatch.setattr(database, "get_daily_category_scores", reads)
+    data = aggregator.aggregate_data()
+    reads.assert_called_once_with(91)
+    assert data["daily_history"]["scores"] == {"energy": [61.0]}
+
+
+def test_stored_fallback_is_looked_up_once_per_hour(harness, monkeypatch):
+    run, _ = harness
+    hour = datetime(2026, 11, 10, 14, tzinfo=timezone.utc)
+    monkeypatch.setattr(aggregator, "_utc_hour", lambda: hour)
+    lookups = mock.Mock(return_value=(_today() - timedelta(days=1), 61.0))
+    providers = [_Provider(c, error="down" if c == "energy" else None) for c in CATEGORY_WEIGHTS]
+    run(providers, last=lookups)
+    data = aggregator.aggregate_data()              # energy still down, same hour
+    lookups.assert_called_once_with("energy")
+    assert data["current_scores"]["energy"] == 61.0
+    assert data["fallback_categories"] == ["energy"]
+
+    monkeypatch.setattr(aggregator, "_utc_hour", lambda: hour + timedelta(hours=1))
+    aggregator.aggregate_data()
+    assert lookups.call_count == 2
+
+
+def test_failed_fallback_lookup_is_retried_next_cycle(harness, monkeypatch):
+    run, _ = harness
+    providers = [_Provider(c, error="down" if c == "energy" else None) for c in CATEGORY_WEIGHTS]
+    data = run(providers, last=mock.Mock(side_effect=RuntimeError("database unreachable")))
+    assert data["excluded_categories"] == ["energy"]
+    monkeypatch.setattr(database, "get_last_category_score",
+                        lambda cat: (_today() - timedelta(days=1), 61.0))
+    assert aggregator.aggregate_data()["current_scores"]["energy"] == 61.0
+
+
+def test_second_cycle_in_an_hour_opens_no_database_connection(harness, monkeypatch, tmp_path):
+    """The real database layer on a scratch SQLite file: after the first cycle of an hour
+    has read and written, a later cycle (even with a category down) never connects."""
+    real = {name: getattr(database, name) for name in (
+        "get_last_category_score", "get_daily_category_scores",
+        "record_daily_scores", "save_dashboard_snapshot")}
+    run, _ = harness
+    providers = [_Provider(c, error="down" if c == "energy" else None) for c in CATEGORY_WEIGHTS]
+    run(providers)                                   # sets every non-database mock
+    for name, function in real.items():
+        monkeypatch.setattr(database, name, function)
+    monkeypatch.setattr(database, "_resolve_db_config", lambda: ("sqlite", None))
+    monkeypatch.setattr(database, "SQLITE_PATH", str(tmp_path / "scores.db"))
+    monkeypatch.setattr(database, "_daily_scores_written_hour", None)
+    monkeypatch.setattr(database, "_snapshot_written_hour", None)
+    database.init_db()
+    aggregator._HOURLY.clear()
+
+    connections = []
+    connect = database.get_connection
+
+    def counting_connection():
+        connections.append(1)
+        return connect()
+
+    monkeypatch.setattr(database, "get_connection", counting_connection)
+    aggregator.aggregate_data()
+    assert len(connections) >= 3                     # fallback lookup, history read, score write
+    connections.clear()
+    aggregator.aggregate_data()
+    assert connections == []
 
 
 # -- history alignment ---------------------------------------------------------------------------

@@ -456,7 +456,8 @@ HAZARD_LOOKBACK_DAYS = 90
 # Days of St. Louis gauge height requested for the current reading (the latest daily value
 # is used; the extra days cover a gap in the series).
 PHYSICAL_GAUGE_LOOKBACK_DAYS = 30
-# The Rhine at Kaub (stored for study, never scored) is fetched and upserted at most this often.
+# The Rhine at Kaub (stored for study, never scored) is fetched and upserted once per UTC
+# clock hour; this is how long the marker naming that hour is kept.
 KAUB_STORE_INTERVAL_SECONDS = 3600
 
 # Mississippi at St. Louis: no single published stage was found that the Coast Guard or the Corps

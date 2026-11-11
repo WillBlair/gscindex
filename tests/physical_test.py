@@ -673,15 +673,30 @@ def test_physical_stores_kaub_at_most_once_per_hour(anchors):
     upsert.assert_called_once_with(date(2026, 10, 22), "kaub", 27.0)
     assert marker_writes.call_args.args[0] == "kaub_stored_v1"
 
-    # Within the hour the marker is fresh: no fetch, no database write.
+    # The marker names the clock hour of the attempt, so the write lands in the same cycle
+    # as the hourly score write and the database wakes once an hour, not twice.
+    marker = marker_writes.call_args.args[1]
+    assert marker["hour"] == physical._utc_hour_key()
+
+    # Within that clock hour: no fetch, no database write.
     fetch_kaub.reset_mock(); upsert.reset_mock()
     with mock.patch.object(physical.waterways, "fetch_kaub_latest", fetch_kaub), \
          mock.patch.object(physical.database, "upsert_gauge_reading", upsert), \
          mock.patch.object(physical, "set_cached", mock.Mock()), \
-         mock.patch.object(physical, "get_cached", return_value={"day": "2026-10-22"}):
+         mock.patch.object(physical, "get_cached", return_value=marker):
         PhysicalProvider()._store_kaub()
     fetch_kaub.assert_not_called()
     upsert.assert_not_called()
+
+    # A marker from an earlier clock hour (or an old one with no hour): store again.
+    for old in ({**marker, "hour": "2026-10-22T03"}, {"day": "2026-10-22"}):
+        fetch_kaub.reset_mock(); upsert.reset_mock()
+        with mock.patch.object(physical.waterways, "fetch_kaub_latest", fetch_kaub), \
+             mock.patch.object(physical.database, "upsert_gauge_reading", upsert), \
+             mock.patch.object(physical, "set_cached", mock.Mock()), \
+             mock.patch.object(physical, "get_cached", return_value=old):
+            PhysicalProvider()._store_kaub()
+        upsert.assert_called_once_with(date(2026, 10, 22), "kaub", 27.0)
 
 
 def test_physical_failed_kaub_attempt_also_waits_an_hour(anchors):

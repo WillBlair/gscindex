@@ -14,8 +14,7 @@ The Panama Canal's Gatun Lake level is deliberately not an input: the Panama Can
 data page asks for written consent before redistribution, and Panama disruptions are already
 measured by IMF PortWatch Panama Canal transits in the Chokepoints category.
 
-The Rhine at Kaub is stored in ``gauge_readings`` at most every
-``KAUB_STORE_INTERVAL_SECONDS`` and never scored.
+The Rhine at Kaub is stored in ``gauge_readings`` once per UTC clock hour and never scored.
 
 Thresholds come from ``config`` and ``SCORE_ANCHORS["waterways"]``; port throughput shares from
 ``SCORE_ANCHORS["port_throughput_share"]``. A missing anchor is a RuntimeError at fetch time.
@@ -54,6 +53,11 @@ _SOURCES = {
 _RAW_LABELS = {_HAZARDS: "Active hazard alerts", _MISSISSIPPI: "St. Louis stage (ft)"}
 _WATERWAY_KEYS = ("mississippi_record_low", "mississippi_threshold")
 _KAUB_MARKER_KEY = "kaub_stored_v1"
+
+
+def _utc_hour_key() -> str:
+    """The current UTC clock hour, e.g. ``2026-11-10T14`` (the Kaub store marker)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
 
 
 def _today() -> date:
@@ -132,12 +136,16 @@ class PhysicalProvider(BaseProvider):
     def _store_kaub() -> None:
         """Keep the latest Rhine level at Kaub for later study; it never affects the score.
 
-        At most one attempt (fetch and upsert) per ``KAUB_STORE_INTERVAL_SECONDS``, whether
-        or not it succeeds; the gauge is a daily study series, not a 5-minute one.
+        One attempt (fetch and upsert) per UTC clock hour, whether or not it succeeds; the
+        gauge is a daily study series, not a 5-minute one. Keyed to the clock hour, not to
+        the last attempt, so the write falls in the same cycle as the hourly score write:
+        Neon bills about 5 minutes of compute for every separate time the database wakes.
         """
-        if get_cached(_KAUB_MARKER_KEY, ttl=config.KAUB_STORE_INTERVAL_SECONDS) is not None:
+        hour = _utc_hour_key()
+        marker = get_cached(_KAUB_MARKER_KEY, ttl=config.KAUB_STORE_INTERVAL_SECONDS)
+        if isinstance(marker, dict) and marker.get("hour") == hour:
             return
-        marker = {"attempted_at": datetime.now(timezone.utc).isoformat()}
+        marker = {"attempted_at": datetime.now(timezone.utc).isoformat(), "hour": hour}
         try:
             day, level_cm = waterways.fetch_kaub_latest()
             database.upsert_gauge_reading(day, "kaub", level_cm)
