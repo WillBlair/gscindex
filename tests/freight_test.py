@@ -377,3 +377,16 @@ def test_freight_fetch_failures_are_not_inputs_expired(anchors):
     with pytest.raises(RuntimeError) as failure:
         _run(FreightProvider().fetch_current, tsi=None, weekly=None)
     assert not isinstance(failure.value, InputsExpired)
+
+
+def test_freight_history_records_the_failed_input(anchors):
+    provider = FreightProvider()
+    _run(lambda: provider.fetch_history(30), tsi=None, weekly=_rail_flat_then_step(0.0))
+    assert list(provider.history_input_failures) == ["tsifrght"]
+    assert provider.history_input_failures["tsifrght"] == "RuntimeError: FRED down"
+
+
+def test_freight_history_records_nothing_when_every_input_loads(anchors):
+    provider = FreightProvider()
+    _run(lambda: provider.fetch_history(30), tsi=_tsi(5.0), weekly=_rail_flat_then_step(-10.0))
+    assert provider.history_input_failures == {}

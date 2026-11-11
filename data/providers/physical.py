@@ -218,6 +218,7 @@ class PhysicalProvider(BaseProvider):
              for d in window], index=window)
 
     def fetch_history(self, days: int) -> pd.Series:
+        self.history_input_failures = {}
         today = _today()
         shares, anchors = _anchors()
         window = pd.date_range(pd.Timestamp(today - timedelta(days=days)) + pd.Timedelta(days=1),
@@ -237,6 +238,7 @@ class PhysicalProvider(BaseProvider):
                 scores[key] = build()
             except Exception as exc:
                 logger.warning("Physical %s history unavailable: %s", key, exc)
+                self.history_input_failures[key] = f"{type(exc).__name__}: {exc}"
         if not scores:
             raise RuntimeError("no physical disruption history available")
 

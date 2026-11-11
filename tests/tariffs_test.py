@@ -525,3 +525,18 @@ def test_tariff_burden_is_live_until_the_next_print_is_due():
     august_end = date(2026, 8, 31)
     assert freshness_status(august_end, date(2026, 11, 4), "tariff_burden") == "live"
     assert freshness_status(august_end, date(2026, 11, 15), "tariff_burden") == "stale"
+
+
+def test_tariffs_history_records_the_failed_input(anchors):
+    provider = TariffsProvider()
+    _run(lambda: provider.fetch_history(30), customs=None, imports=_imports(),
+         tpu_daily=_tpu_daily(_tpu_value_for(70)))
+    assert list(provider.history_input_failures) == ["tariff_burden"]
+    assert provider.history_input_failures["tariff_burden"] == "RuntimeError: DTS down"
+
+
+def test_tariffs_history_records_nothing_when_every_input_loads(anchors):
+    provider = TariffsProvider()
+    _run(lambda: provider.fetch_history(30), customs=_customs(6.0), imports=_imports(),
+         tpu_daily=_tpu_daily(_tpu_value_for(70)))
+    assert provider.history_input_failures == {}

@@ -196,6 +196,7 @@ class FreightProvider(BaseProvider):
         return _carry(_rail_series()[1], anchor, _RAIL, lambda d: d, today)
 
     def fetch_history(self, days: int) -> pd.Series:
+        self.history_input_failures = {}
         today = _today()
         anchors = _anchors()
         builders = {_TSI: self._tsifrght_history, _RAIL: self._rail_history}
@@ -205,6 +206,7 @@ class FreightProvider(BaseProvider):
                 scores[key] = build(today, anchors[key])
             except Exception as exc:
                 logger.warning("Freight %s history unavailable: %s", key, exc)
+                self.history_input_failures[key] = f"{type(exc).__name__}: {exc}"
         if not scores:
             raise RuntimeError("no freight history available")
 

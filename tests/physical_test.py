@@ -703,3 +703,17 @@ def test_physical_failed_kaub_attempt_also_waits_an_hour(anchors):
     marker_writes = mock.Mock()
     _run(PhysicalProvider().fetch_current, events=[_event("TC", "Red")], kaub=None, kaub_cache=marker_writes)
     assert marker_writes.call_args.args[0] == "kaub_stored_v1"
+
+
+def test_physical_history_records_the_failed_input(anchors):
+    provider = PhysicalProvider()
+    _run(lambda: provider.fetch_history(30), events=[_event("TC", "Red", start="2026-10-10", end="2026-10-12")])
+    assert list(provider.history_input_failures) == ["mississippi"]
+    assert provider.history_input_failures["mississippi"] == "ValueError: stl unavailable"
+
+
+def test_physical_history_records_nothing_when_every_input_loads(anchors):
+    provider = PhysicalProvider()
+    _run(lambda: provider.fetch_history(30), events=[_event("TC", "Red", start="2026-10-10", end="2026-10-12")],
+         river=_river_series(9.0, days=8))
+    assert provider.history_input_failures == {}

@@ -234,6 +234,7 @@ class InputsProvider(BaseProvider):
                               config.FRESHNESS[f"{leg}_monthly"][1], today)
 
     def fetch_history(self, days: int) -> pd.Series:
+        self.history_input_failures = {}
         today = _today()
         anchors, stats, cpi_ref = _anchors()
         try:
@@ -252,6 +253,7 @@ class InputsProvider(BaseProvider):
                 scores[key] = build()
             except Exception as exc:
                 logger.warning("Input Costs %s history unavailable: %s", key, exc)
+                self.history_input_failures[key] = f"{type(exc).__name__}: {exc}"
         if not scores:
             raise RuntimeError("no input costs history available")
 

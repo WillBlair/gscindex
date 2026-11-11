@@ -447,3 +447,18 @@ def test_cpi_reference_missing_or_malformed_raises_runtime_error(monkeypatch, en
         InputsProvider().fetch_current()
     with pytest.raises(RuntimeError, match="no anchor for cpi_reference"):
         InputsProvider().fetch_history(90)
+
+
+def test_history_records_the_failed_input(monkeypatch):
+    Env(monkeypatch, copper=RuntimeError("down"))
+    provider = InputsProvider()
+    provider.fetch_history(90)
+    assert list(provider.history_input_failures) == ["copper"]
+    assert provider.history_input_failures["copper"] == "RuntimeError: down"
+
+
+def test_history_records_nothing_when_every_input_loads(monkeypatch):
+    Env(monkeypatch)
+    provider = InputsProvider()
+    provider.fetch_history(90)
+    assert provider.history_input_failures == {}

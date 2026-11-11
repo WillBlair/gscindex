@@ -285,6 +285,7 @@ class EnergyProvider(BaseProvider):
         return dated.reindex(full).ffill(limit=limit)
 
     def fetch_history(self, days: int) -> pd.Series:
+        self.history_input_failures = {}
         today = _today()
         anchors, cpi_ref = _anchors()
         ratios = _cpi_ratios(cpi_ref)
@@ -314,6 +315,7 @@ class EnergyProvider(BaseProvider):
                 penalties[leg] = (real / real.shift(lookback) - 1.0).map(spike_penalty)
             except Exception as exc:
                 logger.warning("Energy %s history unavailable: %s", leg, exc)
+                self.history_input_failures[leg] = f"{type(exc).__name__}: {exc}"
         if not scores:
             raise RuntimeError("no energy history available")
 

@@ -353,3 +353,18 @@ def test_energy_aged_out_legs_raise_inputs_expired(monkeypatch):
         ttf=_monthly(10.0, end="2026-03-01"))                     # monthly drop is 150 days
     with pytest.raises(InputsExpired):
         EnergyProvider().fetch_current()
+
+
+def test_history_records_the_failed_input(monkeypatch):
+    Env(monkeypatch, ulsd=RuntimeError("down"))
+    provider = EnergyProvider()
+    provider.fetch_history(60)
+    assert list(provider.history_input_failures) == ["ulsd"]
+    assert provider.history_input_failures["ulsd"] == "RuntimeError: down"
+
+
+def test_history_records_nothing_when_every_input_loads(monkeypatch):
+    Env(monkeypatch)
+    provider = EnergyProvider()
+    provider.fetch_history(60)
+    assert provider.history_input_failures == {}

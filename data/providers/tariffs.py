@@ -214,6 +214,7 @@ class TariffsProvider(BaseProvider):
         return scores.reindex(full).ffill(limit=config.FRESHNESS[_TPU][1])
 
     def fetch_history(self, days: int) -> pd.Series:
+        self.history_input_failures = {}
         today = _today()
         anchors = _anchors()
         builders = {_BURDEN: self._burden_history, _TPU: self._tpu_history}
@@ -223,6 +224,7 @@ class TariffsProvider(BaseProvider):
                 scores[key] = build(today, anchors[key])
             except Exception as exc:
                 logger.warning("Tariffs %s history unavailable: %s", key, exc)
+                self.history_input_failures[key] = f"{type(exc).__name__}: {exc}"
         if not scores:
             raise RuntimeError("no tariff history available")
 
