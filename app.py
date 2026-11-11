@@ -650,6 +650,10 @@ def create_app() -> dash.Dash:
 
     register_share_routes(app.server, get_snapshot)
 
+    from api.history import register_history_routes
+
+    register_history_routes(app.server, get_snapshot, limiter)
+
     return app
 
 

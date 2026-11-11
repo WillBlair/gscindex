@@ -92,23 +92,24 @@ def extremes(points) -> dict:
     return {"low": min(known, key=lambda p: p[1]), "high": max(known, key=lambda p: p[1])}
 
 
-def _lookup(history: dict, day: date) -> int | None:
-    try:
-        return history["dates"].index(day.isoformat())
-    except ValueError:
-        return None
+def _date_map(history: dict) -> dict[str, int]:
+    return {d: i for i, d in enumerate(history["dates"])}
 
 
-def _score_at(history: dict, cat: str, day: date) -> float | None:
-    i = _lookup(history, day)
+def _lookup(history: dict, day: date, dates: dict[str, int] | None = None) -> int | None:
+    return (dates if dates is not None else _date_map(history)).get(day.isoformat())
+
+
+def _score_at(history: dict, cat: str, day: date, dates: dict[str, int] | None = None) -> float | None:
+    i = _lookup(history, day, dates)
     series_ = history["scores"].get(cat) or []
     if i is None or i >= len(series_):
         return None
     return terminal_data._finite(series_[i])
 
 
-def _index_at(history: dict, day: date) -> float | None:
-    i = _lookup(history, day)
+def _index_at(history: dict, day: date, dates: dict[str, int] | None = None) -> float | None:
+    i = _lookup(history, day, dates)
     return None if i is None else _weighted_day(history, i)
 
 
@@ -119,10 +120,11 @@ def _diff(now: float | None, before: float | None) -> float | None:
 def episode_rows(history: dict, episodes: list[dict], change_days: int) -> list[dict]:
     """One row per episode from stored days only (never the live point)."""
     out = []
+    dates = _date_map(history)
     for n, episode in enumerate(episodes, start=1):
         day = date.fromisoformat(episode["date"])
         earlier = day - timedelta(days=change_days)
-        index = _index_at(history, day)
+        index = _index_at(history, day, dates)
         out.append({
             "n": n,
             "date": day,
@@ -131,13 +133,13 @@ def episode_rows(history: dict, episodes: list[dict], change_days: int) -> list[
             "source_url": episode["source_url"],
             "index": index,
             "tier": None if index is None else terminal_data.tier_for(index),
-            "change": _diff(index, _index_at(history, earlier)),
+            "change": _diff(index, _index_at(history, earlier, dates)),
             "categories": [
                 {
                     "cat": cat,
                     "label": config.CATEGORY_LABELS.get(cat, cat),
-                    "score": (score := _score_at(history, cat, day)),
-                    "change": _diff(score, _score_at(history, cat, earlier)),
+                    "score": (score := _score_at(history, cat, day, dates)),
+                    "change": _diff(score, _score_at(history, cat, earlier, dates)),
                 }
                 for cat in config.CATEGORY_WEIGHTS
             ],
@@ -152,6 +154,7 @@ def _cell(value: float | None) -> str:
 def history_csv(history: dict, snapshot: dict | None) -> str:
     """Header, then one row per ``series`` day. Today's category cells come from the snapshot."""
     cats = _cats()
+    dates = _date_map(history)
     live = _live_point(snapshot)
     current = (snapshot or {}).get("current_scores") or {}
     buffer = io.StringIO()
@@ -161,6 +164,6 @@ def history_csv(history: dict, snapshot: dict | None) -> str:
         if live is not None and day == live[0]:
             cells = [terminal_data._finite(current.get(c)) for c in cats]
         else:
-            cells = [_score_at(history, c, day) for c in cats]
+            cells = [_score_at(history, c, day, dates) for c in cats]
         writer.writerow([day.isoformat(), _cell(value), *(_cell(c) for c in cells), chokepoints.CREDIT])
     return buffer.getvalue()

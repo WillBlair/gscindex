@@ -82,3 +82,11 @@ def test_csv_has_one_row_per_day_the_credit_and_empty_cells_for_gaps():
     cells = next(csv.reader([lines[2]]))
     assert cells[1] == "" and cells[2 + CATS.index("physical")] == "" and cells[-1] == CREDIT
     assert not any(key in "\n".join(lines) for key in SECTOR_CATS)
+
+
+def test_csv_under_an_exclusion_has_no_today_row_and_keeps_the_credit():
+    h = hd.build_history(rows(START, 5), START, START)
+    today = START + timedelta(days=6)
+    lines = hd.history_csv(h, snapshot(today, excluded=("energy",))).strip().splitlines()
+    assert lines[-1].startswith((START + timedelta(days=5)).isoformat()) and len(lines) == 7
+    assert all(line.endswith(CREDIT) or CREDIT in line for line in lines[1:])
