@@ -11,7 +11,7 @@ from datetime import date
 from typing import Callable
 
 from flask import Flask, Response, render_template_string
-from markupsafe import Markup, escape
+from markupsafe import Markup
 
 import config
 from components import history_chart, history_data, terminal_data
@@ -20,12 +20,6 @@ from data.providers.chokepoints import CREDIT
 
 DASH = "–"  # placeholder for a missing value
 _WORDS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
-
-
-def safe_text(text: str) -> Markup:
-    """Escaped like autoescape, except an ampersand followed by a space stays "&" (valid HTML,
-    and it keeps labels such as "Energy & Fuel" readable in the page source and the CSV)."""
-    return Markup(str(escape(text)).replace("&amp; ", "& "))
 
 
 def fmt_date(day: date) -> str:
@@ -75,7 +69,7 @@ def build_context(hist: dict | None, snapshot: dict | None) -> dict:
     tier = summary.get("tier")
     ctx["numbers"] = [
         {"label": "Today", "value": fmt_value(summary.get("today")), "color": tier["color"] if tier else None,
-         "sub": tier["label"] if tier else "", "note": safe_text(f"Excluded today: {', '.join(excluded)}") if excluded else ""},
+         "sub": tier["label"] if tier else "", "note": f"Excluded today: {', '.join(excluded)}" if excluded else ""},
     ]
     for label, point in (("Lowest", low), ("Highest", high)):
         value = point[1] if point else None
@@ -86,14 +80,11 @@ def build_context(hist: dict | None, snapshot: dict | None) -> dict:
     live_from = date.fromisoformat(config.HISTORY_LIVE_FROM_DATE)
     rows = history_data.episode_rows(hist, config.HISTORY_EPISODES, config.HISTORY_CHANGE_DAYS)
     for row in rows:
-        row["label"] = safe_text(row["label"])
-        row["text"] = safe_text(row["text"])
         row["date_text"] = fmt_date(row["date"])
         row["index_text"] = fmt_value(row["index"])
         row["change_text"] = f"{fmt_change(row['change'])} over {config.HISTORY_CHANGE_DAYS} days" \
             if row["change"] is not None else DASH
         for cat in row["categories"]:
-            cat["label"] = safe_text(cat["label"])
             cat["score_text"] = fmt_value(cat["score"])
             cat["change_text"] = fmt_change(cat["change"])
     measured = [r for r in rows if r["index"] is not None]
