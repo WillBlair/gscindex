@@ -94,4 +94,53 @@ def test_csv_is_served_from_memory_with_a_one_hour_cache(monkeypatch):
 
 def test_the_routes_are_on_the_real_app():
     import app
-    assert {"/history", "/history.csv"} <= {rule.rule for rule in app.server.url_map.iter_rules()}
+    assert {"/history", "/history.csv", "/history/signup"} <= {rule.rule for rule in app.server.url_map.iter_rules()}
+
+
+def signup(monkeypatch, result=None, **form):
+    calls = []
+    monkeypatch.setattr(database, "add_subscriber",
+                        lambda email, source=None: calls.append((email, source)) or (result or {"success": True}))
+    resp = client(monkeypatch, history(), snapshot(TODAY)).post("/history/signup", data=form)
+    return resp, calls
+
+
+def test_a_valid_email_is_stored_with_the_source_history(monkeypatch):
+    resp, calls = signup(monkeypatch, email=" A@Example.com ")
+    assert resp.status_code == 303 and resp.headers["Location"].endswith("/history?signup=ok#signup")
+    assert calls == [("a@example.com", "history")]
+
+
+def test_utm_tags_become_the_source_and_junk_does_not(monkeypatch):
+    assert signup(monkeypatch, email="a@b.co", utm_source="reddit", utm_campaign="test1")[1] == [("a@b.co", "reddit/test1")]
+    assert signup(monkeypatch, email="a@b.co", utm_source="<script>", utm_campaign="x y")[1] == [("a@b.co", "history")]
+
+
+@pytest.mark.parametrize("form", [{}, {"email": "nope"}, {"email": "a" * 300 + "@b.co"}, {"email": "a@b.co, c@d.co"}])
+def test_a_bad_or_missing_email_stores_nothing(monkeypatch, form):
+    resp, calls = signup(monkeypatch, **form)
+    assert resp.status_code == 303 and "signup=invalid#signup" in resp.headers["Location"] and calls == []
+
+
+def test_opt_out_and_failure_get_their_own_lines(monkeypatch):
+    assert "signup=optout" in signup(monkeypatch, database._OPTED_OUT_RESULT, email="a@b.co")[0].headers["Location"]
+    assert "signup=error" in signup(monkeypatch, {"success": False, "message": "x"}, email="a@b.co")[0].headers["Location"]
+    c = client(monkeypatch, history(), snapshot(TODAY))
+    assert "You&#39;re subscribed to the daily briefing." in c.get("/history?signup=ok").get_data(as_text=True)
+    assert "unsubscribed earlier" in c.get("/history?signup=optout").get_data(as_text=True)
+    assert "alert(1)" not in c.get("/history?signup=<script>alert(1)</script>").get_data(as_text=True)
+
+
+def test_the_form_carries_valid_utm_tags_only(monkeypatch):
+    c = client(monkeypatch, history(), snapshot(TODAY))
+    tagged = c.get("/history?utm_source=reddit&utm_campaign=test1").get_data(as_text=True)
+    assert 'name="utm_source" value="reddit"' in tagged and 'name="utm_campaign" value="test1"' in tagged
+    assert 'name="utm_source"' not in c.get("/history?utm_source=%3Cx%3E").get_data(as_text=True)
+
+
+def test_signups_are_rate_limited_per_visitor(monkeypatch):
+    monkeypatch.setattr(config, "HISTORY_SIGNUP_RATE_LIMIT", "2 per minute")
+    monkeypatch.setattr(database, "add_subscriber", lambda email, source=None: {"success": True})
+    c = client(monkeypatch, history(), snapshot(TODAY))
+    codes = [c.post("/history/signup", data={"email": "a@b.co"}).status_code for _ in range(3)]
+    assert codes == [303, 303, 429]

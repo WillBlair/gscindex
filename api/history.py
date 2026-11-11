@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Callable
+from urllib.parse import urlencode
 
-from flask import Flask, Response, render_template_string
+from flask import Flask, Response, redirect, render_template_string, request
 from markupsafe import Markup
 
 import config
 from components import history_chart, history_data, terminal_data
-from data import long_history
+from api.share import signup_source, valid_email
+from data import database, long_history
 from data.providers.chokepoints import CREDIT
 
 DASH = "–"  # placeholder for a missing value
@@ -251,7 +253,10 @@ _TEMPLATE = """<!DOCTYPE html>
 {% endif %}
 <section id="signup">
   <div class="signup-row"><span class="badge">FREE</span><p>Get this index in your inbox every day. Today's score and a short briefing on the news behind it.</p></div>
+  {% if signup_message %}<p role="status">{{ signup_message }}</p>{% endif %}
   <form method="post" action="/history/signup">
+    {% if utm_source %}<input type="hidden" name="utm_source" value="{{ utm_source }}" />{% endif %}
+    {% if utm_campaign %}<input type="hidden" name="utm_campaign" value="{{ utm_campaign }}" />{% endif %}
     <label for="history-email" class="sr">Email address</label>
     <input type="email" id="history-email" name="email" autocomplete="email" placeholder="you@company.com" required />
     <button type="submit" class="btn">Sign up free</button>
@@ -267,14 +272,53 @@ _TEMPLATE = """<!DOCTYPE html>
 """
 
 
+_SIGNUP_MESSAGES = {
+    "ok": "You're subscribed to the daily briefing.",
+    "invalid": "Please enter a valid email address.",
+    "error": "An error occurred while subscribing.",
+}
+
+
+def signup_message(code: str | None) -> str | None:
+    """The one-line result for a known code; anything else shows nothing."""
+    if code == "optout":
+        return database._OPTED_OUT_RESULT["message"]
+    return _SIGNUP_MESSAGES.get(code or "")
+
+
 def register_history_routes(server: Flask, get_snapshot: Callable[[], tuple[dict | None, bool]], limiter) -> None:
-    """Register GET /history and GET /history.csv (the sign-up POST is added separately)."""
+    """Register GET /history, GET /history.csv and POST /history/signup."""
 
     @server.route("/history")
     def history_page():
         snapshot, _fresh = get_snapshot()
         ctx = build_context(long_history.get(), snapshot)
+        ctx["signup_message"] = signup_message(request.args.get("signup"))
+        utm = (signup_source(request.query_string.decode("utf-8", "replace")) or "").split("/")
+        ctx["utm_source"] = utm[0] if utm[0] else None
+        ctx["utm_campaign"] = utm[1] if len(utm) > 1 else None
         return render_template_string(_TEMPLATE, page_css=Markup(_PAGE_CSS), **ctx)
+
+    @server.route("/history/signup", methods=["POST"])
+    @limiter.limit(config.HISTORY_SIGNUP_RATE_LIMIT)
+    def history_signup():
+        email = request.form.get("email", "").strip().lower()
+        if not valid_email(email):
+            code = "invalid"
+        else:
+            tags = {k: request.form.get(k, "") for k in ("utm_source", "utm_campaign") if request.form.get(k)}
+            source = signup_source(urlencode(tags)) or "history"
+            try:
+                result = database.add_subscriber(email, source)
+            except Exception:
+                result = {"success": False}
+            if result.get("success"):
+                code = "ok"
+            elif result == database._OPTED_OUT_RESULT:
+                code = "optout"
+            else:
+                code = "error"
+        return redirect(f"/history?signup={code}#signup", code=303)
 
     @server.route("/history.csv")
     def history_csv():
