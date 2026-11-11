@@ -214,9 +214,14 @@ class InputsProvider(BaseProvider):
 
     # ------------------------------------------------------------------ history
 
-    @staticmethod
-    def _prices_paid_history(today: date, anchor: dict, stats: dict) -> pd.Series:
-        composite = fed_surveys.prices_paid_composite(fed_surveys.fetch_prices_paid(), stats)
+    def _prices_paid_history(self, today: date, anchor: dict, stats: dict) -> pd.Series:
+        surveys = fed_surveys.fetch_prices_paid()
+        missing = [series_id for name, series_id in fed_surveys.PRICES_PAID_SERIES.items() if name not in surveys]
+        if missing:
+            # fetch_prices_paid omits a failed survey without raising; the history would silently
+            # average fewer surveys than the live score, so record it for the rebuild guard.
+            self.history_input_failures[_PP] = f"MissingSurvey: {', '.join(missing)} unavailable"
+        composite = fed_surveys.prices_paid_composite(surveys, stats)
         if composite.empty:
             raise ValueError("no survey has a usable value")
         scores = pd.Series([safe_score(float(z), anchor) for z in composite], index=composite.index)

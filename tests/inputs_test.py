@@ -464,6 +464,17 @@ def test_history_records_nothing_when_every_input_loads(monkeypatch):
     assert provider.history_input_failures == {}
 
 
+def test_history_records_a_dropped_survey(monkeypatch):
+    surveys = _surveys()
+    del surveys["dallas"]
+    Env(monkeypatch, surveys=surveys)
+    provider = InputsProvider()
+    hist = provider.fetch_history(90)
+    assert hist.notna().any()                                    # the blend is still returned
+    assert list(provider.history_input_failures) == ["prices_paid"]
+    assert "PRMSAMFRBDAL" in provider.history_input_failures["prices_paid"]
+
+
 def test_history_records_every_metal_when_cpi_fails(monkeypatch):
     Env(monkeypatch, cpi=ValueError("down"))
     provider = InputsProvider()
