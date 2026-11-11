@@ -387,10 +387,10 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
         logger.info("Exported %d existing rows to %s", len(existing), result.backup_path)
         n_cat = database.upsert_scores_for_dates(cat_rows)
         if n_cat < 0:
-            raise RuntimeError("database upsert failed; see the log (the backup CSV was written first)")
+            raise RuntimeError("category upsert failed; nothing was written to daily_category_scores (the backup CSV was written first)")
         n_comp = 0 if sectors_only else database.upsert_composite_for_dates(comp_rows)
         if n_comp < 0:
-            raise RuntimeError("database upsert failed; see the log (the backup CSV was written first)")
+            raise RuntimeError("composite upsert failed; the category rows are already written, rerun the same command (the backup CSV was written first)")
         result.written = n_cat + n_comp
     return result
 

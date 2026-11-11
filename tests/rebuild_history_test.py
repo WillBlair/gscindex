@@ -826,7 +826,7 @@ def test_composite_is_not_upserted_when_the_category_upsert_failed(sqlite_db, tm
     monkeypatch.setattr(database, "upsert_scores_for_dates", lambda rows: -1)
     monkeypatch.setattr(database, "upsert_composite_for_dates",
                         lambda rows: pytest.fail("composite must not be written"))
-    with pytest.raises(RuntimeError, match="upsert failed"):
+    with pytest.raises(RuntimeError, match="category upsert failed; nothing was written"):
         rebuild.run(write=True, providers=_providers(), today=TODAY, backup_dir=tmp_path,
                     global_only=True, start=S, end=E)
 

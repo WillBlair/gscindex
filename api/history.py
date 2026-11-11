@@ -315,6 +315,7 @@ def register_history_routes(server: Flask, get_snapshot: Callable[[], tuple[dict
     @limiter.limit(config.HISTORY_SIGNUP_RATE_LIMIT)
     def history_signup():
         if request.form.get("website"):          # honeypot: people never see this field
+            logger.info("history signup ignored: honeypot field filled")
             return redirect("/history?signup=ok#signup", code=303)
         email = request.form.get("email", "").strip().lower()
         if not valid_email(email):

@@ -185,8 +185,11 @@ def test_the_how_it_was_made_dates_come_from_config(monkeypatch):
     assert "Days from 1 September 2026 to 1 November 2026 were calculated on 2 November 2026." in body
 
 
-def test_a_filled_honeypot_stores_nothing_and_looks_like_success(monkeypatch):
-    resp, calls = signup(monkeypatch, email="a@b.co", website="http://spam.example")
+def test_a_filled_honeypot_stores_nothing_and_looks_like_success(monkeypatch, caplog):
+    with caplog.at_level(logging.INFO):
+        resp, calls = signup(monkeypatch, email="a@b.co", website="http://spam.example")
+    assert "history signup ignored: honeypot field filled" in caplog.text
+    assert "a@b.co" not in caplog.text
     assert resp.status_code == 303 and "signup=ok#signup" in resp.headers["Location"] and calls == []
     assert signup(monkeypatch, email="a@b.co", website="")[1] == [("a@b.co", "history")]
 
