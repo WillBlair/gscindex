@@ -7,6 +7,7 @@ how the history was made, a sign-up form and /history.csv. Everything is read fr
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Callable
 from urllib.parse import urlencode
@@ -19,6 +20,8 @@ from components import history_chart, history_data, terminal_data
 from api.share import signup_source, valid_email
 from data import database, long_history
 from data.providers.chokepoints import CREDIT
+
+logger = logging.getLogger(__name__)
 
 DASH = "–"  # placeholder for a missing value
 _WORDS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
@@ -58,6 +61,7 @@ def build_context(hist: dict | None, snapshot: dict | None) -> dict:
         "heading": f"Global Supply Chain Index, daily since {fmt_date(start)}",
         "loading": not _has_history(hist),
         "credit": CREDIT,
+        "change_days": config.HISTORY_CHANGE_DAYS,
         "chart_css": Markup(history_chart.CHART_CSS),
     }
     if ctx["loading"]:
@@ -232,7 +236,7 @@ _TEMPLATE = """<!DOCTYPE html>
   <details>
     <summary>All eight categories</summary>
     <table>
-      <thead><tr><th>Category</th><th class="r">Score</th><th class="r">90-day change</th></tr></thead>
+      <thead><tr><th>Category</th><th class="r">Score</th><th class="r">{{ change_days }}-day change</th></tr></thead>
       <tbody>
       {% for c in e.categories %}
         <tr><td>{{ c.label }}</td><td class="r">{{ c.score_text }}</td><td class="r">{{ c.change_text }}</td></tr>
@@ -258,13 +262,13 @@ _TEMPLATE = """<!DOCTYPE html>
     {% if utm_source %}<input type="hidden" name="utm_source" value="{{ utm_source }}" />{% endif %}
     {% if utm_campaign %}<input type="hidden" name="utm_campaign" value="{{ utm_campaign }}" />{% endif %}
     <label for="history-email" class="sr">Email address</label>
-    <input type="email" id="history-email" name="email" autocomplete="email" placeholder="you@company.com" required />
+    <input type="email" id="history-email" name="email" autocomplete="email" placeholder="you@email.com" required />
     <button type="submit" class="btn">Sign up free</button>
   </form>
 </section>
 <section id="download" class="dl">
   <a class="btn" href="/history.csv">Download CSV</a>
-  <p>License: CC-BY-4.0. {{ credit }} <a href="/docs">Methodology</a></p>
+  <p>License: CC-BY-4.0. {{ credit }}.<br /><a href="/docs">Methodology</a></p>
 </section>
 </main>
 </body>
@@ -311,6 +315,7 @@ def register_history_routes(server: Flask, get_snapshot: Callable[[], tuple[dict
             try:
                 result = database.add_subscriber(email, source)
             except Exception:
+                logger.exception("history signup failed")
                 result = {"success": False}
             if result.get("success"):
                 code = "ok"

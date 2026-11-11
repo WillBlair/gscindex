@@ -71,3 +71,22 @@ def test_an_episode_on_the_last_day_stays_inside_the_box():
     points = pts([60.0] * 5)
     html = chart.chart_html(points, [{"n": 1, "date": points[-1][0], "index": 100.0}], LIVE)
     assert "left:100.00%;top:0.00%" in html and "overflow:hidden" in chart.CHART_CSS
+
+
+def test_tier_names_sit_in_a_legend_under_the_plot_and_not_inside_it():
+    html = chart.chart_html(pts([60.0] * 5), [], LIVE)
+    assert 'class="tier"' not in html and ".hchart .tier{" not in chart.CHART_CSS
+    legend = re.search(r'<div class="tier-key">(.*?)</div>', html, re.S).group(1)
+    items = re.findall(r'<span class="tk">(.*?)</span>', legend, re.S)
+    text = " ".join(re.sub(r"<[^>]+>", "", i) for i in items)
+    assert [re.sub(r"<[^>]+>", "", i) for i in items] == ["Healthy 80 to 100", "Stable 60 to 79", "Stressed 40 to 59", "Critical 0 to 39"]
+    assert "Healthy" in html and "#35D07F" in legend and "–" not in legend and "-" not in text
+    assert html.index("tier-key") > html.index("</svg>")
+
+
+def test_the_y_axis_numbers_sit_in_a_gutter_at_their_levels():
+    html = chart.chart_html(pts([60.0] * 5), [], LIVE)
+    axis = re.search(r'<div class="hchart-axis">(.*?)</div>', html, re.S).group(1)
+    found = re.findall(r'<span style="top:([\d.]+)%">(\d+)</span>', axis)
+    assert found == [("0.00", "100"), ("20.00", "80"), ("40.00", "60"), ("60.00", "40"), ("100.00", "0")]
+    assert html.index("hchart-axis") < html.index('class="hchart-plot"')

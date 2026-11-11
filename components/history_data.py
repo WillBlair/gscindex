@@ -67,11 +67,15 @@ def _live_point(snapshot: dict | None) -> tuple[date, float] | None:
 
 
 def series(history: dict, snapshot: dict | None) -> list[tuple[date, float | None]]:
-    """Stored days, plus (with a snapshot) None for missing days up to yesterday and one live point."""
+    """Stored days, plus (with a snapshot) None for missing days up to yesterday and one live point.
+
+    A snapshot dated before the last stored day is stale: every stored day is kept, no live point."""
     points = [(date.fromisoformat(d), v) for d, v in zip(history["dates"], daily_index(history))]
     if snapshot is None:
         return points
     today = terminal_data._today_utc(snapshot)
+    if points and points[-1][0] > today:
+        return points  # the snapshot is older than the stored days: keep them all, add no live point
     points = [(d, v) for d, v in points if d < today]
     if points:
         day = points[-1][0] + timedelta(days=1)
@@ -156,6 +160,8 @@ def history_csv(history: dict, snapshot: dict | None) -> str:
     cats = _cats()
     dates = _date_map(history)
     live = _live_point(snapshot)
+    if live is not None and history["dates"] and date.fromisoformat(history["dates"][-1]) > live[0]:
+        live = None
     current = (snapshot or {}).get("current_scores") or {}
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")

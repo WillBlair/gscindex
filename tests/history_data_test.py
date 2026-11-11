@@ -90,3 +90,17 @@ def test_csv_under_an_exclusion_has_no_today_row_and_keeps_the_credit():
     lines = hd.history_csv(h, snapshot(today, excluded=("energy",))).strip().splitlines()
     assert lines[-1].startswith((START + timedelta(days=5)).isoformat()) and len(lines) == 7
     assert all(line.endswith(CREDIT) or CREDIT in line for line in lines[1:])
+
+
+def test_a_snapshot_older_than_the_stored_days_is_stale_and_hides_nothing():
+    h = hd.build_history(rows(START, 5), START, START)
+    snap = snapshot(START + timedelta(days=2), score=41.0)
+    points = hd.series(h, snap)
+    assert len(points) == 5 and all(v == pytest.approx(60.0) for _, v in points)
+    assert points[-1][0] == START + timedelta(days=4)
+
+
+def test_the_csv_for_a_stale_snapshot_has_every_stored_day_and_no_live_row():
+    h = hd.build_history(rows(START, 5), START, START)
+    lines = hd.history_csv(h, snapshot(START + timedelta(days=2), score=41.0)).strip().splitlines()
+    assert len(lines) == 6 and lines[-1].startswith((START + timedelta(days=4)).isoformat() + ",60.00,")

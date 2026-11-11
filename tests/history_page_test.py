@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date, timedelta
 
@@ -153,3 +154,13 @@ def test_every_episode_has_one_sentence_and_an_https_source():
         assert 40 <= len(episode["text"]) <= 240 and episode["text"].endswith(".")
         assert "—" not in episode["text"] and "–" not in episode["text"]
         assert episode["source_url"].startswith("https://")
+
+
+def test_a_failing_signup_is_logged_without_the_email(monkeypatch, caplog):
+    def boom(email, source=None):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(database, "add_subscriber", boom)
+    with caplog.at_level(logging.ERROR):
+        resp = client(monkeypatch, history(), snapshot(TODAY)).post("/history/signup", data={"email": "secret@example.com"})
+    assert "signup=error" in resp.headers["Location"]
+    assert "history signup failed" in caplog.text and "secret@example.com" not in caplog.text
