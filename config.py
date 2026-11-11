@@ -176,6 +176,27 @@ REFRESH_INTERVAL_MS = 0      # 0 = manual only; 300_000 = 5-min auto-refresh
 # Public pages, share card and analytics (api/share.py)
 SITE_URL = "https://gscindex.com"           # canonical origin for share tags, robots.txt and the sitemap
 SITEMAP_PATHS = ("/", "/docs", "/report")   # public pages listed in /sitemap.xml and tracked by analytics
+
+# History page (/history): the Global index for every day since the first day all eight categories exist
+HISTORY_START_DATE = "2019-01-11"          # first day with all eight categories; the page shows nothing older
+HISTORY_BACKFILL_END_DATE = "2026-07-22"   # last day written by the backfill
+HISTORY_BACKFILL_MONTH = "November 2026"   # when the backfill ran; printed on the page
+HISTORY_LIVE_FROM_DATE = "2026-10-23"      # first live-recorded day; the chart's vertical rule
+HISTORY_CHANGE_DAYS = 90                   # an episode's change is measured against this many days earlier
+HISTORY_CACHE_KEY = "index_history_long_v1"
+HISTORY_CACHE_MAX_AGE_SECONDS = 2 * 86400  # how old a disk copy may be to show at startup
+HISTORY_SIGNUP_RATE_LIMIT = "5 per minute;30 per hour"
+HISTORY_PAGE_TITLE = "Global Supply Chain Index history, daily since January 2019"
+HISTORY_PAGE_DESCRIPTION = ("The Global Supply Chain Index for every day since 11 January 2019, "
+                            "with six past disruptions marked and a CSV download.")
+HISTORY_EPISODES: list[dict] = [           # the v2 research episodes; text and source_url are filled in Task 9
+    {"date": "2020-04-15", "label": "COVID lockdowns", "text": "", "source_url": ""},
+    {"date": "2021-03-29", "label": "Ever Given, Suez Canal", "text": "", "source_url": ""},
+    {"date": "2021-12-15", "label": "NY Fed GSCPI record high", "text": "", "source_url": ""},
+    {"date": "2024-02-15", "label": "Red Sea diversions", "text": "", "source_url": ""},
+    {"date": "2025-04-15", "label": "US tariffs", "text": "", "source_url": ""},
+    {"date": "2026-03-20", "label": "Hormuz", "text": "", "source_url": ""},
+]
 # Cloudflare Web Analytics site token for gscindex.com (cookieless). Not a secret: it is
 # printed in every page's HTML. The beacon is sent only on SITE_URL's host, never on
 # localhost or the onrender.com address. Set the env var to "" to turn analytics off.
