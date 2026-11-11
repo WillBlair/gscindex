@@ -1018,6 +1018,7 @@ _DOCS_MARKDOWN = """
 <div class="section-heading"><span class="section-num">8.</span><h2>Public API</h2></div>
 <hr class="section-rule">
 <p><span class="code-inline">GET /api/v1/latest</span> is free and returns the latest snapshot as JSON, limited to 500 requests per hour and 2,000 per day per IP. Data is licensed CC-BY-4.0. If you use the chokepoint data, credit "Sources: UN Global Platform; IMF PortWatch". The Semis memory and logic scores come from Bank of Japan data and carry their own terms (section 5).</p>
+<p><span class="code-inline">GET /history.csv</span> downloads the Global index for every day since 11 January 2019, one row per day, with the columns <span class="code-inline">date</span>, <span class="code-inline">index</span>, the eight category scores and <span class="code-inline">credit</span>. The <a href="/history">history page</a> charts the same days.</p>
 
 | Field | Contents |
 |:---|:---|

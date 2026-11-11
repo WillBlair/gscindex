@@ -42,7 +42,9 @@ Nothing is written to the database.
 overwritten), checks the export against a COUNT of the rows in the database, then upserts.
 It aborts if the export fails or does not match. It never deletes and never writes NaN.
 It refuses when any rebuilt category (global or sector; sector only with ``--sectors-only``) failed
-to fetch, or has no value in the window, unless ``--allow-partial`` is passed, and when
+to fetch, or has no value in the window, or when any provider recorded a failed input
+(``history_input_failures``; the plain ``--days`` mode as well as the backfill), unless
+``--allow-partial`` is passed, and when
 the resolved database is Postgres unless the environment variable ``CONFIRM_PROD_REBUILD=yes``
 is set.
 """

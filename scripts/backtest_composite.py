@@ -6,7 +6,7 @@ Backtest the methodology v2 composite at past episodes.
 Each category's ``fetch_history`` is read over a window long enough to reach the first
 episode, then looked up on each episode date (dated by publication lag, so the value is what
 the site could have shown that day). "n/a" means the source had no measurement that day
-(chokepoints start in 2022, physical about 2024, TPU daily 2015+, and so on). The last column
+(chokepoints start on 2019-01-11, the other seven categories reach further back). The last column
 is today, from each provider's ``fetch_current``.
 
 Two composites are printed:
