@@ -1,13 +1,15 @@
 """Markup for the index history chart: pure, no Flask, Dash or database.
 
 The SVG holds only lines and stretches to any width. All text is HTML placed by
-percentage over it, so labels stay readable on a phone. Every interpolated value
+percentage over it, so labels stay readable on a phone. Points are normalized to one entry per
+consecutive calendar day (missing dates become gaps, the last value wins on a
+repeated date). Every interpolated value
 is a number, a formatted date or a fixed label.
 """
 
 import json
 import math
-from datetime import date
+from datetime import date, timedelta
 
 import config
 from components.terminal_data import TIER_COLORS
@@ -15,7 +17,7 @@ from components.terminal_data import TIER_COLORS
 LIVE_LABEL = "recorded live from here"
 
 CHART_CSS = """
-.hchart{font-family:'JetBrains Mono',monospace;color:#F2F4F7;background:#07090C;border:1px solid #1D232B;padding:12px 0 8px}
+.hchart{overflow:hidden;font-family:'JetBrains Mono',monospace;color:#F2F4F7;background:#07090C;border:1px solid #1D232B;padding:12px 0 8px}
 .hchart-plot{position:relative;margin:0 14px;aspect-ratio:16/7;min-height:220px;border:1px solid #1D232B;touch-action:pan-y;cursor:crosshair}
 .hchart svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 .hchart .line{fill:none;stroke:#F2F4F7;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
@@ -25,6 +27,7 @@ CHART_CSS = """
 .hchart .year span{position:absolute;bottom:3px;left:4px;font-size:10px;color:#8A94A3}
 .hchart .live{position:absolute;top:0;bottom:0;border-left:1px solid #FFB020;pointer-events:none}
 .hchart .live span{position:absolute;top:3px;left:5px;font-size:10px;color:#FFB020;white-space:nowrap}
+.hchart .live.to-left span{left:auto;right:5px}
 .hchart .mark{position:absolute;transform:translate(-50%,-50%);min-width:18px;height:18px;line-height:16px;text-align:center;font-size:10px;color:#FFB020;background:#000000;border:1px solid #FFB020;text-decoration:none}
 .hchart .cursor{position:absolute;top:0;bottom:0;width:0;border-left:1px solid #8A94A3;display:none;pointer-events:none}
 .hchart #hchart-readout{margin:8px 14px 0;min-height:1.4em;font-size:12px;color:#F2F4F7}
@@ -96,9 +99,13 @@ def _pct(i: int, n: int) -> float:
 def chart_html(points: list[tuple[date, float | None]], episodes: list[dict], live_from: date) -> str:
     if not points:
         return ""
-    n = len(points)
-    first, last = points[0][0], points[-1][0]
-    values = [None if (v := _num(p[1])) is None else _clamp(v) for p in points]
+    # Normalize onto every consecutive calendar day, first to last date. A date not
+    # passed becomes a gap; if a date repeats the last value wins. Never raises.
+    by_day = {d: v for d, v in points}
+    first, last = min(by_day), max(by_day)
+    n = (last - first).days + 1
+    days = [first + timedelta(days=i) for i in range(n)]
+    values = [None if (v := _num(by_day.get(d))) is None else _clamp(v) for d in days]
     tiers = sorted(config.HEALTH_TIERS, key=lambda t: -t["min"])
 
     rules = "".join(
@@ -112,12 +119,13 @@ def chart_html(points: list[tuple[date, float | None]], episodes: list[dict], li
     )
     years = "".join(
         f'<div class="year" style="left:{_pct(i, n):.2f}%"><span>{d.year}</span></div>'
-        for i, (d, _) in enumerate(points) if d.month == 1 and d.day == 1
+        for i, d in enumerate(days) if d.month == 1 and d.day == 1
     )
     live = ""
     if first <= live_from <= last:
         i = (live_from - first).days
-        live = f'<div class="live" style="left:{_pct(i, n):.2f}%"><span>{LIVE_LABEL}</span></div>'
+        side = " to-left" if _pct(i, n) > 50 else ""
+        live = f'<div class="live{side}" style="left:{_pct(i, n):.2f}%"><span>{LIVE_LABEL}</span></div>'
     marks = []
     for ep in episodes:
         idx, d = _num(ep.get("index")), ep.get("date")

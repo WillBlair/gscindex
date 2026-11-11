@@ -49,3 +49,25 @@ def test_out_of_range_and_non_finite_values_stay_in_the_box():
     html = chart.chart_html(pts([150.0, -20.0, float("nan"), 50.0]), [], LIVE)
     assert line(html) == "M0.00 0.00L333.33 100.00M1000.00 50.00h0"
     assert "nan" not in html.lower() and "None" not in html
+
+
+def test_live_label_sits_left_of_a_rule_in_the_right_half_and_right_of_one_in_the_left():
+    right = chart.chart_html(pts([60.0] * 10, first=date(2026, 10, 15)), [], LIVE)
+    assert 'class="live to-left"' in right
+    left = chart.chart_html(pts([60.0] * 10, first=date(2026, 10, 22)), [], LIVE)
+    assert 'class="live"' in left and "to-left" not in left
+
+
+def test_skipped_dates_become_gaps():
+    first = date(2026, 10, 20)
+    points = [(first, 60.0), (first + timedelta(days=1), 61.0), (first + timedelta(days=3), 62.0)]
+    html = chart.chart_html(points, [], LIVE)
+    data = json.loads(re.search(r'id="hchart-data">(.*?)</script>', html, re.S).group(1))
+    assert len(data["values"]) == 4 and data["values"][2] is None
+    assert line(html).count("M") == 2
+
+
+def test_an_episode_on_the_last_day_stays_inside_the_box():
+    points = pts([60.0] * 5)
+    html = chart.chart_html(points, [{"n": 1, "date": points[-1][0], "index": 100.0}], LIVE)
+    assert "left:100.00%;top:0.00%" in html and "overflow:hidden" in chart.CHART_CSS
