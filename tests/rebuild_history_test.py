@@ -733,3 +733,78 @@ def test_main_passes_the_backfill_flags(monkeypatch, sqlite_db):
     assert seen["global_only"] and seen["start"] == date(2019, 1, 11) and seen["end"] == date(2026, 7, 22)
     with pytest.raises(SystemExit):
         rebuild.main(["--start", "2019-13-40", "--end", "2026-07-22"])
+
+
+def test_summary_starts_with_the_database_line_and_never_a_connection_string(sqlite_db, tmp_path):
+    result = rebuild.run(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    text = rebuild.summarize(result)
+    assert text.splitlines()[0] == f"Database: sqlite ({sqlite_db})"
+
+
+def test_summary_database_line_on_postgres_has_no_url(monkeypatch, sqlite_db, tmp_path):
+    result = rebuild.run(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    monkeypatch.setattr(database, "_resolve_db_config", lambda: ("postgres", "postgresql://user:secret@host/db"))
+    assert rebuild.summarize(result).splitlines()[0] == "Database: postgres"
+    assert "secret" not in rebuild.summarize(result)
+
+
+def test_main_prints_the_database_line_beside_rows_upserted(sqlite_db, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(rebuild, "default_providers", lambda: _providers())
+    monkeypatch.setattr(rebuild, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(rebuild, "datetime", type("D", (), {"now": staticmethod(
+        lambda tz=None: datetime(2026, 10, 22, 12, tzinfo=timezone.utc))}))
+    assert rebuild.main(["--days", "3", "--write"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    i = next(n for n, line in enumerate(out) if line.startswith("Rows upserted"))
+    assert out[i - 1].startswith("Database: sqlite")
+
+
+def test_composite_is_not_upserted_when_the_category_upsert_failed(sqlite_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "upsert_scores_for_dates", lambda rows: -1)
+    monkeypatch.setattr(database, "upsert_composite_for_dates",
+                        lambda rows: pytest.fail("composite must not be written"))
+    with pytest.raises(RuntimeError, match="upsert failed"):
+        rebuild.run(write=True, providers=_providers(), today=TODAY, backup_dir=tmp_path,
+                    global_only=True, start=S, end=E)
+
+
+def test_backfill_on_postgres_refuses_an_end_on_or_after_the_live_from_date(monkeypatch, sqlite_db, tmp_path):
+    monkeypatch.setattr(config, "HISTORY_LIVE_FROM_DATE", E.isoformat())
+    kwargs = dict(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    rebuild.run(**kwargs)                                         # SQLite is exempt
+    monkeypatch.setattr(database, "get_db_type", lambda: "postgres")
+    monkeypatch.setattr(database, "export_category_rows", lambda *a, **k: pytest.fail("must refuse first"))
+    with pytest.raises(rebuild.WriteRefused, match="live-from"):
+        rebuild.run(**kwargs)
+    monkeypatch.setattr(config, "HISTORY_LIVE_FROM_DATE", (E + timedelta(days=1)).isoformat())
+    monkeypatch.setattr(database, "export_category_rows", lambda *a, **k: [])
+    rebuild.run(**kwargs)                                         # end before the live-from date is fine
+
+
+def test_dry_run_on_postgres_reads_strictly_and_aborts_on_a_failed_read(monkeypatch, sqlite_db, tmp_path):
+    monkeypatch.setattr(database, "get_db_type", lambda: "postgres")
+    seen = {}
+
+    def failing(start, cats, strict=False):
+        seen["strict"] = strict
+        raise RuntimeError("connection lost")
+    monkeypatch.setattr(database, "export_category_rows", failing)
+    with pytest.raises(rebuild.BackupError, match="connection lost"):
+        rebuild.run(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    assert seen["strict"] is True
+
+
+def test_dry_run_on_sqlite_reads_non_strictly(monkeypatch, sqlite_db, tmp_path):
+    seen = {}
+    real = database.export_category_rows
+    monkeypatch.setattr(database, "export_category_rows",
+                        lambda start, cats, strict=False: (seen.update(strict=strict), real(start, cats, strict))[1])
+    rebuild.run(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    assert seen["strict"] is False
+
+
+def test_summary_counts_stored_rows_that_would_be_overwritten(sqlite_db, tmp_path):
+    d1, d2 = S.isoformat(), (S + timedelta(days=1)).isoformat()
+    _seed(sqlite_db, [(d1, "energy", 10.0), (d2, "energy", 10.0), (d1, "freight", 5.0)], [(d1, 11.0)])
+    result = rebuild.run(providers=_providers(), today=TODAY, backup_dir=tmp_path, global_only=True, start=S, end=E)
+    assert "Stored rows that would be overwritten: 4 (energy 2, freight 1, composite 1)" in rebuild.summarize(result)

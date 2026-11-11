@@ -6,6 +6,12 @@ Rebuild the stored daily category scores with the new methodology (v2).
     ... scripts/rebuild_category_history.py --sectors-only --days 92 --write   (the sector backfill)
     ... scripts/rebuild_category_history.py --global-only --start 2019-01-11 --end 2026-07-22   (the global backfill)
 
+Which database this uses: this script loads the project ``.env``, whose ``DATABASE_URL`` is the
+PRODUCTION database. Local runs put ``DATABASE_URL=`` (empty) in front, as above, which forces a
+local SQLite file. A run without it targets production, and ``--write`` there also needs
+``CONFIRM_PROD_REBUILD=yes``. The summary's first line, ``Database:``, says which one is in use
+(never the connection string).
+
 For each weighted category, and for each sector category (the three Semis and four Aero
 categories in ``config.SECTORS``), the provider's own ``fetch_history`` supplies the real
 source-series scores, dated by publication lag (NaN where nothing was measured). The rebuild
@@ -56,16 +62,20 @@ import logging
 import math
 import os
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+load_dotenv(ROOT / ".env")      # never overrides a variable already set, even to "" (DATABASE_URL= stays SQLite)
 
 import config  # noqa: E402
 from data import database  # noqa: E402
@@ -290,6 +300,10 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
     today = today or now.date()
     if backfill and end >= today:
         raise WriteRefused(f"Backfill end {end} must be before today ({today}); today's row belongs to the live aggregator.")
+    if backfill and database.get_db_type() == "postgres" and end >= date.fromisoformat(config.HISTORY_LIVE_FROM_DATE):
+        raise WriteRefused(
+            f"Backfill end {end} is on or after the live-from date {config.HISTORY_LIVE_FROM_DATE}: "
+            "rows recorded live must never be rebuilt by this mode.")
     backup_dir = Path(backup_dir) if backup_dir is not None else BACKUP_DIR
     providers = providers if providers is not None else default_providers()
 
@@ -321,13 +335,17 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
         database.init_db()              # a fresh dev database has no tables yet
     categories = rebuild_categories(sectors_only, global_only)
     keys = categories if sectors_only else (*categories, COMPOSITE)
-    # On the write path the read is strict: a query error must abort, never yield an empty backup.
+    # The read is strict on the write path (a query error must abort, never yield an empty backup)
+    # and on Postgres (a failed dry-run read would otherwise report zero stored rows and look clean).
+    on_postgres = database.get_db_type() == "postgres"
     try:
-        stored = database.export_category_rows(dates[0], list(keys), strict=write)
+        stored = database.export_category_rows(dates[0], list(keys), strict=write or on_postgres)
     except Exception as exc:
-        if not write:
-            raise
-        raise BackupError(f"Could not read the existing rows for the backup ({exc}). Nothing was written.") from exc
+        if write:
+            raise BackupError(f"Could not read the existing rows for the backup ({exc}). Nothing was written.") from exc
+        if on_postgres:
+            raise BackupError(f"Could not read the stored rows ({exc}); a dry run without them would look clean.") from exc
+        raise
     in_window = set(dates)
     old = {(d, cat): score for d, cat, score in stored if d in in_window}
     first_stored: dict[str, date] = {}
@@ -368,15 +386,24 @@ def run(days: int = DEFAULT_DAYS, write: bool = False, providers: dict | None = 
             raise BackupError(f"Could not write the backup {result.backup_path} ({exc}). Nothing was written.") from exc
         logger.info("Exported %d existing rows to %s", len(existing), result.backup_path)
         n_cat = database.upsert_scores_for_dates(cat_rows)
+        if n_cat < 0:
+            raise RuntimeError("database upsert failed; see the log (the backup CSV was written first)")
         n_comp = 0 if sectors_only else database.upsert_composite_for_dates(comp_rows)
-        if n_cat < 0 or n_comp < 0:
+        if n_comp < 0:
             raise RuntimeError("database upsert failed; see the log (the backup CSV was written first)")
         result.written = n_cat + n_comp
     return result
 
 
+def database_line() -> str:
+    """Which database this run uses, without any part of the connection string."""
+    if database.get_db_type() == "postgres":
+        return "Database: postgres"
+    return f"Database: sqlite ({database.SQLITE_PATH})"
+
+
 def summarize(result: RebuildResult) -> str:
-    lines = [f"Window: {result.dates[0]} to {result.dates[-1]} ({len(result.dates)} dates, today excluded)"]
+    lines = [database_line(), f"Window: {result.dates[0]} to {result.dates[-1]} ({len(result.dates)} dates, today excluded)"]
     lines.append(f"{'category':<24}{'new rows':>9}{'no old':>8}{'changed':>9}{'mean |delta|':>14}")
     total_new = total_changed = 0
     for cat in result.keys:
@@ -417,6 +444,13 @@ def summarize(result: RebuildResult) -> str:
     if result.backfill:
         firsts = ", ".join(f"{key} {result.first_stored[key]}" for key in result.keys if key in result.first_stored)
         lines.append(f"First stored row on or after {result.dates[0]}: {firsts or 'none'}")
+    overwritten = Counter(
+        cat for (d, cat) in result.old
+        if (d in result.composite if cat == COMPOSITE
+            else math.isfinite(result.new[cat].get(d, float("nan")))))
+    detail = ", ".join(f"{key} {overwritten[key]}" for key in result.keys if overwritten[key])
+    lines.append(f"Stored rows that would be overwritten: {sum(overwritten.values())}"
+                 + (f" ({detail})" if detail else ""))
     lines.append("Stored rows left as they are (no new value for that date, never deleted): "
                  f"{len(result.stored_without_new())}")
     return "\n".join(lines)
@@ -475,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"CSV: {result.csv_path}")
     if args.write:
         print(f"Backup of overwritten rows: {result.backup_path}")
+        print(database_line())
         print(f"Rows upserted: {result.written}")
     else:
         print("Dry run: nothing was written. Re-run with --write after reviewing the CSV.")
