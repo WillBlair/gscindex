@@ -42,6 +42,8 @@ def test_page_shows_the_chart_numbers_and_episode_from_the_data(monkeypatch):
     body = client(monkeypatch, history(), snapshot(TODAY, score=41.0)).get("/history").get_data(as_text=True)
     assert "Global Supply Chain Index, daily since 11 January 2019" in body and '<path class="line"' in body
     assert "41.0" in body and "30.0" in body and "16 April 2019" in body and "66.0" in body and "16 January 2019" in body
+    chart_part = body[body.index('class="hchart"'):body.index('id="hchart-readout"')]
+    assert 'class="tip"' in chart_part and "Test event" in chart_part
     assert 'id="ep-1"' in body and "X happened." in body and 'href="https://example.org/x"' in body
     assert "-36.0 over 90 days" in body and "All eight categories" in body
     assert all(str(escape(config.CATEGORY_LABELS[c])) in body for c in CATS)

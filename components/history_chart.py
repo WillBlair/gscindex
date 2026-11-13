@@ -11,6 +11,8 @@ import json
 import math
 from datetime import date, timedelta
 
+from markupsafe import escape
+
 import config
 from components.terminal_data import TIER_COLORS
 
@@ -33,8 +35,20 @@ CHART_CSS = """
 .hchart .live span{position:absolute;top:3px;left:5px;font-size:10px;color:#FFB020;white-space:nowrap}
 .hchart .live.to-left span{left:auto;right:5px}
 .hchart .mark{position:absolute;transform:translate(-50%,-50%);min-width:18px;height:18px;line-height:16px;text-align:center;font-size:10px;color:#FFB020;background:#000000;border:1px solid #FFB020;text-decoration:none}
+.hchart .mark:hover,.hchart .mark:focus-visible{z-index:5}
+.hchart .tip{display:none;position:absolute;z-index:10;width:260px;box-sizing:border-box;padding:10px 12px;background:#07090C;border:1px solid #1D232B;text-align:left;white-space:normal;font-size:11px;line-height:1.45;color:#F2F4F7;font-weight:400;pointer-events:none}
+.hchart .mark:hover .tip,.hchart .mark:focus-visible .tip{display:block}
+.hchart .tip b{display:block;font-weight:500}
+.hchart .tip .tip-line{display:block;color:#8A94A3}
+.hchart .tip .tip-text{display:block;margin-top:6px;font-family:Inter,sans-serif;font-size:12px;color:#8A94A3}
+.hchart .tip-above .tip{bottom:calc(100% + 6px)}
+.hchart .tip-below .tip{top:calc(100% + 6px)}
+.hchart .tip-right .tip{left:0}
+.hchart .tip-left .tip{right:0}
+.hchart .tip-center .tip{left:50%;transform:translateX(-50%)}
 .hchart .cursor{position:absolute;top:0;bottom:0;width:0;border-left:1px solid #8A94A3;display:none;pointer-events:none}
 .hchart #hchart-readout{margin:8px 14px 0;min-height:1.4em;font-size:12px;color:#F2F4F7}
+@media (max-width:760px){.hchart .tip{display:none !important}}
 @media (max-width:600px){.hchart-plot{aspect-ratio:4/3;min-height:240px}.hchart-axis span,.hchart .tier-key,.hchart .year span,.hchart .live span{font-size:9px}}
 """
 
@@ -100,6 +114,28 @@ def _pct(i: int, n: int) -> float:
     return i / (n - 1) * 100 if n > 1 else 50.0
 
 
+def _long_date(d: date) -> str:
+    return f"{d.day} {d.strftime('%B')} {d.year}"
+
+
+def _card(ep: dict, idx: float, d: date) -> str:
+    parts = [_long_date(d)]
+    tier = ep.get("tier")
+    if isinstance(tier, dict) and tier.get("label"):
+        parts.append(f'{idx:.1f} <span style="color:{escape(tier.get("color", ""))}">{escape(tier["label"])}</span>')
+    else:
+        parts.append(f"{idx:.1f}")
+    change = _num(ep.get("change"))
+    if change is not None:
+        parts.append(f"{change:+.1f} over {int(config.HISTORY_CHANGE_DAYS)} days")
+    text = ep.get("text")
+    sentence = f'<span class="tip-text">{escape(text)}</span>' if text else ""
+    return (
+        f'<span class="tip" aria-hidden="true"><b>{escape(ep.get("label", ""))}</b>'
+        f'<span class="tip-line">{" &middot; ".join(parts)}</span>{sentence}</span>'
+    )
+
+
 def chart_html(points: list[tuple[date, float | None]], episodes: list[dict], live_from: date) -> str:
     if not points:
         return ""
@@ -137,9 +173,13 @@ def chart_html(points: list[tuple[date, float | None]], episodes: list[dict], li
         idx, d = _num(ep.get("index")), ep.get("date")
         if idx is None or not isinstance(d, date) or not first <= d <= last:
             continue
+        x, y = _pct((d - first).days, n), 100 - _clamp(idx)
+        side = "tip-right" if x < 33 else "tip-left" if x > 67 else "tip-center"
+        vert = "tip-below" if y < 50 else "tip-above"
         marks.append(
-            f'<a class="mark" href="#ep-{int(ep["n"])}" '
-            f'style="left:{_pct((d - first).days, n):.2f}%;top:{100 - _clamp(idx):.2f}%">{int(ep["n"])}</a>'
+            f'<a class="mark {side} {vert}" href="#ep-{int(ep["n"])}" '
+            f'aria-label="{escape("Episode %d: %s" % (int(ep["n"]), ep.get("label", "")))}" '
+            f'style="left:{x:.2f}%;top:{y:.2f}%">{int(ep["n"])}{_card(ep, idx, d)}</a>'
         )
     data = json.dumps({
         "start": first.isoformat(),

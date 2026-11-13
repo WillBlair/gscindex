@@ -2,7 +2,9 @@ import json
 import re
 from datetime import date, timedelta
 
+import config
 import components.history_chart as chart
+from components.terminal_data import tier_for
 
 LIVE = date(2026, 10, 23)
 
@@ -31,7 +33,7 @@ def test_episode_marks_are_numbered_and_skip_an_episode_without_a_value():
     eps = [{"n": 1, "date": points[1][0], "index": 60.0}, {"n": 2, "date": points[3][0], "index": None},
            {"n": 3, "date": date(2030, 1, 1), "index": 50.0}]
     html = chart.chart_html(points, eps, LIVE)
-    assert html.count('class="mark"') == 1 and 'href="#ep-1"' in html and "left:25.00%;top:40.00%" in html
+    assert html.count('<a class="mark') == 1 and 'href="#ep-1"' in html and "left:25.00%;top:40.00%" in html
 
 
 def test_labels_the_live_rule_and_the_hover_data():
@@ -90,3 +92,54 @@ def test_the_y_axis_numbers_sit_in_a_gutter_at_their_levels():
     found = re.findall(r'<span style="top:([\d.]+)%">(\d+)</span>', axis)
     assert found == [("0.00", "100"), ("20.00", "80"), ("40.00", "60"), ("60.00", "40"), ("100.00", "0")]
     assert html.index("hchart-axis") < html.index('class="hchart-plot"')
+
+
+def _ep(**kw):
+    ep = {"n": 2, "date": date(2026, 10, 22), "label": "Ever Given, Suez Canal", "text": "The ship ran aground.",
+          "index": 67.9, "tier": tier_for(67.9), "change": -6.1}
+    ep.update(kw)
+    return ep
+
+
+def _mark(html):
+    return re.search(r'<a class="mark[^"]*".*?</a>', html, re.S).group(0)
+
+
+def test_each_mark_carries_a_hover_card_with_the_episode():
+    m = _mark(chart.chart_html(pts([60.0] * 5), [_ep()], LIVE))
+    for part in ['class="tip"', 'aria-hidden="true"', "Ever Given, Suez Canal", "22 October 2026", "67.9", "Stable",
+                 tier_for(67.9)["color"], "-6.1 over 90 days", "The ship ran aground.",
+                 'aria-label="Episode 2: Ever Given, Suez Canal"', 'href="#ep-2"']:
+        assert part in m
+
+
+def test_hover_card_escapes_config_text():
+    html = chart.chart_html(pts([60.0] * 5), [_ep(label='A <b>bold</b> & "quoted" claim', text="<script>alert(1)</script>")], LIVE)
+    m = _mark(html)
+    assert "<script>" not in m and "<b>bold</b>" not in m
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in m and "&lt;b&gt;bold&lt;/b&gt;" in m
+    assert 'aria-label="Episode 2: A &lt;b&gt;bold&lt;/b&gt; &amp; &#34;quoted&#34; claim"' in m
+
+
+def test_hover_card_leaves_out_missing_parts():
+    m = _mark(chart.chart_html(pts([60.0] * 5), [_ep(change=None, text="")], LIVE))
+    assert "over 90 days" not in m and 'class="tip-text"' not in m and "The ship" not in m
+
+
+def test_hover_card_side_follows_the_mark_position():
+    points = pts([60.0] * 101)
+    first = points[0][0]
+    eps = [_ep(n=1, date=first + timedelta(days=10)), _ep(n=2, date=first + timedelta(days=50)),
+           _ep(n=3, date=first + timedelta(days=90), index=80.0), _ep(n=4, date=first + timedelta(days=50), index=30.0)]
+    marks = re.findall(r'<a class="mark[^"]*".*?</a>', chart.chart_html(points, eps, LIVE), re.S)
+    assert "tip-right" in marks[0] and "tip-center" in marks[1] and "tip-left" in marks[2]
+    assert "tip-below" in marks[2] and "tip-above" in marks[3]
+
+
+def test_hover_card_day_count_comes_from_config(monkeypatch):
+    monkeypatch.setattr(config, "HISTORY_CHANGE_DAYS", 30)
+    assert "over 30 days" in _mark(chart.chart_html(pts([60.0] * 5), [_ep()], LIVE))
+
+
+def test_chart_css_hides_cards_on_phones():
+    assert re.search(r"@media \(max-width:760px\)\{[^}]*\.hchart \.tip\{display:none !important\}", chart.CHART_CSS)
