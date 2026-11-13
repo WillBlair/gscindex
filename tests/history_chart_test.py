@@ -129,11 +129,14 @@ def test_hover_card_leaves_out_missing_parts():
 def test_hover_card_side_follows_the_mark_position():
     points = pts([60.0] * 101)
     first = points[0][0]
-    eps = [_ep(n=1, date=first + timedelta(days=10)), _ep(n=2, date=first + timedelta(days=50)),
-           _ep(n=3, date=first + timedelta(days=90), index=80.0), _ep(n=4, date=first + timedelta(days=50), index=30.0)]
-    marks = re.findall(r'<a class="mark[^"]*".*?</a>', chart.chart_html(points, eps, LIVE), re.S)
-    assert "tip-right" in marks[0] and "tip-center" in marks[1] and "tip-left" in marks[2]
-    assert "tip-below" in marks[2] and "tip-above" in marks[3]
+    eps = [_ep(n=1, date=first + timedelta(days=10)), _ep(n=2, date=first + timedelta(days=49)),
+           _ep(n=3, date=first + timedelta(days=50)), _ep(n=4, date=first + timedelta(days=90), index=80.0),
+           _ep(n=5, date=first + timedelta(days=90), index=30.0)]
+    html = chart.chart_html(points, eps, LIVE)
+    marks = re.findall(r'<a class="mark[^"]*".*?</a>', html, re.S)
+    assert "tip-right" in marks[0] and "tip-right" in marks[1] and "tip-left" in marks[2] and "tip-left" in marks[3]
+    assert not any(c in html for c in ("tip-center", "tip-above", "tip-below"))
+    assert 'class="tip" style="--y:20.00"' in marks[3] and 'class="tip" style="--y:70.00"' in marks[4]
 
 
 def test_hover_card_day_count_comes_from_config(monkeypatch):

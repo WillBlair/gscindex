@@ -41,11 +41,9 @@ CHART_CSS = """
 .hchart .tip b{display:block;font-weight:500}
 .hchart .tip .tip-line{display:block;color:#8A94A3}
 .hchart .tip .tip-text{display:block;margin-top:6px;font-family:Inter,sans-serif;font-size:12px;color:#8A94A3}
-.hchart .tip-above .tip{bottom:calc(100% + 6px)}
-.hchart .tip-below .tip{top:calc(100% + 6px)}
-.hchart .tip-right .tip{left:0}
-.hchart .tip-left .tip{right:0}
-.hchart .tip-center .tip{left:50%;transform:translateX(-50%)}
+.hchart .tip{top:50%;transform:translateY(calc(var(--y) * -1%))}
+.hchart .tip-right .tip{left:calc(100% + 8px)}
+.hchart .tip-left .tip{right:calc(100% + 8px)}
 .hchart .cursor{position:absolute;top:0;bottom:0;width:0;border-left:1px solid #8A94A3;display:none;pointer-events:none}
 .hchart #hchart-readout{margin:8px 14px 0;min-height:1.4em;font-size:12px;color:#F2F4F7}
 @media (max-width:760px){.hchart .tip{display:none !important}}
@@ -118,7 +116,7 @@ def _long_date(d: date) -> str:
     return f"{d.day} {d.strftime('%B')} {d.year}"
 
 
-def _card(ep: dict, idx: float, d: date) -> str:
+def _card(ep: dict, idx: float, d: date, y: float) -> str:
     parts = [_long_date(d)]
     tier = ep.get("tier")
     if isinstance(tier, dict) and tier.get("label"):
@@ -131,7 +129,7 @@ def _card(ep: dict, idx: float, d: date) -> str:
     text = ep.get("text")
     sentence = f'<span class="tip-text">{escape(text)}</span>' if text else ""
     return (
-        f'<span class="tip" aria-hidden="true"><b>{escape(ep.get("label", ""))}</b>'
+        f'<span class="tip" style="--y:{y:.2f}" aria-hidden="true"><b>{escape(ep.get("label", ""))}</b>'
         f'<span class="tip-line">{" &middot; ".join(parts)}</span>{sentence}</span>'
     )
 
@@ -174,12 +172,11 @@ def chart_html(points: list[tuple[date, float | None]], episodes: list[dict], li
         if idx is None or not isinstance(d, date) or not first <= d <= last:
             continue
         x, y = _pct((d - first).days, n), 100 - _clamp(idx)
-        side = "tip-right" if x < 33 else "tip-left" if x > 67 else "tip-center"
-        vert = "tip-below" if y < 50 else "tip-above"
+        side = "tip-right" if x < 50 else "tip-left"
         marks.append(
-            f'<a class="mark {side} {vert}" href="#ep-{int(ep["n"])}" '
+            f'<a class="mark {side}" href="#ep-{int(ep["n"])}" '
             f'aria-label="{escape("Episode %d: %s" % (int(ep["n"]), ep.get("label", "")))}" '
-            f'style="left:{x:.2f}%;top:{y:.2f}%">{int(ep["n"])}{_card(ep, idx, d)}</a>'
+            f'style="left:{x:.2f}%;top:{y:.2f}%">{int(ep["n"])}{_card(ep, idx, d, y)}</a>'
         )
     data = json.dumps({
         "start": first.isoformat(),
