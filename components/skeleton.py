@@ -41,19 +41,19 @@ def build_skeleton_layout():
     map_pane = html.Section(html.Div(className="ph sk-map"), className="pane map-pane sk",
                             **{"aria-label": "Port map"})
 
-    quotes = html.Section([_title("Markets")] + _rows(5, height=14), className="pane sk sk-list")
+    quotes = html.Section([_title("Markets")] + _rows(5, height=14), className="pane quotes-pane sk sk-list")
 
     categories = html.Section([_title("Categories")] + _rows(7, height=12),
                               className="pane wide sk sk-list")
 
     briefing = html.Section([_title("Briefing")] + _rows(7, ("100%", "96%", "70%"), 12),
-                            className="pane sk sk-list")
+                            className="pane briefing-pane sk sk-list")
 
     headlines = html.Section([_title("Headlines")] + _rows(8, ("100%", "82%", "91%", "74%"), 12),
                              className="pane full sk sk-list")
 
     return html.Div([
-        header, readout, map_pane, quotes, categories, briefing, headlines,
+        header, readout, map_pane, briefing, categories, quotes, headlines,
         html.Div(id="boot-reload-trigger", style={"display": "none"}),
         dcc.Interval(id="boot-interval", interval=1000, n_intervals=0),
     ], className="shell", **{"aria-busy": "true"})

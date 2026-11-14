@@ -2,9 +2,9 @@
 
 Desktop grid (300px | 1fr | 300px):
     header
-    readout | map | quotes
-    headlines (two columns) | briefing
-    category table (full width)
+    readout | map | briefing
+    category table (two columns) | quotes
+    headlines (full width)
 """
 from __future__ import annotations
 
@@ -110,18 +110,18 @@ def build_layout(data: dict, *, is_provisional=False, last_updated: datetime | N
         # Phones only: the chokepoint list moves below the map (the readout's copy is hidden there).
         html.Section(build_chokepoints(data.get("chokepoints")), id="choke-phone", className="pane choke-phone"),
         html.Section([
-            _title("Markets"),
-            html.Div(build_quotes(data.get("market_data", {})), id="quotes", className="quotes-scroll"),
-        ], className="pane quotes-pane"),
+            _title("Briefing"),
+            html.Div(build_briefing(data.get("briefing", "")), id="briefing", className="briefing-scroll"),
+        ], className="pane briefing-pane"),
 
         html.Section([
             _title("Categories"),
             html.Div(build_category_table(data, DEFAULT_TAB), id="category-table"),
         ], className="pane wide"),
         html.Section([
-            _title("Briefing"),
-            html.Div(build_briefing(data.get("briefing", "")), id="briefing", className="briefing-scroll"),
-        ], className="pane briefing-pane"),
+            _title("Markets"),
+            html.Div(build_quotes(data.get("market_data", {})), id="quotes", className="quotes-scroll"),
+        ], className="pane quotes-pane"),
 
         html.Section([
             html.Div([
